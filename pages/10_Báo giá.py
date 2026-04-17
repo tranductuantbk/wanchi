@@ -29,48 +29,48 @@ download_font()
 st.set_page_config(page_title="WANCHI Báo Giá", page_icon="🏭", layout="wide")
 st.title("🏭 Hệ Thống Báo Giá Khách Hàng WANCHI")
 
-# Kết nối database an toàn qua db_utils
+# Kết nối database
 conn = get_connection()
 c = conn.cursor()
 
-# Khởi tạo giỏ hàng tạm thời
+# Khởi tạo giỏ hàng
 if 'gio_bao_gia' not in st.session_state:
     st.session_state.gio_bao_gia = []
 if 'gio_bao_gia_custom' not in st.session_state:
     st.session_state.gio_bao_gia_custom = []
 
 # ==========================================
-# KHỞI TẠO BẢNG DATABASE (POSTGRESQL)
+# KHỞI TẠO BẢNG (Đã thêm tiền tố public. để chống lỗi Schema)
 # ==========================================
-c.execute('''CREATE TABLE IF NOT EXISTS lich_su_bao_gia (
-                id SERIAL PRIMARY KEY,
-                ngay_tao TEXT,
-                ten_kh TEXT,
-                so_dien_thoai TEXT,
-                tong_tien REAL,
-                loai_bao_gia TEXT DEFAULT 'Tiêu chuẩn'
-            )''')
-
-# Lấy danh mục sản phẩm để chọn
 try:
-    df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly FROM dm_san_pham", conn)
+    c.execute('''CREATE TABLE IF NOT EXISTS public.lich_su_bao_gia (
+                    id SERIAL PRIMARY KEY,
+                    ngay_tao TEXT,
+                    ten_kh TEXT,
+                    so_dien_thoai TEXT,
+                    tong_tien REAL,
+                    loai_bao_gia TEXT DEFAULT 'Tiêu chuẩn'
+                )''')
+except:
+    pass # Bỏ qua nếu lỗi mạng
+
+# Lấy danh mục sản phẩm
+try:
+    df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly FROM public.dm_san_pham", conn)
 except:
     df_sp = pd.DataFrame(columns=['ma_sp', 'ten_sp', 'gia_dai_ly'])
 
 def format_vn(value):
-    try:
-        return "{:,.0f}".format(value).replace(",", ".")
-    except:
-        return str(value)
+    try: return "{:,.0f}".format(value).replace(",", ".")
+    except: return str(value)
 
 # ==========================================
-# 2. HÀM XUẤT PDF AN TOÀN (CHỐNG LỖI LOGO VÀ TYPEERROR)
+# 2. HÀM XUẤT PDF AN TOÀN
 # ==========================================
 def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, logo_path=LOGO_FILE, col_widths=None):
     pdf = FPDF()
     pdf.add_page()
     
-    # Kiểm tra Font
     has_font = os.path.exists(FONT_FILE)
     if has_font:
         pdf.add_font("Roboto", "", FONT_FILE, uni=True)
@@ -78,7 +78,6 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
     else:
         pdf.set_font("Helvetica", size=10)
 
-    # Xử lý Logo an toàn
     start_y = 12
     try:
         if os.path.exists(logo_path):
@@ -88,11 +87,9 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
             start_x = 15
             pdf.set_y(start_y)
     except:
-        # Nếu file logo lỗi định dạng, tự động bỏ qua để không sập app
         start_x = 15
         pdf.set_y(start_y)
     
-    # Thông tin công ty
     pdf.set_xy(start_x, start_y + 2)
     pdf.set_font("Roboto" if has_font else "Helvetica", size=10)
     pdf.multi_cell(0, 5, "775 Võ Hữu Lợi (KCN Lê Minh Xuân 3), Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM")
@@ -100,7 +97,6 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
     pdf.cell(0, 5, "Điện thoại: 0902580828 - 0937572577", ln=True)
     pdf.ln(12) 
 
-    # Tiêu đề phiếu
     pdf.set_font("Roboto" if has_font else "Helvetica", size=16)
     pdf.cell(0, 10, title, ln=True, align='C')
     if subtitle:
@@ -108,7 +104,6 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
         pdf.cell(0, 8, subtitle, ln=True, align='C')
     pdf.ln(5)
 
-    # Vẽ bảng dữ liệu
     if columns_to_print is None: columns_to_print = dataframe.columns.tolist()
     if col_widths is None: col_widths = [190 / len(columns_to_print)] * len(columns_to_print)
     
@@ -126,7 +121,6 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
             pdf.cell(col_widths[i], 9, display_val, border=1, align='C' if not isinstance(val, (int, float)) else 'R')
         pdf.ln()
 
-    # Chân trang
     pdf.ln(10)
     pdf.set_font("Roboto" if has_font else "Helvetica", size=10)
     pdf.cell(0, 6, "* Phiếu báo giá có giá trị trong 10 ngày. Giá chưa bao gồm phí vận chuyển.", ln=True)
@@ -134,7 +128,6 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
     pdf.cell(95, 6, "KHÁCH HÀNG KÝ TÊN", align='C')
     pdf.cell(95, 6, "NGƯỜI LẬP PHIẾU", align='C', ln=True)
 
-    # LỆNH XUẤT CHUẨN CLOUD: dest='S' xuất vào bộ nhớ ảo, .encode('latin-1') chuyển sang byte chuẩn
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
@@ -164,7 +157,6 @@ with tab1:
 
     if st.session_state.gio_bao_gia:
         df_curr = pd.DataFrame(st.session_state.gio_bao_gia)
-        st.dataframe(df_curr, use_container_width=True)
         
         # Tính toán chiết khấu
         tong_goc = (df_curr['Giá Gốc'] / 0.6 * df_curr['Số Lượng']).sum()
@@ -177,12 +169,34 @@ with tab1:
         df_curr['Thành Tiền'] = df_curr['Đơn Giá'] * df_curr['Số Lượng']
         tong_cuoi = df_curr['Thành Tiền'].sum()
         
-        st.write(f"### Tổng cộng: {format_vn(tong_cuoi)} VNĐ")
+        st.dataframe(df_curr[["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"]], use_container_width=True, hide_index=True)
+        st.write(f"### 💰 TỔNG CỘNG THANH TOÁN: {format_vn(tong_cuoi)} VNĐ")
         
-        if st.button("XUẤT BÁO GIÁ PDF", type="primary"):
-            pdf_out = generate_generic_pdf(df_curr, "BÁO GIÁ SẢN PHẨM", f"Khách hàng: {ten_kh}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35])
-            c.execute("INSERT INTO lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia) VALUES (%s, %s, %s, %s, 'Tiêu chuẩn')", (datetime.now().strftime("%d/%m/%Y %H:%M"), ten_kh, sdt_kh, tong_cuoi))
-            st.download_button("📥 Tải Báo Giá", pdf_out, f"BaoGia_{ten_kh}.pdf", mime="application/pdf")
+        # CÁCH XUẤT FILE MỚI: Tách biệt hoàn toàn File PDF và Database
+        col_btn1, col_btn2 = st.columns([2, 2])
+        with col_btn1:
+            if ten_kh.strip():
+                # Tạo sẵn PDF ở chế độ ngầm
+                pdf_out = generate_generic_pdf(df_curr, "BÁO GIÁ SẢN PHẨM", f"Khách hàng: {ten_kh} | SĐT: {sdt_kh}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35])
+                
+                # Nút tải xuống trực tiếp (Bấm là tải được ngay, không sợ sập)
+                if st.download_button("📥 CHỐT & TẢI FILE BÁO GIÁ (PDF)", data=pdf_out, file_name=f"BaoGia_{ten_kh}.pdf", mime="application/pdf", type="primary", use_container_width=True):
+                    # Sau khi khách nhấn tải, hệ thống mới lưu Database ngầm
+                    try:
+                        c.execute("INSERT INTO public.lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia) VALUES (%s, %s, %s, %s, %s)", 
+                                  (datetime.now().strftime("%d/%m/%Y %H:%M"), ten_kh, sdt_kh, tong_cuoi, 'Tiêu chuẩn'))
+                        st.session_state.gio_bao_gia = [] # Tự động dọn dẹp giỏ hàng
+                        st.rerun()
+                    except:
+                        # Dù database có lỗi cũng KHÔNG văng lỗi đỏ, file PDF vẫn tải về thành công!
+                        st.toast("Đã tải file PDF. Lịch sử tạm thời không lưu do lỗi đám mây.")
+            else:
+                st.error("⚠️ Vui lòng nhập Tên Khách Hàng để xuất file!")
+                
+        with col_btn2:
+            if st.button("🗑️ Làm mới danh sách", use_container_width=True):
+                st.session_state.gio_bao_gia = []
+                st.rerun()
 
 # --- TAB 2: BÁO GIÁ TÙY CHỈNH ---
 with tab2:
@@ -192,7 +206,8 @@ with tab2:
 with tab3:
     st.subheader("Lịch sử báo giá đã xuất")
     try:
-        df_his = pd.read_sql("SELECT * FROM lich_su_bao_gia ORDER BY id DESC", conn)
+        # Đã thêm tiền tố public.
+        df_his = pd.read_sql("SELECT * FROM public.lich_su_bao_gia ORDER BY id DESC", conn)
         st.dataframe(df_his, use_container_width=True, hide_index=True)
     except:
         st.info("Chưa có lịch sử.")
