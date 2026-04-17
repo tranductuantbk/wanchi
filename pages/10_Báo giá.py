@@ -64,7 +64,7 @@ def format_vn(value):
         return str(value)
 
 # ==========================================
-# 2. HÀM XUẤT PDF AN TOÀN (CHỐNG LỖI LOGO)
+# 2. HÀM XUẤT PDF AN TOÀN (CHỐNG LỖI LOGO VÀ TYPEERROR)
 # ==========================================
 def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, logo_path=LOGO_FILE, col_widths=None):
     pdf = FPDF()
@@ -134,7 +134,8 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
     pdf.cell(95, 6, "KHÁCH HÀNG KÝ TÊN", align='C')
     pdf.cell(95, 6, "NGƯỜI LẬP PHIẾU", align='C', ln=True)
 
-    return bytes(pdf.output())
+    # LỆNH XUẤT CHUẨN CLOUD: dest='S' xuất vào bộ nhớ ảo, .encode('latin-1') chuyển sang byte chuẩn
+    return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
 # 3. GIAO DIỆN CHÍNH
@@ -148,7 +149,7 @@ with tab1:
     ten_kh = c1.text_input("Tên khách hàng:", key="t1_kh")
     sdt_kh = c2.text_input("Số điện thoại:", key="t1_sdt")
 
-    with st.form("add_sp_t1"):
+    with st.form("add_sp_t1", clear_on_submit=True):
         col_s1, col_s2 = st.columns([3, 1])
         sp_list = df_sp['ten_sp'].tolist() if not df_sp.empty else []
         sp_chon = col_s1.selectbox("Chọn sản phẩm", ["-- Chọn --"] + sp_list)
@@ -181,10 +182,17 @@ with tab1:
         if st.button("XUẤT BÁO GIÁ PDF", type="primary"):
             pdf_out = generate_generic_pdf(df_curr, "BÁO GIÁ SẢN PHẨM", f"Khách hàng: {ten_kh}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35])
             c.execute("INSERT INTO lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia) VALUES (%s, %s, %s, %s, 'Tiêu chuẩn')", (datetime.now().strftime("%d/%m/%Y %H:%M"), ten_kh, sdt_kh, tong_cuoi))
-            st.download_button("📥 Tải Báo Giá", pdf_out, f"BaoGia_{ten_kh}.pdf")
+            st.download_button("📥 Tải Báo Giá", pdf_out, f"BaoGia_{ten_kh}.pdf", mime="application/pdf")
+
+# --- TAB 2: BÁO GIÁ TÙY CHỈNH ---
+with tab2:
+    st.info("Tính năng Báo giá tùy chỉnh đang bảo trì.")
 
 # --- TAB 3: XEM LỊCH SỬ ---
 with tab3:
     st.subheader("Lịch sử báo giá đã xuất")
-    df_his = pd.read_sql("SELECT * FROM lich_su_bao_gia ORDER BY id DESC", conn)
-    st.dataframe(df_his, use_container_width=True, hide_index=True)
+    try:
+        df_his = pd.read_sql("SELECT * FROM lich_su_bao_gia ORDER BY id DESC", conn)
+        st.dataframe(df_his, use_container_width=True, hide_index=True)
+    except:
+        st.info("Chưa có lịch sử.")
