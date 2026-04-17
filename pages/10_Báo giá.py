@@ -64,9 +64,9 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# 2. HÀM XUẤT PDF AN TOÀN (TỐI ƯU HIỂN THỊ LOGO JPG)
+# 2. HÀM XUẤT PDF AN TOÀN (CẬP NHẬT TỔNG TIỀN VÀ XUỐNG DÒNG)
 # ==========================================
-def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, col_widths=None):
+def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, col_widths=None, total_amount=None):
     pdf = FPDF()
     pdf.add_page()
     
@@ -80,22 +80,18 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
 
     # --- KHU VỰC XỬ LÝ LOGO ---
     start_y = 12
-    start_x = 65  # Mặc định lùi chữ vào để nhường chỗ cho logo bên trái
+    start_x = 65  
     
     try:
-        # Ưu tiên số 1: Đọc file JPG (Vì thư viện PDF rất thích đuôi JPG)
         if os.path.exists("logo.jpg"):
             pdf.image("logo.jpg", x=15, y=start_y, w=40)
-        # Ưu tiên 2: Đọc file PNG
         elif os.path.exists("logo.png"):
             pdf.image("logo.png", x=15, y=start_y, w=40)
-        # Nếu không có ảnh nào: In logo bằng chữ text bự
         else:
             pdf.set_font(font_name, 'B', 18)
             pdf.set_xy(15, start_y + 3)
             pdf.cell(40, 10, "WANCHI", align="C")
     except:
-        # Nếu đang đọc ảnh bị lỗi định dạng -> Tự động chuyển thành chữ
         pdf.set_font(font_name, 'B', 18)
         pdf.set_xy(15, start_y + 3)
         pdf.cell(40, 10, "WANCHI", align="C")
@@ -134,10 +130,22 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
             pdf.cell(col_widths[i], 9, display_val, border=1, align='C' if not isinstance(val, (int, float)) else 'R')
         pdf.ln()
 
+    # --- DÒNG TỔNG TIỀN (Thêm mới) ---
+    if total_amount is not None:
+        pdf.set_font(font_name, 'B' if has_font else '', 10)
+        # Gộp các cột đầu lại làm nhãn "TỔNG CỘNG"
+        w_label = sum(col_widths[:-1])
+        w_value = col_widths[-1]
+        pdf.cell(w_label, 10, "TỔNG CỘNG:", border=1, align='R')
+        pdf.cell(w_value, 10, format_vn(total_amount), border=1, align='R', ln=True)
+
     # --- CHÂN TRANG ---
-    pdf.ln(10)
+    pdf.ln(8)
     pdf.set_font(font_name, size=10)
-    pdf.cell(0, 6, "* Phiếu báo giá có giá trị trong 10 ngày. Giá chưa bao gồm phí vận chuyển.", ln=True)
+    # Tách thành 2 dòng riêng biệt
+    pdf.cell(0, 6, "* Phiếu báo giá có giá trị trong 10 ngày.", ln=True)
+    pdf.cell(0, 6, "* Giá chưa bao gồm phí vận chuyển.", ln=True)
+    
     pdf.ln(10)
     pdf.set_font(font_name, 'B' if has_font else '', 10)
     pdf.cell(95, 6, "KHÁCH HÀNG KÝ TÊN", align='C')
@@ -190,7 +198,16 @@ with tab1:
         col_btn1, col_btn2 = st.columns([2, 2])
         with col_btn1:
             if ten_kh.strip():
-                pdf_out = generate_generic_pdf(df_curr, "BÁO GIÁ SẢN PHẨM", f"Khách hàng: {ten_kh} | SĐT: {sdt_kh}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35])
+                # TRUYỀN THÊM THAM SỐ total_amount VÀO ĐÂY ĐỂ IN RA PDF
+                pdf_out = generate_generic_pdf(
+                    dataframe=df_curr, 
+                    title="BÁO GIÁ SẢN PHẨM", 
+                    subtitle=f"Khách hàng: {ten_kh} | SĐT: {sdt_kh}", 
+                    columns_to_print=["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], 
+                    col_widths=[30, 70, 20, 35, 35],
+                    total_amount=tong_cuoi
+                )
+                
                 if st.download_button("📥 CHỐT & TẢI FILE BÁO GIÁ (PDF)", data=pdf_out, file_name=f"BaoGia_{ten_kh}.pdf", mime="application/pdf", type="primary", use_container_width=True):
                     try:
                         c.execute("INSERT INTO public.lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia) VALUES (%s, %s, %s, %s, %s)", 
