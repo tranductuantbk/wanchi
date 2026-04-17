@@ -64,7 +64,7 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# 2. HÀM XUẤT PDF AN TOÀN (CẬP NHẬT TỔNG TIỀN VÀ XUỐNG DÒNG)
+# 2. HÀM XUẤT PDF AN TOÀN (ĐÃ XÓA PHẦN CHỮ KÝ)
 # ==========================================
 def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, col_widths=None, total_amount=None):
     pdf = FPDF()
@@ -130,7 +130,7 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
             pdf.cell(col_widths[i], 9, display_val, border=1, align='C' if not isinstance(val, (int, float)) else 'R')
         pdf.ln()
 
-    # --- DÒNG TỔNG TIỀN (Thêm mới) ---
+    # --- DÒNG TỔNG TIỀN ---
     if total_amount is not None:
         pdf.set_font(font_name, 'B' if has_font else '', 10)
         # Gộp các cột đầu lại làm nhãn "TỔNG CỘNG"
@@ -142,14 +142,10 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
     # --- CHÂN TRANG ---
     pdf.ln(8)
     pdf.set_font(font_name, size=10)
-    # Tách thành 2 dòng riêng biệt
     pdf.cell(0, 6, "* Phiếu báo giá có giá trị trong 10 ngày.", ln=True)
     pdf.cell(0, 6, "* Giá chưa bao gồm phí vận chuyển.", ln=True)
     
-    pdf.ln(10)
-    pdf.set_font(font_name, 'B' if has_font else '', 10)
-    pdf.cell(95, 6, "KHÁCH HÀNG KÝ TÊN", align='C')
-    pdf.cell(95, 6, "NGƯỜI LẬP PHIẾU", align='C', ln=True)
+    # ĐÃ XÓA PHẦN CHỮ KÝ Ở ĐÂY
 
     return pdf.output(dest='S').encode('latin-1')
 
@@ -198,7 +194,6 @@ with tab1:
         col_btn1, col_btn2 = st.columns([2, 2])
         with col_btn1:
             if ten_kh.strip():
-                # TRUYỀN THÊM THAM SỐ total_amount VÀO ĐÂY ĐỂ IN RA PDF
                 pdf_out = generate_generic_pdf(
                     dataframe=df_curr, 
                     title="BÁO GIÁ SẢN PHẨM", 
