@@ -33,7 +33,7 @@ st.title("🏭 Hệ Thống Báo Giá Khách Hàng WANCHI")
 conn = get_connection()
 c = conn.cursor()
 
-# Khởi tạo giỏ hàng trong session_state để không bị mất dữ liệu khi load lại trang
+# Khởi tạo giỏ hàng tạm thời
 if 'gio_bao_gia' not in st.session_state:
     st.session_state.gio_bao_gia = []
 if 'gio_bao_gia_custom' not in st.session_state:
@@ -51,7 +51,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS lich_su_bao_gia (
                 loai_bao_gia TEXT DEFAULT 'Tiêu chuẩn'
             )''')
 
-# Lấy danh mục sản phẩm từ database
+# Lấy danh mục sản phẩm để chọn
 try:
     df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly FROM dm_san_pham", conn)
 except:
@@ -64,13 +64,13 @@ def format_vn(value):
         return str(value)
 
 # ==========================================
-# 2. HÀM XUẤT PDF AN TOÀN (SỬA LỖI TYPEERROR)
+# 2. HÀM XUẤT PDF AN TOÀN (CHỐNG LỖI LOGO)
 # ==========================================
 def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, logo_path=LOGO_FILE, col_widths=None):
     pdf = FPDF()
     pdf.add_page()
     
-    # Kiểm tra Font để tránh lỗi Unicode tiếng Việt
+    # Kiểm tra Font
     has_font = os.path.exists(FONT_FILE)
     if has_font:
         pdf.add_font("Roboto", "", FONT_FILE, uni=True)
@@ -78,7 +78,7 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
     else:
         pdf.set_font("Helvetica", size=10)
 
-    # Xử lý Logo an toàn (Chống sập nếu file ảnh lỗi)
+    # Xử lý Logo an toàn
     start_y = 12
     try:
         if os.path.exists(logo_path):
@@ -88,6 +88,7 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
             start_x = 15
             pdf.set_y(start_y)
     except:
+        # Nếu file logo lỗi định dạng, tự động bỏ qua để không sập app
         start_x = 15
         pdf.set_y(start_y)
     
@@ -99,7 +100,7 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
     pdf.cell(0, 5, "Điện thoại: 0902580828 - 0937572577", ln=True)
     pdf.ln(12) 
 
-    # Tiêu đề báo giá
+    # Tiêu đề phiếu
     pdf.set_font("Roboto" if has_font else "Helvetica", size=16)
     pdf.cell(0, 10, title, ln=True, align='C')
     if subtitle:
@@ -122,12 +123,10 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
         for i, col in enumerate(columns_to_print):
             val = row[col]
             display_val = format_vn(val) if isinstance(val, (int, float)) else str(val)
-            # Căn lề: Số thì bên phải (R), Chữ thì bên trái (L)
-            align_val = 'R' if isinstance(val, (int, float)) else 'L'
-            pdf.cell(col_widths[i], 9, display_val, border=1, align=align_val)
+            pdf.cell(col_widths[i], 9, display_val, border=1, align='C' if not isinstance(val, (int, float)) else 'R')
         pdf.ln()
 
-    # Chân trang (Ghi chú & Chữ ký)
+    # Chân trang
     pdf.ln(10)
     pdf.set_font("Roboto" if has_font else "Helvetica", size=10)
     pdf.cell(0, 6, "* Phiếu báo giá có giá trị trong 10 ngày. Giá chưa bao gồm phí vận chuyển.", ln=True)
@@ -135,11 +134,10 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, l
     pdf.cell(95, 6, "KHÁCH HÀNG KÝ TÊN", align='C')
     pdf.cell(95, 6, "NGƯỜI LẬP PHIẾU", align='C', ln=True)
 
-    # ĐÃ SỬA: Cách xuất dữ liệu chuẩn để tránh lỗi TypeError trên Cloud
-    return pdf.output(dest='S').encode('latin-1')
+    return bytes(pdf.output())
 
 # ==========================================
-# 3. GIAO DIỆN CHÍNH (3 TAB)
+# 3. GIAO DIỆN CHÍNH
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["🤝 Báo Giá Chuẩn", "🛠️ Báo Giá Tùy Chỉnh", "📂 Lịch Sử"])
 
@@ -150,7 +148,7 @@ with tab1:
     ten_kh = c1.text_input("Tên khách hàng:", key="t1_kh")
     sdt_kh = c2.text_input("Số điện thoại:", key="t1_sdt")
 
-    with st.form("add_sp_t1", clear_on_submit=True):
+    with st.form("add_sp_t1"):
         col_s1, col_s2 = st.columns([3, 1])
         sp_list = df_sp['ten_sp'].tolist() if not df_sp.empty else []
         sp_chon = col_s1.selectbox("Chọn sản phẩm", ["-- Chọn --"] + sp_list)
@@ -159,17 +157,15 @@ with tab1:
             if sp_chon != "-- Chọn --":
                 info = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
                 st.session_state.gio_bao_gia.append({
-                    "Mã SP": info['ma_sp'], 
-                    "Tên SP": sp_chon, 
-                    "Số Lượng": sl_chon, 
-                    "Giá Gốc": info['gia_dai_ly']
+                    "Mã SP": info['ma_sp'], "Tên SP": sp_chon, "Số Lượng": sl_chon, "Giá Gốc": info['gia_dai_ly']
                 })
                 st.rerun()
 
     if st.session_state.gio_bao_gia:
         df_curr = pd.DataFrame(st.session_state.gio_bao_gia)
+        st.dataframe(df_curr, use_container_width=True)
         
-        # Logic tính chiết khấu tự động
+        # Tính toán chiết khấu
         tong_goc = (df_curr['Giá Gốc'] / 0.6 * df_curr['Số Lượng']).sum()
         if tong_goc < 3000000: ck = 1.0
         elif tong_goc < 6000000: ck = 0.95
@@ -180,39 +176,15 @@ with tab1:
         df_curr['Thành Tiền'] = df_curr['Đơn Giá'] * df_curr['Số Lượng']
         tong_cuoi = df_curr['Thành Tiền'].sum()
         
-        st.dataframe(df_curr[["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"]], use_container_width=True, hide_index=True)
-        st.write(f"### 💰 TỔNG CỘNG THANH TOÁN: {format_vn(tong_cuoi)} VNĐ")
+        st.write(f"### Tổng cộng: {format_vn(tong_cuoi)} VNĐ")
         
-        col_btn1, col_btn2 = st.columns([2, 2])
-        with col_btn1:
-            if st.button("💾 CHỐT & XUẤT BÁO GIÁ PDF", type="primary", use_container_width=True):
-                if not ten_kh.strip():
-                    st.error("⚠️ Vui lòng nhập tên khách hàng trước khi xuất file!")
-                else:
-                    try:
-                        pdf_out = generate_generic_pdf(df_curr, "BÁO GIÁ SẢN PHẨM", f"Khách hàng: {ten_kh} | SĐT: {sdt_kh}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35])
-                        c.execute("INSERT INTO lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia) VALUES (%s, %s, %s, %s, 'Tiêu chuẩn')", (datetime.now().strftime("%d/%m/%Y %H:%M"), ten_kh, sdt_kh, tong_cuoi))
-                        st.download_button("📥 TẢI FILE BÁO GIÁ", pdf_out, f"BaoGia_{ten_kh}.pdf", "application/pdf", use_container_width=True)
-                    except Exception as e:
-                        st.error(f"Lỗi hệ thống khi tạo PDF: {e}")
-        with col_btn2:
-            if st.button("🗑️ Làm mới danh sách", use_container_width=True):
-                st.session_state.gio_bao_gia = []
-                st.rerun()
-
-# --- TAB 2: BÁO GIÁ TÙY CHỈNH ---
-with tab2:
-    st.info("Tính năng đang được tối ưu hóa cho đơn hàng riêng lẻ.")
+        if st.button("XUẤT BÁO GIÁ PDF", type="primary"):
+            pdf_out = generate_generic_pdf(df_curr, "BÁO GIÁ SẢN PHẨM", f"Khách hàng: {ten_kh}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35])
+            c.execute("INSERT INTO lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia) VALUES (%s, %s, %s, %s, 'Tiêu chuẩn')", (datetime.now().strftime("%d/%m/%Y %H:%M"), ten_kh, sdt_kh, tong_cuoi))
+            st.download_button("📥 Tải Báo Giá", pdf_out, f"BaoGia_{ten_kh}.pdf")
 
 # --- TAB 3: XEM LỊCH SỬ ---
 with tab3:
     st.subheader("Lịch sử báo giá đã xuất")
-    try:
-        df_his = pd.read_sql("SELECT ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia FROM lich_su_bao_gia ORDER BY id DESC", conn)
-        if not df_his.empty:
-            df_his.columns = ["Ngày tạo", "Khách hàng", "Số ĐT", "Tổng tiền", "Loại đơn"]
-            st.dataframe(df_his.style.format({"Tổng tiền": "{:,.0f}"}), use_container_width=True, hide_index=True)
-        else:
-            st.info("Chưa có lịch sử báo giá nào.")
-    except Exception as e:
-        st.info("Bắt đầu tạo báo giá để lưu lịch sử.")
+    df_his = pd.read_sql("SELECT * FROM lich_su_bao_gia ORDER BY id DESC", conn)
+    st.dataframe(df_his, use_container_width=True, hide_index=True)
