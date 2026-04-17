@@ -37,7 +37,6 @@ if 'gio_bao_gia_custom' not in st.session_state:
 # ==========================================
 # KHỞI TẠO BẢNG DATABASE CHO CLOUD (POSTGRESQL)
 # ==========================================
-# ĐÃ SỬA: AUTOINCREMENT thành SERIAL
 c.execute('''CREATE TABLE IF NOT EXISTS lich_su_bao_gia (
                 id SERIAL PRIMARY KEY,
                 ngay_tao TEXT,
@@ -60,14 +59,13 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# 2. HÀM XUẤT PDF (ĐÃ TINH CHỈNH ĐỘ RỘNG CỘT & CHỮ KÝ)
+# 2. HÀM XUẤT PDF
 # ==========================================
 def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, logo_path=LOGO_FILE, col_widths=None):
     pdf = FPDF()
     pdf.add_page()
     has_font = os.path.exists(FONT_FILE)
     if has_font:
-        # Bổ sung uni=True để tránh lỗi Unicode trên Cloud
         pdf.add_font("Roboto", "", FONT_FILE, uni=True)
         pdf.set_font("Roboto", size=10)
     else: pdf.set_font("Helvetica", size=10)
@@ -199,7 +197,6 @@ with tab1:
                         col_widths=[30, 75, 25, 30, 30] 
                     )
                     try:
-                        # ĐÃ ĐỔI 5 DẤU ? THÀNH %s
                         c.execute("INSERT INTO lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia) VALUES (%s, %s, %s, %s, %s)", (datetime.now().strftime("%Y-%m-%d %H:%M"), ten_kh_chot, sdt_chot, tong_cuoi, 'Tiêu chuẩn'))
                         st.session_state.gio_bao_gia = [] 
                         st.success("✅ Đã tạo Báo giá và lưu vào hệ thống!")
@@ -289,8 +286,52 @@ with tab2:
                     )
                     
                     try:
-                        # ĐÃ ĐỔI 5 DẤU ? THÀNH %s
                         c.execute("INSERT INTO lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia) VALUES (%s, %s, %s, %s, %s)", (datetime.now().strftime("%Y-%m-%d %H:%M"), ten_kh_custom, sdt_custom, tong_tien_custom, 'Đơn tùy chỉnh'))
                         st.session_state.gio_bao_gia_custom = [] 
                         st.success("✅ Đã tạo Báo giá Tùy chỉnh và lưu vào hệ thống!")
-                        st.download_button("📥 TẢI FILE BÁO GIÁ (PDF)", pdf_bytes_c, f"Bao
+                        st.download_button("📥 TẢI FILE BÁO GIÁ (PDF)", pdf_bytes_c, f"BaoGia_DonHang_{ten_kh_custom}.pdf", "application/pdf")
+                    except Exception as e: st.error(f"Lỗi: {e}")
+
+        with col_pdf_c2:
+            if st.button("🗑️ Làm mới lại toàn bộ", use_container_width=True, key="btn_del2"):
+                st.session_state.gio_bao_gia_custom = []
+                st.rerun()
+
+# --- TAB 3: TRÍCH XUẤT & XÓA LỊCH SỬ BÁO GIÁ ---
+with tab3:
+    st.subheader("🔍 Trích Xuất & Xóa Lịch Sử Báo Giá")
+    col_tim1, col_tim2 = st.columns(2)
+    with col_tim1: tim_ten = st.text_input("Nhập Tên khách hàng để tìm:")
+    with col_tim2: tim_sdt = st.text_input("Nhập Số điện thoại để tìm:")
+        
+    try:
+        query = "SELECT id, ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia FROM lich_su_bao_gia WHERE 1=1"
+        params = []
+        if tim_ten:
+            query += " AND ten_kh LIKE %s"
+            params.append(f"%{tim_ten}%")
+        if tim_sdt:
+            query += " AND so_dien_thoai LIKE %s"
+            params.append(f"%{tim_sdt}%")
+        query += " ORDER BY id DESC"
+        
+        df_ls = pd.read_sql(query, conn, params=params)
+        
+        if not df_ls.empty:
+            df_ls.insert(0, "Xóa", False)
+            edited_ls = st.data_editor(df_ls, key="bang_lich_su_bao_gia", column_config={"Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False), "id": None, "ngay_tao": st.column_config.TextColumn("Ngày Tạo", disabled=True), "ten_kh": st.column_config.TextColumn("Khách Hàng", disabled=True), "so_dien_thoai": st.column_config.TextColumn("Số Điện Thoại", disabled=True), "tong_tien": st.column_config.NumberColumn("Tổng Báo Giá", format="%d", disabled=True), "loai_bao_gia": st.column_config.TextColumn("Loại Báo Giá", disabled=True)}, use_container_width=True, hide_index=True)
+            
+            if st.button("🚨 Xóa Báo Giá Đã Chọn", type="primary"):
+                try:
+                    so_luong_xoa = 0
+                    for index, row in edited_ls.iterrows():
+                        if row['Xóa'] == True:
+                            c.execute("DELETE FROM lich_su_bao_gia WHERE id=%s", (int(row['id']),))
+                            so_luong_xoa += 1
+                    if so_luong_xoa > 0:
+                        st.success(f"✅ Đã xóa {so_luong_xoa} báo giá!")
+                        time.sleep(1.5)
+                        st.rerun()
+                except Exception as e: st.error(f"Lỗi: {e}")
+        else: st.info("Không tìm thấy dữ liệu.")
+    except Exception as e: st.info("Chưa có lịch sử.")
