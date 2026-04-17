@@ -1,22 +1,24 @@
 import psycopg2
 import streamlit as st
 
-# Câu thần chú giúp lưu trữ kết nối, tăng tốc độ App và chống quá tải máy chủ
+# Hàm tạo kết nối cốt lõi (Lưu vào bộ nhớ đệm)
 @st.cache_resource
+def init_connection():
+    DATABASE_URL = st.secrets["DATABASE_URL"]
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True 
+    return conn
+
+# Hàm thông minh: Kiểm tra tình trạng sống/chết của kết nối
 def get_connection():
-    """
-    Hàm kết nối đến cơ sở dữ liệu PostgreSQL trên Neon.tech.
-    Sử dụng st.secrets để bảo mật mật khẩu khi đưa lên Cloud.
-    """
     try:
-        # Lấy chìa khóa từ hệ thống bảo mật của Streamlit
-        DATABASE_URL = st.secrets["DATABASE_URL"]
+        conn = init_connection()
         
-        conn = psycopg2.connect(DATABASE_URL)
-        
-        # PostgreSQL cần bật chế độ tự động lưu (autocommit)
-        # để các lệnh CREATE TABLE hoặc INSERT chạy mượt mà
-        conn.autocommit = True 
+        # Kiểm tra: Nếu máy chủ Neon đã ngủ đông làm đứt kết nối (closed != 0)
+        if conn.closed != 0:
+            st.cache_resource.clear()  # Xóa bộ nhớ đệm chứa kết nối chết
+            conn = init_connection()   # Đánh thức Neon và tạo kết nối mới
+            
         return conn
     except Exception as e:
         st.error(f"Lỗi kết nối Cơ sở dữ liệu: {e}")
