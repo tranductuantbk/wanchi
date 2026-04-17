@@ -9,13 +9,42 @@ from db_utils import get_connection
 st.set_page_config(page_title="Quản Lý Đơn Hàng", page_icon="📝", layout="wide")
 st.header("📝 Lên Đơn Hàng Đa Sản Phẩm")
 conn = get_connection()
+c = conn.cursor()
+
+# ==========================================
+# KHỞI TẠO BẢNG DON_HANG (SỬA LỖI UNDEFINED TABLE)
+# ==========================================
+c.execute('''CREATE TABLE IF NOT EXISTS don_hang (
+                id SERIAL PRIMARY KEY,
+                ngay TEXT,
+                so_phieu TEXT,
+                ten_kh TEXT,
+                ten_sp TEXT,
+                so_luong REAL,
+                don_gia REAL,
+                doanh_thu REAL,
+                tong_nvl REAL,
+                tong_cong_ep REAL,
+                loi_nhuan REAL
+            )''')
+# ==========================================
 
 # Khởi tạo "Giỏ hàng tạm" trong bộ nhớ của Streamlit
 if 'gio_hang' not in st.session_state:
     st.session_state.gio_hang = []
 
-df_sp = pd.read_sql("SELECT * FROM dm_san_pham", conn)
-df_kh = pd.read_sql("SELECT * FROM dm_khach_hang", conn)
+# Đọc dữ liệu an toàn (Chống lỗi nếu chưa tạo danh mục)
+try: 
+    df_sp = pd.read_sql("SELECT * FROM dm_san_pham", conn)
+except: 
+    df_sp = pd.DataFrame()
+
+try: 
+    df_kh = pd.read_sql("SELECT * FROM dm_khach_hang", conn)
+except: 
+    df_kh = pd.DataFrame()
+
+# Bây giờ bảng don_hang chắc chắn đã được tạo nên đọc thoải mái
 df_dh = pd.read_sql("SELECT * FROM don_hang ORDER BY id DESC", conn)
 
 # ==========================================
@@ -138,13 +167,11 @@ else:
                                          (ngay, so_phieu, ten_kh, ten_sp, so_luong, don_gia, doanh_thu, tong_nvl, tong_cong_ep, loi_nhuan)
                                          VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                                       (ngay_tao.strftime("%Y-%m-%d"), so_phieu, khach_hang, item["Sản Phẩm"], item["Số Lượng"], item["Đơn Giá"], item["Thành Tiền"], item["tong_nvl"], item["tong_cong_ep"], item["Lợi Nhuận"]))
-                        conn.commit()
                         st.session_state.gio_hang = [] 
                         st.success(f"🎉 Đã lưu thành công {len(df_gio)} sản phẩm vào Phiếu {so_phieu}!")
                         time.sleep(1.5)
                         st.rerun() # Refresh trang để nó tự động nhảy lên số phiếu tiếp theo
                     except Exception as e:
-                        conn.rollback()
                         st.error(f"⚠️ Có lỗi xảy ra: {e}")
         else:
             st.info("Danh sách đang trống. Hãy chọn sản phẩm ở trên và bấm 'Thêm Vào Danh Sách Kiểm Tra'.")
@@ -186,12 +213,10 @@ else:
                                      SET ten_sp=%s, so_luong=%s, don_gia=%s, doanh_thu=%s, tong_nvl=%s, tong_cong_ep=%s, loi_nhuan=%s 
                                      WHERE id=%s""",
                                   (row['ten_sp'], row['so_luong'], row['don_gia'], new_doanh, new_nvl, new_cong, new_loi, int(row['id'])))
-                    conn.commit()
                     st.success("✅ Cập nhật dữ liệu phiếu thành công!")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e:
-                    conn.rollback()
                     st.error(f"Lỗi: {e}")
         else:
             st.info("Chưa có đơn hàng nào.")
