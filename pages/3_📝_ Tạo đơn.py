@@ -3,6 +3,9 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import time
 import json
+import os
+import urllib.request
+from fpdf import FPDF
 from db_utils import get_connection, check_password
 
 # ==========================================
@@ -18,126 +21,228 @@ st.set_page_config(page_title="Tạo Đơn Hàng", page_icon="📝", layout="wid
 # Ổ KHÓA BẢO VỆ 2 LỚP
 # ==========================================
 role = check_password()
-if not role:
-    st.stop() # Lớp 1: Bắt buộc nhập mật khẩu
-
+if not role: st.stop()
 if role == "employee":
     st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: Trang Tạo Đơn chỉ dành cho Quản lý / Kế toán WANCHI.")
-    st.stop() # Lớp 2: Đuổi nhân viên ra ngoài
+    st.stop()
+
 # ==========================================
+# CẤU HÌNH FONT & DATABASE
+# ==========================================
+FONT_FILE = "Roboto-Regular.ttf"
+FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf"
+
+@st.cache_resource
+def download_font():
+    if not os.path.exists(FONT_FILE):
+        try: urllib.request.urlretrieve(FONT_URL, FONT_FILE)
+        except: return False
+    return True
+download_font()
 
 st.header("📝 Hệ Thống Lên Đơn Hàng WANCHI")
 
 conn = get_connection()
 c = conn.cursor()
 
-# ==========================================
-# KHỞI TẠO BẢNG LƯU ĐƠN HÀNG
-# ==========================================
-c.execute('''CREATE TABLE IF NOT EXISTS don_hang (
-                id SERIAL PRIMARY KEY,
-                ngay_tao TEXT,
-                ten_kh TEXT,
-                loai_don TEXT,
-                tong_tien REAL,
-                chi_tiet TEXT,
-                trang_thai TEXT DEFAULT 'Mới tạo'
-            )''')
+# BẢNG ĐƠN HÀNG (Thêm cột ma_don)
+try:
+    c.execute("CREATE SCHEMA IF NOT EXISTS public;")
+    c.execute('''CREATE TABLE IF NOT EXISTS public.don_hang (
+                    id SERIAL PRIMARY KEY,
+                    ma_don TEXT,
+                    ngay_tao TEXT,
+                    ten_kh TEXT,
+                    loai_don TEXT,
+                    tong_tien REAL,
+                    chi_tiet TEXT,
+                    trang_thai TEXT DEFAULT 'Mới tạo'
+                )''')
+    c.execute("ALTER TABLE public.don_hang ADD COLUMN ma_don TEXT")
+except: pass 
 conn.commit()
 
-# Lấy danh sách Khách Hàng, SP Chuẩn, SP OME từ Database
-try: df_kh = pd.read_sql("SELECT ten_kh FROM dm_khach_hang", conn)
-except: df_kh = pd.DataFrame(columns=['ten_kh'])
+# LẤY DỮ LIỆU TỪ CÁC KHO
+try: df_kh = pd.read_sql("SELECT ten_kh, nhom_kh, so_dien_thoai FROM public.dm_khach_hang", conn)
+except: df_kh = pd.DataFrame(columns=['ten_kh', 'nhom_kh', 'so_dien_thoai'])
 
-try: df_sp_chuan = pd.read_sql("SELECT ten_sp, gia_dai_ly, gia_khach_le FROM dm_san_pham", conn)
+try: df_kh_ome = pd.read_sql("SELECT ten_kh, so_dien_thoai FROM public.dm_khach_hang_ome", conn)
+except: df_kh_ome = pd.DataFrame(columns=['ten_kh', 'so_dien_thoai'])
+
+try: df_sp_chuan = pd.read_sql("SELECT ten_sp, gia_dai_ly, gia_khach_le FROM public.dm_san_pham", conn)
 except: df_sp_chuan = pd.DataFrame(columns=['ten_sp', 'gia_dai_ly', 'gia_khach_le'])
 
-try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome FROM dm_san_pham_ome", conn)
+try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome FROM public.dm_san_pham_ome", conn)
 except: df_sp_ome = pd.DataFrame(columns=['ten_sp', 'gia_ome'])
 
-# Khởi tạo 2 Giỏ hàng riêng biệt
+# Lấy Mã Đơn Tiếp Theo
+def lay_ma_don_moi():
+    try:
+        c.execute("SELECT ma_don FROM public.don_hang ORDER BY id DESC LIMIT 1")
+        last_ma = c.fetchone()
+        if last_ma and last_ma[0] and last_ma[0].startswith("DH-"):
+            num = int(last_ma[0].split("-")[1])
+            return f"DH-{num + 1:04d}"
+    except: pass
+    return "DH-0001"
+
 if 'gio_chuan' not in st.session_state: st.session_state.gio_chuan = []
 if 'gio_ome' not in st.session_state: st.session_state.gio_ome = []
+ma_don_hien_tai = lay_ma_don_moi()
 
 def format_vn(value):
     try: return "{:,.0f}".format(value).replace(",", ".")
     except: return str(value)
 
 # ==========================================
-# GIAO DIỆN 2 TAB TẠO ĐƠN
+# HÀM XUẤT PDF ĐƠN HÀNG
 # ==========================================
-tab1, tab2 = st.tabs(["🛒 Lên Đơn Hàng Chuẩn", "🛠️ Lên Đơn Hàng OME"])
+def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
+    pdf = FPDF()
+    pdf.add_page()
+    has_font = os.path.exists(FONT_FILE)
+    if has_font:
+        pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+        pdf.add_font("Roboto", "B", FONT_FILE, uni=True) 
+        font_name = "Roboto"
+    else: font_name = "Helvetica"
+
+    pdf.set_font(font_name, 'B', 18)
+    pdf.cell(0, 10, "WANCHI PLASTIC", ln=True, align="C")
+    pdf.set_font(font_name, size=10)
+    pdf.cell(0, 5, "775 Võ Hữu Lợi, Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM", ln=True, align="C")
+    pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True, align="C")
+    pdf.ln(8)
+
+    pdf.set_font(font_name, 'B' if has_font else '', 16)
+    pdf.cell(0, 10, "HÓA ĐƠN BÁN HÀNG" if loai_don == "Hàng Chuẩn" else "HÓA ĐƠN GIA CÔNG (OME)", ln=True, align='C')
+    
+    pdf.set_font(font_name, size=11)
+    pdf.cell(0, 8, f"Mã Đơn: {ma_dh}   |   Ngày: {lay_gio_vn().strftime('%d/%m/%Y')}", ln=True, align='C')
+    pdf.ln(5)
+    
+    pdf.set_font(font_name, size=11)
+    pdf.cell(0, 6, f"Khách hàng: {kh_name}", ln=True)
+    pdf.cell(0, 6, f"Điện thoại: {kh_phone}", ln=True)
+    pdf.ln(5)
+
+    col_widths = [15, 80, 20, 35, 40]
+    headers = ["STT", "Tên Sản Phẩm", "SL", "Đơn Giá", "Thành Tiền"]
+    
+    pdf.set_font(font_name, 'B' if has_font else '', 10)
+    pdf.set_fill_color(230, 230, 230)
+    for i, col in enumerate(headers):
+        pdf.cell(col_widths[i], 10, col, border=1, align='C', fill=True)
+    pdf.ln()
+
+    pdf.set_font(font_name, size=10)
+    stt = 1
+    for _, row in df_items.iterrows():
+        pdf.cell(col_widths[0], 8, str(stt), border=1, align='C')
+        pdf.cell(col_widths[1], 8, str(row.iloc[0]), border=1) # Tên SP (Cột 0)
+        pdf.cell(col_widths[2], 8, str(row.iloc[2]), border=1, align='C') # SL (Cột 2)
+        pdf.cell(col_widths[3], 8, format_vn(row.iloc[3]), border=1, align='R') # Đơn giá
+        pdf.cell(col_widths[4], 8, format_vn(row.iloc[4]), border=1, align='R') # Thành tiền
+        pdf.ln()
+        stt += 1
+
+    pdf.set_font(font_name, 'B' if has_font else '', 11)
+    pdf.cell(sum(col_widths[:-1]), 10, "TỔNG CỘNG:", border=1, align='R')
+    pdf.cell(col_widths[-1], 10, format_vn(total), border=1, align='R', ln=True)
+
+    pdf.ln(15)
+    pdf.cell(95, 6, "Người Lập Phiếu", align='C')
+    pdf.cell(95, 6, "Khách Hàng", align='C')
+    
+    return pdf.output(dest='S').encode('latin-1')
+
+# ==========================================
+# GIAO DIỆN TẠO ĐƠN
+# ==========================================
+tab1, tab2, tab3 = st.tabs(["🛒 Lên Đơn Hàng Chuẩn", "🛠️ Lên Đơn Hàng OME", "📂 Lịch Sử Đơn Hàng"])
 
 # ------------------------------------------
 # TAB 1: ĐƠN HÀNG CHUẨN
 # ------------------------------------------
 with tab1:
-    st.subheader("1. Chọn Khách Hàng & Thêm Sản Phẩm Chuẩn")
+    st.subheader(f"Mã Đơn Tiếp Theo: {ma_don_hien_tai}")
     
-    khach_hang_chuan = st.selectbox("🙋‍♂️ Chọn Khách Hàng:", ["-- Chọn Khách Hàng --"] + df_kh['ten_kh'].tolist(), key="kh_chuan")
+    kh_chuan = st.selectbox("🙋‍♂️ Chọn Khách Hàng:", ["-- Chọn Khách Hàng --"] + df_kh['ten_kh'].tolist(), key="kh_chuan")
+    loai_gia_chot = "Chưa xác định"
+    sdt_kh_chot = ""
+    
+    if kh_chuan != "-- Chọn Khách Hàng --":
+        thong_tin_kh = df_kh[df_kh['ten_kh'] == kh_chuan].iloc[0]
+        sdt_kh_chot = thong_tin_kh.get('so_dien_thoai', '')
+        nhom_kh = thong_tin_kh.get('nhom_kh', 'Khách lẻ')
+        loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Khách Lẻ"
+        st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
     
     with st.form("form_chuan", clear_on_submit=True):
-        col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
+        col_c1, col_c2 = st.columns([3, 1])
         sp_chon = col_c1.selectbox("📦 Chọn Sản Phẩm:", ["-- Chọn Sản Phẩm --"] + df_sp_chuan['ten_sp'].tolist())
-        loai_gia = col_c2.selectbox("🏷️ Loại giá:", ["Giá Đại Lý", "Giá Khách Lẻ"])
-        sl_chon = col_c3.number_input("🔢 Số lượng:", min_value=1, step=1)
+        sl_chon = col_c2.number_input("🔢 Số lượng:", min_value=1, step=1)
         
         if st.form_submit_button("➕ Thêm vào đơn"):
-            if sp_chon != "-- Chọn Sản Phẩm --":
+            if kh_chuan == "-- Chọn Khách Hàng --":
+                st.error("⚠️ Vui lòng chọn Khách hàng ở trên để hệ thống biết áp dụng loại giá nào!")
+            elif sp_chon != "-- Chọn Sản Phẩm --":
                 info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
-                don_gia = info['gia_dai_ly'] if loai_gia == "Giá Đại Lý" else info['gia_khach_le']
+                don_gia = info['gia_dai_ly'] if loai_gia_chot == "Giá Đại Lý" else info['gia_khach_le']
                 
                 st.session_state.gio_chuan.append({
                     "Tên Sản Phẩm": sp_chon,
-                    "Loại Giá": loai_gia,
+                    "Loại Giá": loai_gia_chot,
                     "Số Lượng": sl_chon,
                     "Đơn Giá": don_gia,
                     "Thành Tiền": sl_chon * don_gia
                 })
                 st.rerun()
-            else:
-                st.warning("Vui lòng chọn sản phẩm!")
 
-    # Hiển thị giỏ hàng chuẩn
     if st.session_state.gio_chuan:
         st.markdown("---")
-        st.subheader("📋 Chi Tiết Đơn Hàng Chuẩn")
         df_gio_chuan = pd.DataFrame(st.session_state.gio_chuan)
         st.dataframe(df_gio_chuan, use_container_width=True, hide_index=True)
-        
         tong_tien_chuan = df_gio_chuan['Thành Tiền'].sum()
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien_chuan)} VNĐ")
         
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
-            if st.button("💾 CHỐT ĐƠN HÀNG CHUẨN", type="primary", use_container_width=True):
-                if khach_hang_chuan == "-- Chọn Khách Hàng --":
-                    st.error("⚠️ Vui lòng chọn Khách Hàng trước khi chốt đơn!")
-                else:
-                    try:
-                        chi_tiet_json = df_gio_chuan.to_json(orient='records')
-                        ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
-                        c.execute("INSERT INTO don_hang (ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s)", 
-                                  (ngay_gio, khach_hang_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
-                        st.success(f"✅ Đã tạo thành công Đơn Hàng Chuẩn cho {khach_hang_chuan}!")
-                        st.session_state.gio_chuan = []
-                        time.sleep(1.5)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Lỗi: {e}")
+            if st.button("💾 CHỐT ĐƠN & TẠO PDF (HÀNG CHUẨN)", type="primary", use_container_width=True):
+                # 1. Tạo file PDF lưu vào cache
+                st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_gio_chuan, tong_tien_chuan, "Hàng Chuẩn")
+                st.session_state['pdf_ten_chuan'] = f"{ma_don_hien_tai}_{kh_chuan}.pdf"
+                
+                # 2. Lưu Database
+                try:
+                    chi_tiet_json = df_gio_chuan.to_json(orient='records')
+                    ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                    c.execute("INSERT INTO public.don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
+                              (ma_don_hien_tai, ngay_gio, kh_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
+                    st.success("✅ Chốt đơn thành công! Tải file in bên dưới.")
+                except Exception as e:
+                    st.warning("⚠️ Lỗi lưu mây, nhưng PDF đã sẵn sàng tải.")
+        
+        if 'pdf_don_chuan' in st.session_state:
+            st.download_button("🖨️ TẢI HÓA ĐƠN PDF", data=st.session_state['pdf_don_chuan'], file_name=st.session_state['pdf_ten_chuan'], mime="application/pdf", type="primary", use_container_width=True)
+
         with col_btn_c2:
-            if st.button("🗑️ Xóa sạch đơn này", use_container_width=True, key="xoa_gio_chuan"):
+            if st.button("🗑️ Xóa sạch đơn này", use_container_width=True):
                 st.session_state.gio_chuan = []
+                if 'pdf_don_chuan' in st.session_state: del st.session_state['pdf_don_chuan']
                 st.rerun()
 
 # ------------------------------------------
 # TAB 2: ĐƠN HÀNG OME
 # ------------------------------------------
 with tab2:
-    st.subheader("1. Chọn Khách Hàng & Thêm Sản Phẩm OME")
+    st.subheader(f"Mã Đơn Tiếp Theo: {ma_don_hien_tai}")
     
-    khach_hang_ome = st.selectbox("🙋‍♂️ Chọn Khách Hàng:", ["-- Chọn Khách Hàng --"] + df_kh['ten_kh'].tolist(), key="kh_ome")
-    
+    khach_hang_ome = st.selectbox("🙋‍♂️ Chọn Khách Hàng OME:", ["-- Chọn Khách Hàng --"] + df_kh_ome['ten_kh'].tolist(), key="kh_ome")
+    sdt_ome_chot = ""
+    if khach_hang_ome != "-- Chọn Khách Hàng --":
+        sdt_ome_chot = df_kh_ome[df_kh_ome['ten_kh'] == khach_hang_ome].iloc[0].get('so_dien_thoai', '')
+
     with st.form("form_ome", clear_on_submit=True):
         col_o1, col_o2 = st.columns([3, 1])
         sp_ome_chon = col_o1.selectbox("⚙️ Chọn Sản Phẩm OME:", ["-- Chọn Sản Phẩm --"] + df_sp_ome['ten_sp'].tolist())
@@ -150,42 +255,73 @@ with tab2:
                 
                 st.session_state.gio_ome.append({
                     "Tên Sản Phẩm OME": sp_ome_chon,
+                    "Loại Giá": "Giá OME",
                     "Số Lượng": sl_ome_chon,
                     "Đơn Giá OME": don_gia_ome,
                     "Thành Tiền": sl_ome_chon * don_gia_ome
                 })
                 st.rerun()
-            else:
-                st.warning("Vui lòng chọn sản phẩm OME!")
 
-    # Hiển thị giỏ hàng OME
     if st.session_state.gio_ome:
         st.markdown("---")
-        st.subheader("📋 Chi Tiết Đơn Hàng OME")
         df_gio_ome = pd.DataFrame(st.session_state.gio_ome)
         st.dataframe(df_gio_ome, use_container_width=True, hide_index=True)
-        
         tong_tien_ome = df_gio_ome['Thành Tiền'].sum()
         st.write(f"### 💰 TỔNG CỘNG OME: {format_vn(tong_tien_ome)} VNĐ")
         
         col_btn_o1, col_btn_o2 = st.columns([1, 1])
         with col_btn_o1:
-            if st.button("💾 CHỐT ĐƠN HÀNG OME", type="primary", use_container_width=True):
+            if st.button("💾 CHỐT ĐƠN & TẠO PDF (HÀNG OME)", type="primary", use_container_width=True):
                 if khach_hang_ome == "-- Chọn Khách Hàng --":
-                    st.error("⚠️ Vui lòng chọn Khách Hàng trước khi chốt đơn!")
+                    st.error("⚠️ Vui lòng chọn Khách Hàng!")
                 else:
+                    st.session_state['pdf_don_ome'] = generate_order_pdf(ma_don_hien_tai, khach_hang_ome, sdt_ome_chot, df_gio_ome, tong_tien_ome, "Hàng OME")
+                    st.session_state['pdf_ten_ome'] = f"{ma_don_hien_tai}_OME_{khach_hang_ome}.pdf"
+                    
                     try:
                         chi_tiet_json_ome = df_gio_ome.to_json(orient='records')
                         ngay_gio_ome = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
-                        c.execute("INSERT INTO don_hang (ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s)", 
-                                  (ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
-                        st.success(f"✅ Đã tạo thành công Đơn Hàng OME cho {khach_hang_ome}!")
-                        st.session_state.gio_ome = []
-                        time.sleep(1.5)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Lỗi: {e}")
+                        c.execute("INSERT INTO public.don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
+                                  (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
+                        st.success("✅ Chốt đơn OME thành công! Tải PDF bên dưới.")
+                    except: st.warning("⚠️ Lỗi lưu mây, nhưng PDF đã tạo.")
+        
+        if 'pdf_don_ome' in st.session_state:
+            st.download_button("🖨️ TẢI HÓA ĐƠN PDF", data=st.session_state['pdf_don_ome'], file_name=st.session_state['pdf_ten_ome'], mime="application/pdf", type="primary", use_container_width=True)
+
         with col_btn_o2:
-            if st.button("🗑️ Xóa sạch đơn OME này", use_container_width=True, key="xoa_gio_ome"):
+            if st.button("🗑️ Xóa sạch đơn OME", use_container_width=True):
                 st.session_state.gio_ome = []
+                if 'pdf_don_ome' in st.session_state: del st.session_state['pdf_don_ome']
                 st.rerun()
+
+# ------------------------------------------
+# TAB 3: LỊCH SỬ ĐƠN HÀNG
+# ------------------------------------------
+with tab3:
+    st.subheader("📂 Danh sách Đơn Hàng đã tạo")
+    try:
+        df_his = pd.read_sql("SELECT ma_don, ngay_tao, ten_kh, loai_don, tong_tien, trang_thai, chi_tiet FROM public.don_hang ORDER BY id DESC", conn)
+        if not df_his.empty:
+            df_hien_thi_his = df_his.drop(columns=['chi_tiet'])
+            st.dataframe(df_hien_thi_his, use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
+            st.subheader("🖨️ Tải Lại PDF Đơn Hàng Cũ")
+            options = ["-- Chọn đơn hàng --"] + df_his['ma_don'].tolist()
+            chon_don = st.selectbox("🔍 Chọn Mã Đơn để tải lại:", options)
+            
+            if chon_don != "-- Chọn đơn hàng --":
+                row_data = df_his[df_his['ma_don'] == chon_don].iloc[0]
+                if pd.notna(row_data['chi_tiet']):
+                    df_chi_tiet = pd.DataFrame(json.loads(row_data['chi_tiet']))
+                    st.dataframe(df_chi_tiet, use_container_width=True, hide_index=True)
+                    
+                    sdt_his = "" # Khôi phục sdt để in bill
+                    if row_data['loai_don'] == 'Hàng Chuẩn': sdt_his = df_kh[df_kh['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == row_data['ten_kh']].empty else ""
+                    else: sdt_his = df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].empty else ""
+
+                    pdf_re = generate_order_pdf(chon_don, row_data['ten_kh'], sdt_his, df_chi_tiet, row_data['tong_tien'], row_data['loai_don'])
+                    st.download_button("📥 XUẤT LẠI FILE PDF", data=pdf_re, file_name=f"{chon_don}_{row_data['ten_kh']}.pdf", mime="application/pdf", type="primary")
+        else: st.info("Chưa có đơn hàng nào.")
+    except: st.info("Hệ thống chưa có dữ liệu lịch sử.")
