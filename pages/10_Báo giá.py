@@ -53,8 +53,8 @@ c = conn.cursor()
 if 'gio_bao_gia' not in st.session_state: st.session_state.gio_bao_gia = []
 if 'gio_bao_gia_custom' not in st.session_state: st.session_state.gio_bao_gia_custom = []
 
-# Cập nhật Database: Thêm cột chi_tiet để phục vụ xuất lại PDF
-c.execute('''CREATE TABLE IF NOT EXISTS public.lich_su_bao_gia (
+# Cập nhật Database (ĐÃ GỠ BỎ public.)
+c.execute('''CREATE TABLE IF NOT EXISTS lich_su_bao_gia (
                 id SERIAL PRIMARY KEY,
                 ngay_tao TEXT,
                 ten_kh TEXT,
@@ -64,11 +64,11 @@ c.execute('''CREATE TABLE IF NOT EXISTS public.lich_su_bao_gia (
                 chi_tiet TEXT
             )''')
 try:
-    c.execute("ALTER TABLE public.lich_su_bao_gia ADD COLUMN chi_tiet TEXT")
+    c.execute("ALTER TABLE lich_su_bao_gia ADD COLUMN chi_tiet TEXT")
     conn.commit()
 except: pass 
 
-try: df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly FROM public.dm_san_pham", conn)
+try: df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly FROM dm_san_pham", conn)
 except: df_sp = pd.DataFrame(columns=['ma_sp', 'ten_sp', 'gia_dai_ly'])
 
 def format_vn(value):
@@ -146,7 +146,7 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 3. GIAO DIỆN CHÍNH (Đã chia rõ 3 Tab)
+# 3. GIAO DIỆN CHÍNH
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["🤝 Báo Giá Chuẩn", "🛠️ Báo Giá Tùy Chỉnh", "📂 Lịch Sử & Xuất Lại"])
 
@@ -173,7 +173,6 @@ with tab1:
     if st.session_state.gio_bao_gia:
         df_curr = pd.DataFrame(st.session_state.gio_bao_gia)
         
-        # Tính toán chiết khấu
         tong_goc = (df_curr['Giá Gốc'] / 0.6 * df_curr['Số Lượng']).sum()
         if tong_goc < 3000000: ck = 1.0
         elif tong_goc < 6000000: ck = 0.95
@@ -188,7 +187,6 @@ with tab1:
         st.dataframe(df_hien_thi, use_container_width=True, hide_index=True)
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_cuoi)} VNĐ")
         
-        # SỬA LỖI LỊCH SỬ BẰNG CÁCH TÁCH THÀNH 2 BƯỚC
         col_btn1, col_btn2 = st.columns([2, 2])
         with col_btn1:
             if ten_kh.strip():
@@ -196,18 +194,16 @@ with tab1:
                     chi_tiet_json = df_hien_thi.to_json(orient='records')
                     ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                     
-                    # 1. Lưu vào Database
-                    c.execute("INSERT INTO public.lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
+                    # ĐÃ GỠ BỎ public.
+                    c.execute("INSERT INTO lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ngay_gio, ten_kh, sdt_kh, tong_cuoi, 'Tiêu chuẩn', chi_tiet_json))
                     
-                    # 2. Tạo sẵn PDF nhét vào bộ nhớ tạm
                     st.session_state['pdf_data_t1'] = generate_generic_pdf(df_hien_thi, "BÁO GIÁ SẢN PHẨM", f"Khách hàng: {ten_kh} | SĐT: {sdt_kh}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35], total_amount=tong_cuoi)
                     st.session_state['pdf_name_t1'] = f"BaoGia_{ten_kh}.pdf"
                     st.success("✅ Đã lưu lịch sử thành công! Vui lòng bấm tải File PDF bên dưới.")
             else:
                 st.error("⚠️ Vui lòng nhập Tên Khách Hàng để xuất file!")
                 
-        # Khi đã lưu xong, nút Tải PDF mới xuất hiện
         if 'pdf_data_t1' in st.session_state:
             st.download_button("📥 TẢI FILE BÁO GIÁ XUỐNG MÁY (PDF)", data=st.session_state['pdf_data_t1'], file_name=st.session_state['pdf_name_t1'], mime="application/pdf", type="primary", use_container_width=True)
             
@@ -254,7 +250,8 @@ with tab2:
                     chi_tiet_json_c = df_curr_c.to_json(orient='records')
                     ngay_gio_c = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                     
-                    c.execute("INSERT INTO public.lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
+                    # ĐÃ GỠ BỎ public.
+                    c.execute("INSERT INTO lich_su_bao_gia (ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ngay_gio_c, ten_kh_c, sdt_kh_c, tong_cuoi_c, 'Tùy chỉnh', chi_tiet_json_c))
                     
                     st.session_state['pdf_data_t2'] = generate_generic_pdf(df_curr_c, "BÁO GIÁ", f"Khách hàng: {ten_kh_c} | SĐT: {sdt_kh_c}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35], total_amount=tong_cuoi_c)
@@ -276,16 +273,15 @@ with tab2:
 with tab3:
     st.subheader("📂 Danh sách Báo Giá đã lưu")
     try:
-        df_his = pd.read_sql("SELECT id, ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet FROM public.lich_su_bao_gia ORDER BY id DESC", conn)
+        # ĐÃ GỠ BỎ public.
+        df_his = pd.read_sql("SELECT id, ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet FROM lich_su_bao_gia ORDER BY id DESC", conn)
         if not df_his.empty:
-            # Ẩn cột 'chi_tiet' json khi hiển thị bảng cho đẹp
             df_hien_thi_his = df_his.drop(columns=['chi_tiet'])
             st.dataframe(df_hien_thi_his, use_container_width=True, hide_index=True)
             
             st.markdown("---")
             st.subheader("🖨️ Trích Xuất Lại File PDF Cũ")
             
-            # Tạo danh sách chọn đơn
             options = ["-- Chọn báo giá --"]
             for _, row in df_his.iterrows():
                 options.append(f"Mã {row['id']} - Khách: {row['ten_kh']} ({row['ngay_tao']})")
