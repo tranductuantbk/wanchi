@@ -81,7 +81,7 @@ except: df_nv = pd.DataFrame()
 tab1, tab3, tab2 = st.tabs(["📁 Hồ Sơ Nhân Sự", "📱 Chấm Công (Wi-Fi + PIN)", "💸 Tính Lương (Tự Động) & Xuất Phiếu"])
 
 # ==========================================
-# TAB 1: QUẢN LÝ HỒ SƠ NHÂN SỰ (ĐÃ CHUYỂN SANG CHẾ ĐỘ CHỈ XÓA)
+# TAB 1: QUẢN LÝ HỒ SƠ NHÂN SỰ
 # ==========================================
 with tab1:
     st.subheader("1. Thêm Nhân Viên Mới")
@@ -109,16 +109,18 @@ with tab1:
                 c.execute("""INSERT INTO public.nhan_vien 
                              (ten_nv, bo_phan, ngay_vao_lam, luong_cb, luong_nang_luc, tham_nien, tien_com, tc_ngay_thuong_gia, tc_chu_nhat_gia, phu_cap_khac, ma_pin) 
                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", 
-                          (ten_nv, bo_phan, ngay_vao.strftime("%Y-%m-%d"), luong_cb, luong_nl, t_nien_fixed, t_com_fixed, tc_thuong, tc_cn, phu_cap_khac, ma_pin_moi))
+                          (ten_nv.strip(), bo_phan, ngay_vao.strftime("%Y-%m-%d"), luong_cb, luong_nl, t_nien_fixed, t_com_fixed, tc_thuong, tc_cn, phu_cap_khac, ma_pin_moi))
                 st.success(f"✅ Đã lưu hồ sơ {ten_nv}!")
-                time.sleep(1.5)
+                time.sleep(1)
                 st.rerun()
-            except: st.error("Lỗi: Tên nhân viên đã tồn tại.")
+            except Exception as e:
+                # ĐÃ SỬA: Chống lỗi bắt nhầm "bóng ma" rerun
+                st.error("Lỗi: Tên nhân viên này đã tồn tại trong hệ thống!")
 
     st.markdown("---")
     st.subheader("2. Danh Sách Nhân Sự Gốc (Chỉ Đọc & Xóa)")
     if not df_nv.empty:
-        # Tự động khóa tất cả các cột không cho sửa, ngoại trừ ô Checkbox Xóa
+        # Tự động khóa tất cả các cột không cho sửa
         disabled_cols = df_nv.columns.tolist()
         df_nv.insert(0, "Xóa", False)
         
@@ -126,7 +128,7 @@ with tab1:
             df_nv, 
             hide_index=True, 
             use_container_width=True,
-            disabled=disabled_cols, # Khóa không cho sửa dữ liệu tay
+            disabled=disabled_cols, # Lệnh khóa bảng
             column_config={
                 "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                 "id": None,
@@ -141,8 +143,8 @@ with tab1:
                     c.execute("DELETE FROM public.nhan_vien WHERE id=%s", (int(row['id']),))
                     so_luong_xoa += 1
             if so_luong_xoa > 0:
-                st.success(f"✅ Đã xóa {so_luong_xoa} nhân sự thành công. Vui lòng nhập lại nếu có sai sót!")
-                time.sleep(1.5)
+                st.success(f"✅ Đã xóa {so_luong_xoa} nhân sự thành công. Vui lòng tải lại trang nếu bảng chưa cập nhật!")
+                time.sleep(1)
                 st.rerun()
     else: st.info("Chưa có nhân sự nào.")
 
@@ -373,8 +375,11 @@ with tab2:
                 pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 6, ghi_chu); pdf.ln(1)
             else: pdf.ln(4)
 
-            # ĐÃ SỬA LỖI XUẤT PDF CHUẨN CLOUD
-            return pdf.output(dest='S').encode('latin-1')
+            # CÁCH XUẤT PDF CHUẨN XÁC NHẤT CHO STREAMLIT CLOUD
+            out = pdf.output(dest='S')
+            if isinstance(out, str):
+                return out.encode('latin-1')
+            return bytes(out)
 
         st.subheader("BƯỚC 3: Tải Phiếu Lương")
         pdf_data = create_payslip_pdf()
