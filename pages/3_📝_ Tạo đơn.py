@@ -45,7 +45,7 @@ st.header("📝 Hệ Thống Lên Đơn Hàng WANCHI")
 conn = get_connection()
 c = conn.cursor()
 
-# BẢNG ĐƠN HÀNG (Thêm cột ma_don)
+# BẢNG ĐƠN HÀNG
 try:
     c.execute("CREATE SCHEMA IF NOT EXISTS public;")
     c.execute('''CREATE TABLE IF NOT EXISTS public.don_hang (
@@ -75,7 +75,6 @@ except: df_sp_chuan = pd.DataFrame(columns=['ten_sp', 'gia_dai_ly', 'gia_khach_l
 try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome FROM public.dm_san_pham_ome", conn)
 except: df_sp_ome = pd.DataFrame(columns=['ten_sp', 'gia_ome'])
 
-# Lấy Mã Đơn Tiếp Theo
 def lay_ma_don_moi():
     try:
         c.execute("SELECT ma_don FROM public.don_hang ORDER BY id DESC LIMIT 1")
@@ -95,7 +94,7 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# HÀM XUẤT PDF ĐƠN HÀNG
+# HÀM XUẤT PDF ĐƠN HÀNG (CẬP NHẬT GẮN LOGO)
 # ==========================================
 def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
     pdf = FPDF()
@@ -107,12 +106,28 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
         font_name = "Roboto"
     else: font_name = "Helvetica"
 
-    pdf.set_font(font_name, 'B', 18)
-    pdf.cell(0, 10, "WANCHI PLASTIC", ln=True, align="C")
+    # --- KHU VỰC CHÈN LOGO VÀ ĐỊA CHỈ ---
+    start_y, start_x = 12, 65  
+    try:
+        # Ưu tiên tìm file logo.jpg hoặc logo.png
+        if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
+        elif os.path.exists("logo.png"): pdf.image("logo.png", x=15, y=start_y, w=40)
+        else:
+            # Nếu không tìm thấy ảnh, dùng chữ tạm
+            pdf.set_font(font_name, 'B', 18)
+            pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    except:
+        pdf.set_font(font_name, 'B', 18)
+        pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    
+    # In địa chỉ nằm bên phải Logo
     pdf.set_font(font_name, size=10)
-    pdf.cell(0, 5, "775 Võ Hữu Lợi, Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM", ln=True, align="C")
-    pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True, align="C")
-    pdf.ln(8)
+    pdf.set_xy(start_x, start_y + 2)
+    pdf.multi_cell(0, 5, "775 Võ Hữu Lợi, Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM")
+    pdf.set_xy(start_x, pdf.get_y() + 1)
+    pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
+    pdf.ln(12)
+    # ------------------------------------
 
     pdf.set_font(font_name, 'B' if has_font else '', 16)
     pdf.cell(0, 10, "HÓA ĐƠN BÁN HÀNG" if loai_don == "Hàng Chuẩn" else "HÓA ĐƠN GIA CÔNG (OME)", ln=True, align='C')
@@ -209,11 +224,9 @@ with tab1:
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
             if st.button("💾 CHỐT ĐƠN & TẠO PDF (HÀNG CHUẨN)", type="primary", use_container_width=True):
-                # 1. Tạo file PDF lưu vào cache
                 st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_gio_chuan, tong_tien_chuan, "Hàng Chuẩn")
                 st.session_state['pdf_ten_chuan'] = f"{ma_don_hien_tai}_{kh_chuan}.pdf"
                 
-                # 2. Lưu Database
                 try:
                     chi_tiet_json = df_gio_chuan.to_json(orient='records')
                     ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
@@ -317,7 +330,7 @@ with tab3:
                     df_chi_tiet = pd.DataFrame(json.loads(row_data['chi_tiet']))
                     st.dataframe(df_chi_tiet, use_container_width=True, hide_index=True)
                     
-                    sdt_his = "" # Khôi phục sdt để in bill
+                    sdt_his = "" 
                     if row_data['loai_don'] == 'Hàng Chuẩn': sdt_his = df_kh[df_kh['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == row_data['ten_kh']].empty else ""
                     else: sdt_his = df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].empty else ""
 
