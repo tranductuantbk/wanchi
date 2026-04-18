@@ -1,10 +1,19 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from fpdf import FPDF
 import os
 import time
 from db_utils import get_connection, check_password
+
+# ==========================================
+# CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7) ĐỂ CHỐNG LỆCH GIỜ TRÊN CLOUD
+# ==========================================
+VN_TZ = timezone(timedelta(hours=7))
+
+def lay_gio_vn():
+    """Hàm luôn trả về ngày giờ chính xác tại Việt Nam"""
+    return datetime.now(VN_TZ)
 
 st.set_page_config(page_title="Hệ Thống Nhân Sự WANCHI", page_icon="👥", layout="wide")
 
@@ -13,7 +22,7 @@ role = check_password()
 if not role:
     st.stop()
 
-# 2. Kết nối DB và khởi tạo bảng (Giữ nguyên như cũ)
+# 2. Kết nối DB và khởi tạo bảng
 conn = get_connection()
 c = conn.cursor()
 
@@ -58,7 +67,7 @@ except: df_nv = pd.DataFrame()
 if role == "admin":
     st.header("👥 Quản Lý Nhân Sự & Lương WANCHI")
     tab1, tab3, tab2 = st.tabs(["📁 Hồ Sơ Nhân Sự", "📱 Chấm Công", "💸 Tính Lương & Xuất Phiếu"])
-    container_cham_cong = tab3 # Gán tab 3 làm khu vực chấm công
+    container_cham_cong = tab3
     
     # --- TAB 1: HỒ SƠ ---
     with tab1:
@@ -68,7 +77,8 @@ if role == "admin":
             with col_n1:
                 ten_nv = st.text_input("Tên nhân viên (*)")
                 bo_phan = st.text_input("Bộ phận")
-                ngay_vao = st.date_input("Ngày vào làm", date.today())
+                # Đã sửa thành giờ VN
+                ngay_vao = st.date_input("Ngày vào làm", lay_gio_vn().date())
             with col_n2:
                 luong_cb = st.number_input("Lương cơ bản (VNĐ/ngày)", min_value=0, value=0, step=10000)
                 luong_nl = st.number_input("Lương năng lực (VNĐ/ngày)", min_value=0, value=0, step=10000)
@@ -124,7 +134,8 @@ if role == "admin":
                 chon_nv_luong = st.selectbox("Chọn nhân viên:", df_nv['ten_nv'].tolist(), key="chon_nv_luong_pdf")
                 nv_data = df_nv[df_nv['ten_nv'] == chon_nv_luong].iloc[0]
             with col_s2:
-                ky_luong_str = st.text_input("Kỳ lương (MM/YYYY)", value=date.today().strftime("%m/%Y"))
+                # Đã sửa thành giờ VN
+                ky_luong_str = st.text_input("Kỳ lương (MM/YYYY)", value=lay_gio_vn().strftime("%m/%Y"))
 
             c.execute("SELECT ngay, gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay LIKE %s", (chon_nv_luong, f"%/{ky_luong_str}"))
             bang_cong = c.fetchall()
@@ -158,14 +169,14 @@ if role == "admin":
                 except: pass
 
             ngay_vao_str = nv_data.get('ngay_vao_lam')
-            if pd.isna(ngay_vao_str) or not ngay_vao_str: ngay_vao_str = date.today().strftime("%Y-%m-%d")
+            if pd.isna(ngay_vao_str) or not ngay_vao_str: ngay_vao_str = lay_gio_vn().strftime("%Y-%m-%d")
             try:
                 d_vao = datetime.strptime(ngay_vao_str, "%Y-%m-%d")
                 d_ky_luong = datetime.strptime(ky_luong_str, "%m/%Y")
                 so_thang_tn = (d_ky_luong.year - d_vao.year) * 12 + (d_ky_luong.month - d_vao.month)
                 so_nam_tn = round(max(0, so_thang_tn) / 12, 1)
                 hien_thi_nam = f"{int(so_nam_tn)}" if so_nam_tn.is_integer() else f"{so_nam_tn}"
-            except: hien_thi_nam = "0"; d_vao = date.today()
+            except: hien_thi_nam = "0"; d_vao = lay_gio_vn().date()
 
             st.info(f"📅 Cỗ máy đã quét **{len(bang_cong)}** lượt chấm công. Dữ liệu đã tự động điền bên dưới 👇")
             st.markdown("---")
@@ -280,11 +291,11 @@ else:
 # ==========================================
 with container_cham_cong:
     current_ip = get_client_ip()
-    hom_nay = date.today().strftime("%d/%m/%Y")
+    # Đã sửa lấy ngày VN
+    hom_nay = lay_gio_vn().strftime("%d/%m/%Y")
     
     st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
     
-    # Chỉ Admin mới thấy nút cài IP
     if role == "admin":
         with st.expander("⚙️ Cài đặt Cổng Wi-Fi Xưởng"):
             st.write(f"IP Wi-Fi Xưởng đang lưu: `{IP_XUONG}` | IP của bạn: `{current_ip}`")
@@ -309,7 +320,8 @@ with container_cham_cong:
                     
                     c.execute("SELECT gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_cham_cong, hom_nay))
                     trang_thai = c.fetchone()
-                    gio_hien_tai = datetime.now().strftime("%H:%M")
+                    # Đã sửa thành giờ VN
+                    gio_hien_tai = lay_gio_vn().strftime("%H:%M")
                     
                     if pin_nhap == real_pin:
                         if not trang_thai:
