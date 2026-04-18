@@ -27,7 +27,7 @@ if role == "employee":
     st.stop()
 
 # ==========================================
-# CẤU HÌNH FONT & DATABASE
+# CẤU HÌNH FONT 
 # ==========================================
 FONT_FILE = "Roboto-Regular.ttf"
 FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf"
@@ -45,23 +45,31 @@ st.header("📝 Hệ Thống Lên Đơn Hàng WANCHI")
 conn = get_connection()
 c = conn.cursor()
 
-# BẢNG ĐƠN HÀNG (Đã gỡ bỏ chữ public.)
-try:
-    c.execute('''CREATE TABLE IF NOT EXISTS don_hang (
-                    id SERIAL PRIMARY KEY,
-                    ma_don TEXT,
-                    ngay_tao TEXT,
-                    ten_kh TEXT,
-                    loai_don TEXT,
-                    tong_tien REAL,
-                    chi_tiet TEXT,
-                    trang_thai TEXT DEFAULT 'Mới tạo'
-                )''')
-    c.execute("ALTER TABLE don_hang ADD COLUMN ma_don TEXT")
-except: pass 
-conn.commit()
+# ==========================================
+# CỖ MÁY TỰ CHỮA LÀNH BẢNG ĐƠN HÀNG
+# ==========================================
+# 1. Tạo bảng gốc nếu chưa có
+c.execute('''CREATE TABLE IF NOT EXISTS don_hang (id SERIAL PRIMARY KEY)''')
 
-# LẤY DỮ LIỆU TỪ CÁC KHO (Đã gỡ bỏ chữ public.)
+# 2. Tự động kiểm tra và đục thêm các cột bị thiếu
+cac_cot_can_thiet = {
+    "ma_don": "TEXT",
+    "ngay_tao": "TEXT",
+    "ten_kh": "TEXT",
+    "loai_don": "TEXT",
+    "tong_tien": "REAL",
+    "chi_tiet": "TEXT",
+    "trang_thai": "TEXT DEFAULT 'Mới tạo'"
+}
+for cot, kieu_du_lieu in cac_cot_can_thiet.items():
+    try:
+        c.execute(f"ALTER TABLE don_hang ADD COLUMN {cot} {kieu_du_lieu}")
+    except:
+        pass # Nếu cột đã tồn tại thì âm thầm bỏ qua, không báo lỗi
+conn.commit()
+# ==========================================
+
+# LẤY DỮ LIỆU TỪ CÁC KHO
 try: df_kh = pd.read_sql("SELECT ten_kh, nhom_kh, so_dien_thoai FROM dm_khach_hang", conn)
 except: df_kh = pd.DataFrame(columns=['ten_kh', 'nhom_kh', 'so_dien_thoai'])
 
@@ -74,7 +82,6 @@ except: df_sp_chuan = pd.DataFrame(columns=['ten_sp', 'gia_dai_ly', 'gia_khach_l
 try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome FROM dm_san_pham_ome", conn)
 except: df_sp_ome = pd.DataFrame(columns=['ten_sp', 'gia_ome'])
 
-# Lấy Mã Đơn Tiếp Theo (Đã gỡ bỏ chữ public.)
 def lay_ma_don_moi():
     try:
         c.execute("SELECT ma_don FROM don_hang ORDER BY id DESC LIMIT 1")
@@ -94,7 +101,7 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# HÀM XUẤT PDF ĐƠN HÀNG (CÓ LOGO)
+# HÀM XUẤT PDF ĐƠN HÀNG 
 # ==========================================
 def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
     pdf = FPDF()
@@ -225,12 +232,11 @@ with tab1:
                 try:
                     chi_tiet_json = df_gio_chuan.to_json(orient='records')
                     ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
-                    # Đã gỡ bỏ chữ public.
                     c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ma_don_hien_tai, ngay_gio, kh_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
                     st.success("✅ Chốt đơn thành công! Dữ liệu đã lưu vào lịch sử. Vui lòng tải file in bên dưới.")
                 except Exception as e:
-                    st.warning(f"⚠️ Lỗi lưu mây: {e}. Nhưng PDF đã sẵn sàng tải.")
+                    st.error(f"⚠️ Lỗi Database: {e}")
         
         if 'pdf_don_chuan' in st.session_state:
             st.download_button("🖨️ TẢI HÓA ĐƠN PDF", data=st.session_state['pdf_don_chuan'], file_name=st.session_state['pdf_ten_chuan'], mime="application/pdf", type="primary", use_container_width=True)
@@ -290,12 +296,11 @@ with tab2:
                     try:
                         chi_tiet_json_ome = df_gio_ome.to_json(orient='records')
                         ngay_gio_ome = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
-                        # Đã gỡ bỏ chữ public.
                         c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                                   (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
                         st.success("✅ Chốt đơn OME thành công! Dữ liệu đã lưu vào lịch sử. Tải PDF bên dưới.")
                     except Exception as e: 
-                        st.warning(f"⚠️ Lỗi lưu mây: {e}. Nhưng PDF đã tạo.")
+                        st.error(f"⚠️ Lỗi Database: {e}")
         
         if 'pdf_don_ome' in st.session_state:
             st.download_button("🖨️ TẢI HÓA ĐƠN PDF", data=st.session_state['pdf_don_ome'], file_name=st.session_state['pdf_ten_ome'], mime="application/pdf", type="primary", use_container_width=True)
@@ -312,7 +317,6 @@ with tab2:
 with tab3:
     st.subheader("📂 Danh sách Đơn Hàng đã tạo")
     try:
-        # Đã gỡ bỏ chữ public.
         df_his = pd.read_sql("SELECT ma_don, ngay_tao, ten_kh, loai_don, tong_tien, trang_thai, chi_tiet FROM don_hang ORDER BY id DESC", conn)
         if not df_his.empty:
             df_hien_thi_his = df_his.drop(columns=['chi_tiet'])
