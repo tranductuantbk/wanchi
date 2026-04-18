@@ -45,10 +45,9 @@ st.header("📝 Hệ Thống Lên Đơn Hàng WANCHI")
 conn = get_connection()
 c = conn.cursor()
 
-# BẢNG ĐƠN HÀNG
+# BẢNG ĐƠN HÀNG (Đã gỡ bỏ chữ public.)
 try:
-    c.execute("CREATE SCHEMA IF NOT EXISTS public;")
-    c.execute('''CREATE TABLE IF NOT EXISTS public.don_hang (
+    c.execute('''CREATE TABLE IF NOT EXISTS don_hang (
                     id SERIAL PRIMARY KEY,
                     ma_don TEXT,
                     ngay_tao TEXT,
@@ -58,26 +57,27 @@ try:
                     chi_tiet TEXT,
                     trang_thai TEXT DEFAULT 'Mới tạo'
                 )''')
-    c.execute("ALTER TABLE public.don_hang ADD COLUMN ma_don TEXT")
+    c.execute("ALTER TABLE don_hang ADD COLUMN ma_don TEXT")
 except: pass 
 conn.commit()
 
-# LẤY DỮ LIỆU TỪ CÁC KHO
-try: df_kh = pd.read_sql("SELECT ten_kh, nhom_kh, so_dien_thoai FROM public.dm_khach_hang", conn)
+# LẤY DỮ LIỆU TỪ CÁC KHO (Đã gỡ bỏ chữ public.)
+try: df_kh = pd.read_sql("SELECT ten_kh, nhom_kh, so_dien_thoai FROM dm_khach_hang", conn)
 except: df_kh = pd.DataFrame(columns=['ten_kh', 'nhom_kh', 'so_dien_thoai'])
 
-try: df_kh_ome = pd.read_sql("SELECT ten_kh, so_dien_thoai FROM public.dm_khach_hang_ome", conn)
+try: df_kh_ome = pd.read_sql("SELECT ten_kh, so_dien_thoai FROM dm_khach_hang_ome", conn)
 except: df_kh_ome = pd.DataFrame(columns=['ten_kh', 'so_dien_thoai'])
 
-try: df_sp_chuan = pd.read_sql("SELECT ten_sp, gia_dai_ly, gia_khach_le FROM public.dm_san_pham", conn)
+try: df_sp_chuan = pd.read_sql("SELECT ten_sp, gia_dai_ly, gia_khach_le FROM dm_san_pham", conn)
 except: df_sp_chuan = pd.DataFrame(columns=['ten_sp', 'gia_dai_ly', 'gia_khach_le'])
 
-try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome FROM public.dm_san_pham_ome", conn)
+try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome FROM dm_san_pham_ome", conn)
 except: df_sp_ome = pd.DataFrame(columns=['ten_sp', 'gia_ome'])
 
+# Lấy Mã Đơn Tiếp Theo (Đã gỡ bỏ chữ public.)
 def lay_ma_don_moi():
     try:
-        c.execute("SELECT ma_don FROM public.don_hang ORDER BY id DESC LIMIT 1")
+        c.execute("SELECT ma_don FROM don_hang ORDER BY id DESC LIMIT 1")
         last_ma = c.fetchone()
         if last_ma and last_ma[0] and last_ma[0].startswith("DH-"):
             num = int(last_ma[0].split("-")[1])
@@ -94,7 +94,7 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# HÀM XUẤT PDF ĐƠN HÀNG (CẬP NHẬT GẮN LOGO)
+# HÀM XUẤT PDF ĐƠN HÀNG (CÓ LOGO)
 # ==========================================
 def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
     pdf = FPDF()
@@ -106,28 +106,23 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
         font_name = "Roboto"
     else: font_name = "Helvetica"
 
-    # --- KHU VỰC CHÈN LOGO VÀ ĐỊA CHỈ ---
     start_y, start_x = 12, 65  
     try:
-        # Ưu tiên tìm file logo.jpg hoặc logo.png
         if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
         elif os.path.exists("logo.png"): pdf.image("logo.png", x=15, y=start_y, w=40)
         else:
-            # Nếu không tìm thấy ảnh, dùng chữ tạm
             pdf.set_font(font_name, 'B', 18)
             pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
     except:
         pdf.set_font(font_name, 'B', 18)
         pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
     
-    # In địa chỉ nằm bên phải Logo
     pdf.set_font(font_name, size=10)
     pdf.set_xy(start_x, start_y + 2)
     pdf.multi_cell(0, 5, "775 Võ Hữu Lợi, Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM")
     pdf.set_xy(start_x, pdf.get_y() + 1)
     pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
     pdf.ln(12)
-    # ------------------------------------
 
     pdf.set_font(font_name, 'B' if has_font else '', 16)
     pdf.cell(0, 10, "HÓA ĐƠN BÁN HÀNG" if loai_don == "Hàng Chuẩn" else "HÓA ĐƠN GIA CÔNG (OME)", ln=True, align='C')
@@ -154,10 +149,10 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
     stt = 1
     for _, row in df_items.iterrows():
         pdf.cell(col_widths[0], 8, str(stt), border=1, align='C')
-        pdf.cell(col_widths[1], 8, str(row.iloc[0]), border=1) # Tên SP (Cột 0)
-        pdf.cell(col_widths[2], 8, str(row.iloc[2]), border=1, align='C') # SL (Cột 2)
-        pdf.cell(col_widths[3], 8, format_vn(row.iloc[3]), border=1, align='R') # Đơn giá
-        pdf.cell(col_widths[4], 8, format_vn(row.iloc[4]), border=1, align='R') # Thành tiền
+        pdf.cell(col_widths[1], 8, str(row.iloc[0]), border=1) 
+        pdf.cell(col_widths[2], 8, str(row.iloc[2]), border=1, align='C') 
+        pdf.cell(col_widths[3], 8, format_vn(row.iloc[3]), border=1, align='R') 
+        pdf.cell(col_widths[4], 8, format_vn(row.iloc[4]), border=1, align='R') 
         pdf.ln()
         stt += 1
 
@@ -230,11 +225,12 @@ with tab1:
                 try:
                     chi_tiet_json = df_gio_chuan.to_json(orient='records')
                     ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
-                    c.execute("INSERT INTO public.don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
+                    # Đã gỡ bỏ chữ public.
+                    c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ma_don_hien_tai, ngay_gio, kh_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
-                    st.success("✅ Chốt đơn thành công! Tải file in bên dưới.")
+                    st.success("✅ Chốt đơn thành công! Dữ liệu đã lưu vào lịch sử. Vui lòng tải file in bên dưới.")
                 except Exception as e:
-                    st.warning("⚠️ Lỗi lưu mây, nhưng PDF đã sẵn sàng tải.")
+                    st.warning(f"⚠️ Lỗi lưu mây: {e}. Nhưng PDF đã sẵn sàng tải.")
         
         if 'pdf_don_chuan' in st.session_state:
             st.download_button("🖨️ TẢI HÓA ĐƠN PDF", data=st.session_state['pdf_don_chuan'], file_name=st.session_state['pdf_ten_chuan'], mime="application/pdf", type="primary", use_container_width=True)
@@ -294,10 +290,12 @@ with tab2:
                     try:
                         chi_tiet_json_ome = df_gio_ome.to_json(orient='records')
                         ngay_gio_ome = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
-                        c.execute("INSERT INTO public.don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
+                        # Đã gỡ bỏ chữ public.
+                        c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                                   (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
-                        st.success("✅ Chốt đơn OME thành công! Tải PDF bên dưới.")
-                    except: st.warning("⚠️ Lỗi lưu mây, nhưng PDF đã tạo.")
+                        st.success("✅ Chốt đơn OME thành công! Dữ liệu đã lưu vào lịch sử. Tải PDF bên dưới.")
+                    except Exception as e: 
+                        st.warning(f"⚠️ Lỗi lưu mây: {e}. Nhưng PDF đã tạo.")
         
         if 'pdf_don_ome' in st.session_state:
             st.download_button("🖨️ TẢI HÓA ĐƠN PDF", data=st.session_state['pdf_don_ome'], file_name=st.session_state['pdf_ten_ome'], mime="application/pdf", type="primary", use_container_width=True)
@@ -314,7 +312,8 @@ with tab2:
 with tab3:
     st.subheader("📂 Danh sách Đơn Hàng đã tạo")
     try:
-        df_his = pd.read_sql("SELECT ma_don, ngay_tao, ten_kh, loai_don, tong_tien, trang_thai, chi_tiet FROM public.don_hang ORDER BY id DESC", conn)
+        # Đã gỡ bỏ chữ public.
+        df_his = pd.read_sql("SELECT ma_don, ngay_tao, ten_kh, loai_don, tong_tien, trang_thai, chi_tiet FROM don_hang ORDER BY id DESC", conn)
         if not df_his.empty:
             df_hien_thi_his = df_his.drop(columns=['chi_tiet'])
             st.dataframe(df_hien_thi_his, use_container_width=True, hide_index=True)
