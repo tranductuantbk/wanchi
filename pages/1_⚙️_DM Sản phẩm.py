@@ -1,9 +1,22 @@
 import streamlit as st
 import pandas as pd
 import time
-from db_utils import get_connection
+from db_utils import get_connection, check_password
 
 st.set_page_config(page_title="Quản Lý Sản Phẩm", page_icon="📦", layout="wide")
+
+# ==========================================
+# Ổ KHÓA BẢO VỆ 2 LỚP
+# ==========================================
+role = check_password()
+if not role:
+    st.stop() # Lớp 1: Chưa nhập mật khẩu -> Dừng tại đây
+
+if role == "employee":
+    st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: Trang này chứa dữ liệu mật, chỉ dành cho Quản lý WANCHI.")
+    st.stop() # Lớp 2: Có mật khẩu nhân viên -> Báo lỗi và đuổi ra ngoài
+# ==========================================
+
 st.header("📦 Quản Lý Danh Mục Sản Phẩm")
 
 # Kết nối đã được cấu hình sang Neon trong file db_utils.py
