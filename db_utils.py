@@ -1,9 +1,6 @@
 import psycopg2
 import streamlit as st
 
-# =========================================
-# 1. HÀM KẾT NỐI DATABASE (Chống sập mạng)
-# =========================================
 @st.cache_resource
 def init_connection():
     DATABASE_URL = st.secrets["DATABASE_URL"]
@@ -14,38 +11,39 @@ def init_connection():
 def get_connection():
     conn = init_connection()
     try:
-        c = conn.cursor()
-        c.execute("SELECT 1")
+        conn.cursor().execute("SELECT 1")
     except Exception:
         st.cache_resource.clear()
         conn = init_connection()
     return conn
 
-# =========================================
-# 2. HÀM KIỂM TRA MẬT KHẨU ĐĂNG NHẬP
-# =========================================
 def check_password():
-    """Trả về True nếu người dùng đã nhập đúng mật khẩu."""
-    
     def password_entered():
-        """Kiểm tra mật khẩu người dùng nhập vào."""
-        # So sánh với mật khẩu cất trong két sắt
-        if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Xóa mật khẩu khỏi bộ nhớ để an toàn
+        # Kiểm tra xem nhập mật khẩu của ai
+        if st.session_state["password"] == st.secrets.get("APP_PASSWORD"):
+            st.session_state["role"] = "admin"
+        elif st.session_state["password"] == st.secrets.get("EMP_PASSWORD", "nhanvien123"):
+            st.session_state["role"] = "employee"
         else:
-            st.session_state["password_correct"] = False
+            st.session_state["role"] = None
+        del st.session_state["password"]
 
-    # Nếu đã đăng nhập đúng từ trước, cho phép đi qua luôn
-    if st.session_state.get("password_correct", False):
-        return True
+    # Nếu đã đăng nhập thành công
+    if st.session_state.get("role"):
+        role = st.session_state["role"]
+        # CHIÊU THỨC GIẤU MENU CHO NHÂN VIÊN
+        if role == "employee":
+            st.markdown("""
+                <style>
+                    [data-testid="stSidebar"] { display: none !important; }
+                    [data-testid="collapsedControl"] { display: none !important; }
+                </style>
+            """, unsafe_allow_html=True)
+        return role
 
-    # Nếu chưa đăng nhập, hiển thị form yêu cầu nhập mật khẩu
-    st.markdown("<h2 style='text-align: center;'>🔒 HỆ THỐNG QUẢN TRỊ WANCHI</h2>", unsafe_allow_html=True)
-    st.text_input("Vui lòng nhập mật khẩu để truy cập phần mềm:", type="password", on_change=password_entered, key="password")
+    st.markdown("<h2 style='text-align: center;'>🔒 CỔNG ĐĂNG NHẬP WANCHI</h2>", unsafe_allow_html=True)
+    st.text_input("Nhập mật khẩu truy cập:", type="password", on_change=password_entered, key="password")
     
-    # Báo lỗi nếu nhập sai
-    if "password_correct" in st.session_state and not st.session_state["password_correct"]:
-        st.error("❌ Mật khẩu không chính xác. Vui lòng thử lại!")
-    
-    return False
+    if "role" in st.session_state and st.session_state["role"] is None:
+        st.error("❌ Mật khẩu không chính xác!")
+    return None
