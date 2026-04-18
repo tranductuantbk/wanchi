@@ -81,7 +81,7 @@ except: df_nv = pd.DataFrame()
 tab1, tab3, tab2 = st.tabs(["📁 Hồ Sơ Nhân Sự", "📱 Chấm Công (Wi-Fi + PIN)", "💸 Tính Lương (Tự Động) & Xuất Phiếu"])
 
 # ==========================================
-# TAB 1: QUẢN LÝ HỒ SƠ NHÂN SỰ
+# TAB 1: QUẢN LÝ HỒ SƠ NHÂN SỰ (ĐÃ CHUYỂN SANG CHẾ ĐỘ CHỈ XÓA)
 # ==========================================
 with tab1:
     st.subheader("1. Thêm Nhân Viên Mới")
@@ -98,7 +98,6 @@ with tab1:
         with col_n3:
             t_com_fixed = st.number_input("Tiền cơm (VNĐ/ngày)", min_value=0, value=0, step=5000)
             tc_thuong = st.number_input("Giá TC ngày (VNĐ/giờ)", min_value=0, value=0, step=1000)
-            # ĐÃ ĐỔI NHÃN THÀNH (VNĐ/giờ)
             tc_cn = st.number_input("Giá TC CN (VNĐ/giờ)", min_value=0, value=0, step=5000)
         with col_n4:
             phu_cap_khac = st.number_input("Phụ cấp (VNĐ)", min_value=0, value=0, step=10000)
@@ -117,21 +116,34 @@ with tab1:
             except: st.error("Lỗi: Tên nhân viên đã tồn tại.")
 
     st.markdown("---")
-    st.subheader("2. Danh Sách Nhân Sự Gốc")
+    st.subheader("2. Danh Sách Nhân Sự Gốc (Chỉ Đọc & Xóa)")
     if not df_nv.empty:
+        # Tự động khóa tất cả các cột không cho sửa, ngoại trừ ô Checkbox Xóa
+        disabled_cols = df_nv.columns.tolist()
+        df_nv.insert(0, "Xóa", False)
+        
         edited_nv = st.data_editor(
-            df_nv, hide_index=True, use_container_width=True,
-            column_config={"id": None, "ten_nv": st.column_config.TextColumn("Tên NV", disabled=True), "ma_pin": st.column_config.TextColumn("Mã PIN", max_chars=4)}
+            df_nv, 
+            hide_index=True, 
+            use_container_width=True,
+            disabled=disabled_cols, # Khóa không cho sửa dữ liệu tay
+            column_config={
+                "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
+                "id": None,
+                "ma_pin": st.column_config.TextColumn("Mã PIN", max_chars=4)
+            }
         )
-        if st.button("💾 Lưu Thay Đổi Bảng Nhân Sự"):
+        
+        if st.button("🚨 Xóa Nhân Sự Đã Chọn", type="primary"):
+            so_luong_xoa = 0
             for index, row in edited_nv.iterrows():
-                c.execute("""UPDATE public.nhan_vien 
-                             SET bo_phan=%s, ngay_vao_lam=%s, luong_cb=%s, luong_nang_luc=%s, tham_nien=%s, tien_com=%s, tc_ngay_thuong_gia=%s, tc_chu_nhat_gia=%s, phu_cap_khac=%s, ma_pin=%s 
-                             WHERE id=%s""",
-                          (row['bo_phan'], row['ngay_vao_lam'], row['luong_cb'], row['luong_nang_luc'], row['tham_nien'], row['tien_com'], row['tc_ngay_thuong_gia'], row['tc_chu_nhat_gia'], row['phu_cap_khac'], row['ma_pin'], int(row['id'])))
-            st.success("Đã cập nhật thay đổi nhân sự!")
-            time.sleep(1)
-            st.rerun()
+                if row['Xóa'] == True:
+                    c.execute("DELETE FROM public.nhan_vien WHERE id=%s", (int(row['id']),))
+                    so_luong_xoa += 1
+            if so_luong_xoa > 0:
+                st.success(f"✅ Đã xóa {so_luong_xoa} nhân sự thành công. Vui lòng nhập lại nếu có sai sót!")
+                time.sleep(1.5)
+                st.rerun()
     else: st.info("Chưa có nhân sự nào.")
 
 # ==========================================
@@ -217,7 +229,7 @@ with tab2:
 
         for r in bang_cong:
             ngay_str, g_vao, g_ra = r
-            if not g_ra: g_ra = "17:00" # Quy tắc 2: Quên bấm ra thì auto gán 17:00
+            if not g_ra: g_ra = "17:00" 
             
             try:
                 d = datetime.strptime(ngay_str, "%d/%m/%Y")
@@ -225,9 +237,8 @@ with tab2:
                 
                 t_in = datetime.strptime(g_vao, "%H:%M")
                 t_out = datetime.strptime(g_ra, "%H:%M")
-                if t_out < t_in: t_out = datetime.strptime("17:00", "%H:%M") # Chống lỗi logic
+                if t_out < t_in: t_out = datetime.strptime("17:00", "%H:%M") 
                 
-                # Chia khung giờ
                 m_start, m_end = datetime.strptime("07:30", "%H:%M"), datetime.strptime("11:30", "%H:%M")
                 a_start, a_end = datetime.strptime("13:00", "%H:%M"), datetime.strptime("17:00", "%H:%M")
                 ot_start, ot_end = datetime.strptime("17:00", "%H:%M"), datetime.strptime("23:59", "%H:%M")
@@ -241,10 +252,10 @@ with tab2:
                 ot_mins = intersect(t_in, t_out, ot_start, ot_end)
                 
                 if is_sunday:
-                    auto_tc_cn += (std_mins + ot_mins) / 60.0 # Quy tắc 3: CN tính theo giờ, gộp hết
+                    auto_tc_cn += (std_mins + ot_mins) / 60.0 
                 else:
-                    auto_ngay_cong += (std_mins / 60.0) / 8.0 # Quy tắc 1: 8 tiếng = 1 ngày công, đi trễ tự trừ
-                    auto_tc_thuong += (ot_mins / 60.0)        # Quy tắc 1: Về sau 17h tự cộng vào TC
+                    auto_ngay_cong += (std_mins / 60.0) / 8.0 
+                    auto_tc_thuong += (ot_mins / 60.0)        
             except: pass
 
         ngay_vao_str = nv_data.get('ngay_vao_lam')
@@ -362,7 +373,8 @@ with tab2:
                 pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 6, ghi_chu); pdf.ln(1)
             else: pdf.ln(4)
 
-            return bytes(pdf.output())
+            # ĐÃ SỬA LỖI XUẤT PDF CHUẨN CLOUD
+            return pdf.output(dest='S').encode('latin-1')
 
         st.subheader("BƯỚC 3: Tải Phiếu Lương")
         pdf_data = create_payslip_pdf()
