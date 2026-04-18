@@ -27,7 +27,7 @@ if role == "employee":
     st.stop()
 
 # ==========================================
-# CẤU HÌNH FONT 
+# CẤU HÌNH FONT & DATABASE
 # ==========================================
 FONT_FILE = "Roboto-Regular.ttf"
 FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf"
@@ -45,29 +45,18 @@ st.header("📝 Hệ Thống Lên Đơn Hàng WANCHI")
 conn = get_connection()
 c = conn.cursor()
 
-# ==========================================
-# CỖ MÁY TỰ CHỮA LÀNH BẢNG ĐƠN HÀNG
-# ==========================================
-# 1. Tạo bảng gốc nếu chưa có
-c.execute('''CREATE TABLE IF NOT EXISTS don_hang (id SERIAL PRIMARY KEY)''')
-
-# 2. Tự động kiểm tra và đục thêm các cột bị thiếu
-cac_cot_can_thiet = {
-    "ma_don": "TEXT",
-    "ngay_tao": "TEXT",
-    "ten_kh": "TEXT",
-    "loai_don": "TEXT",
-    "tong_tien": "REAL",
-    "chi_tiet": "TEXT",
-    "trang_thai": "TEXT DEFAULT 'Mới tạo'"
-}
-for cot, kieu_du_lieu in cac_cot_can_thiet.items():
-    try:
-        c.execute(f"ALTER TABLE don_hang ADD COLUMN {cot} {kieu_du_lieu}")
-    except:
-        pass # Nếu cột đã tồn tại thì âm thầm bỏ qua, không báo lỗi
+# BẢNG ĐƠN HÀNG 
+try:
+    c.execute('''CREATE TABLE IF NOT EXISTS don_hang (id SERIAL PRIMARY KEY)''')
+    cac_cot = {
+        "ma_don": "TEXT", "ngay_tao": "TEXT", "ten_kh": "TEXT", 
+        "loai_don": "TEXT", "tong_tien": "REAL", "chi_tiet": "TEXT", "trang_thai": "TEXT DEFAULT 'Mới tạo'"
+    }
+    for cot, kieu in cac_cot.items():
+        try: c.execute(f"ALTER TABLE don_hang ADD COLUMN {cot} {kieu}")
+        except: pass
+except: pass 
 conn.commit()
-# ==========================================
 
 # LẤY DỮ LIỆU TỪ CÁC KHO
 try: df_kh = pd.read_sql("SELECT ten_kh, nhom_kh, so_dien_thoai FROM dm_khach_hang", conn)
@@ -82,6 +71,7 @@ except: df_sp_chuan = pd.DataFrame(columns=['ten_sp', 'gia_dai_ly', 'gia_khach_l
 try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome FROM dm_san_pham_ome", conn)
 except: df_sp_ome = pd.DataFrame(columns=['ten_sp', 'gia_ome'])
 
+# Lấy Mã Đơn Tiếp Theo 
 def lay_ma_don_moi():
     try:
         c.execute("SELECT ma_don FROM don_hang ORDER BY id DESC LIMIT 1")
@@ -101,7 +91,7 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# HÀM XUẤT PDF ĐƠN HÀNG 
+# HÀM XUẤT PDF ĐƠN HÀNG (CÓ LOGO)
 # ==========================================
 def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
     pdf = FPDF()
@@ -220,7 +210,10 @@ with tab1:
         st.markdown("---")
         df_gio_chuan = pd.DataFrame(st.session_state.gio_chuan)
         st.dataframe(df_gio_chuan, use_container_width=True, hide_index=True)
-        tong_tien_chuan = df_gio_chuan['Thành Tiền'].sum()
+        
+        # ĐÃ ÉP KIỂU SỐ FLOAT ĐỂ CHỐNG LỖI DATABASE np.float64
+        tong_tien_chuan = float(df_gio_chuan['Thành Tiền'].sum())
+        
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien_chuan)} VNĐ")
         
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
@@ -281,7 +274,10 @@ with tab2:
         st.markdown("---")
         df_gio_ome = pd.DataFrame(st.session_state.gio_ome)
         st.dataframe(df_gio_ome, use_container_width=True, hide_index=True)
-        tong_tien_ome = df_gio_ome['Thành Tiền'].sum()
+        
+        # ĐÃ ÉP KIỂU SỐ FLOAT ĐỂ CHỐNG LỖI DATABASE np.float64
+        tong_tien_ome = float(df_gio_ome['Thành Tiền'].sum())
+        
         st.write(f"### 💰 TỔNG CỘNG OME: {format_vn(tong_tien_ome)} VNĐ")
         
         col_btn_o1, col_btn_o2 = st.columns([1, 1])
@@ -337,7 +333,8 @@ with tab3:
                     if row_data['loai_don'] == 'Hàng Chuẩn': sdt_his = df_kh[df_kh['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == row_data['ten_kh']].empty else ""
                     else: sdt_his = df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].empty else ""
 
-                    pdf_re = generate_order_pdf(chon_don, row_data['ten_kh'], sdt_his, df_chi_tiet, row_data['tong_tien'], row_data['loai_don'])
+                    # Ép kiểu float khi xuất lại PDF để đồng bộ
+                    pdf_re = generate_order_pdf(chon_don, row_data['ten_kh'], sdt_his, df_chi_tiet, float(row_data['tong_tien']), row_data['loai_don'])
                     st.download_button("📥 XUẤT LẠI FILE PDF", data=pdf_re, file_name=f"{chon_don}_{row_data['ten_kh']}.pdf", mime="application/pdf", type="primary")
         else: st.info("Chưa có đơn hàng nào.")
     except: st.info("Hệ thống chưa có dữ liệu lịch sử.")
