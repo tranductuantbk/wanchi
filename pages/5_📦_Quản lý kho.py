@@ -1,186 +1,184 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime, timedelta, timezone
 import time
-from datetime import date
-from db_utils import get_connection
+from db_utils import get_connection, check_password
 
-st.set_page_config(page_title="Quản Lý Tồn Kho", page_icon="📦", layout="wide")
-st.header("📦 Quản Lý Kho Vật Tư & Thành Phẩm")
+# ==========================================
+# CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7)
+# ==========================================
+VN_TZ = timezone(timedelta(hours=7))
+def lay_gio_vn():
+    return datetime.now(VN_TZ)
+
+st.set_page_config(page_title="Quản Lý Kho Vật Tư", page_icon="📦", layout="wide")
+
+# ==========================================
+# Ổ KHÓA BẢO VỆ 2 LỚP
+# ==========================================
+role = check_password()
+if not role: st.stop()
+if role == "employee":
+    st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: Trang Quản Lý Kho chỉ dành cho Quản lý WANCHI.")
+    st.stop()
+
+st.header("📦 Quản Lý Kho Nguyên Vật Liệu (Đồng bộ Sản Phẩm)")
+
 conn = get_connection()
 c = conn.cursor()
 
 # ==========================================
-# KHỞI TẠO BẢNG DATABASE NẾU CHƯA CÓ (POSTGRESQL)
+# KHỞI TẠO BẢNG DỮ LIỆU ĐỒNG BỘ VỚI FILE SẢN PHẨM
 # ==========================================
-c.execute('''CREATE TABLE IF NOT EXISTS dm_vat_tu (
-                id SERIAL PRIMARY KEY,
-                ten_vat_tu TEXT UNIQUE
-            )''')
+try:
+    c.execute("CREATE SCHEMA IF NOT EXISTS public;")
+    # Bảng này chính là bảng mà File Sản Phẩm đang đọc
+    c.execute('''CREATE TABLE IF NOT EXISTS public.dm_nguyen_lieu (
+                    id SERIAL PRIMARY KEY,
+                    ma_nl TEXT UNIQUE,
+                    ten_nl TEXT UNIQUE,
+                    don_vi TEXT,
+                    ton_kho REAL DEFAULT 0
+                )''')
+    
+    # Bảng Lịch sử Nhập/Xuất kho
+    c.execute('''CREATE TABLE IF NOT EXISTS public.ls_nhap_xuat_kho (
+                    id SERIAL PRIMARY KEY,
+                    ngay_thao_tac TEXT,
+                    loai_thao_tac TEXT,
+                    ten_nl TEXT,
+                    so_luong REAL,
+                    don_gia REAL DEFAULT 0,
+                    thanh_tien REAL DEFAULT 0,
+                    ghi_chu TEXT
+                )''')
+    conn.commit()
+except Exception as e: pass
 
-c.execute('''CREATE TABLE IF NOT EXISTS giao_dich_kho (
-                id SERIAL PRIMARY KEY,
-                ngay TEXT,
-                loai_phieu TEXT,
-                loai_hang TEXT,
-                ten_hang TEXT,
-                so_luong REAL,
-                ghi_chu TEXT
-            )''')
 # ==========================================
+# GIAO DIỆN 3 TABS QUẢN LÝ KHO
+# ==========================================
+tab1, tab2, tab3 = st.tabs(["📋 Danh Mục Vật Tư", "📥 Nhập / Xuất Kho", "📊 Báo Cáo Tồn Kho"])
 
-# ĐÃ BỔ SUNG TAB 4: DANH MỤC VẬT TƯ VÀO ĐÂY CHO GỌN
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Tồn Kho Hiện Tại", "🔄 Nhập / Xuất Kho", "🕒 Lịch Sử Giao Dịch", "⚙️ Danh Mục Vật Tư"])
-
-# --- TAB 1: TỒN KHO HIỆN TẠI ---
+# ------------------------------------------
+# TAB 1: DANH MỤC VẬT TƯ (Nguồn cấp cho file Sản Phẩm)
+# ------------------------------------------
 with tab1:
-    st.subheader("Báo Cáo Tồn Kho Theo Thời Gian Thực")
-    try:
-        df_kho = pd.read_sql("SELECT * FROM giao_dich_kho", conn)
-    except:
-        df_kho = pd.DataFrame()
-    
-    if not df_kho.empty:
-        df_kho['so_luong_tinh'] = df_kho.apply(lambda x: x['so_luong'] if x['loai_phieu'] == 'Nhập' else -x['so_luong'], axis=1)
-        df_ton_kho = df_kho.groupby(['loai_hang', 'ten_hang'])['so_luong_tinh'].sum().reset_index()
-        df_ton_kho.columns = ['Loại Hàng', 'Tên Hàng', 'Tồn Kho Cuối']
+    st.subheader("1. Khai báo Nguyên Vật Liệu Mới")
+    st.info("💡 Lưu ý: Các vật tư tạo ở đây sẽ tự động xuất hiện bên mục 'Nguyên liệu cấu tạo' của trang Thêm Sản Phẩm.")
+    with st.form("form_them_nl", clear_on_submit=True):
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c1: ma_nl = st.text_input("Mã Vật Tư (VD: NHUA-PP)")
+        with c2: ten_nl = st.text_input("Tên Vật Tư (VD: Hạt nhựa PP trắng) (*)")
+        with c3: don_vi = st.selectbox("Đơn vị tính", ["Kg", "Gram", "Cái", "Thùng", "Cuộn", "Mét"])
         
-        col_vt, col_tp = st.columns(2)
-        with col_vt:
-            st.markdown("#### 🛢️ Kho Nguyên Vật Liệu (kg)")
-            df_nhua = df_ton_kho[df_ton_kho['Loại Hàng'] == 'Vật tư (Hạt nhựa, màu...)']
-            st.dataframe(df_nhua, use_container_width=True, hide_index=True)
-            
-        with col_tp:
-            st.markdown("#### 🛍️ Kho Thành Phẩm (Cái/Lốc)")
-            df_san_pham = df_ton_kho[df_ton_kho['Loại Hàng'] == 'Thành phẩm']
-            st.dataframe(df_san_pham, use_container_width=True, hide_index=True)
-    else:
-        st.info("Chưa có dữ liệu tồn kho. Hãy thực hiện Nhập/Xuất kho ở Tab bên cạnh.")
-
-# --- TAB 2: NHẬP / XUẤT KHO ---
-with tab2:
-    st.subheader("Tạo Phiếu Nhập / Xuất")
-    
-    try:
-        df_sp = pd.read_sql("SELECT ten_sp FROM dm_san_pham", conn)
-    except:
-        df_sp = pd.DataFrame(columns=['ten_sp'])
-        
-    try:
-        df_vt = pd.read_sql("SELECT ten_vat_tu FROM dm_vat_tu", conn)
-    except:
-        df_vt = pd.DataFrame(columns=['ten_vat_tu'])
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        ngay_gd = st.date_input("Ngày giao dịch", date.today(), key="ngay_kho")
-        loai_phieu = st.radio("Loại Phiếu", ["Nhập", "Xuất"], horizontal=True)
-        loai_hang = st.radio("Loại Hàng Hóa", ["Vật tư (Hạt nhựa, màu...)", "Thành phẩm"], horizontal=True)
-    
-    with col2:
-        danh_sach_hang = []
-        if loai_hang == "Thành phẩm":
-            danh_sach_hang = df_sp['ten_sp'].tolist() if not df_sp.empty else []
-            don_vi = "(Cái/Lốc)"
-        else:
-            danh_sach_hang = df_vt['ten_vat_tu'].tolist() if not df_vt.empty else []
-            don_vi = "(Kg)"
-            
-        ten_hang = st.selectbox(f"Tên Hàng Hóa", ["-- Chọn hàng hóa --"] + danh_sach_hang)
-        so_luong = st.number_input(f"Số lượng {don_vi}", min_value=0.0, step=1.0)
-        ghi_chu = st.text_input("Ghi chú (VD: Nhập nhựa, Xuất hàng...)")
-        
-    if st.button("💾 Ghi Nhận Kho", type="primary"):
-        if ten_hang == "-- Chọn hàng hóa --" or not ten_hang:
-            st.error("⚠️ Lỗi: Vui lòng chọn tên hàng hóa (Nếu danh sách trống, hãy sang Tab Danh mục để thêm trước).")
-        elif so_luong <= 0:
-            st.error("⚠️ Lỗi: Số lượng phải lớn hơn 0.")
-        else:
-            try:
-                # ĐÃ ĐỔI DẤU ? THÀNH %s
-                c.execute("""INSERT INTO giao_dich_kho (ngay, loai_phieu, loai_hang, ten_hang, so_luong, ghi_chu)
-                             VALUES (%s, %s, %s, %s, %s, %s)""", 
-                          (ngay_gd.strftime("%Y-%m-%d"), loai_phieu, loai_hang, ten_hang, so_luong, ghi_chu))
-                st.success(f"✅ Đã ghi nhận {loai_phieu} {so_luong} {ten_hang} thành công!")
-                time.sleep(1)
-                st.rerun() 
-            except Exception as e:
-                st.error(f"Lỗi hệ thống: {e}")
-
-# --- TAB 3: LỊCH SỬ GIAO DỊCH ---
-with tab3:
-    st.subheader("Sổ Nhật Ký Kho")
-    try:
-        df_ls = pd.read_sql("SELECT * FROM giao_dich_kho ORDER BY id DESC", conn)
-        if not df_ls.empty:
-            st.dataframe(df_ls, use_container_width=True, hide_index=True)
-        else:
-            st.info("Sổ kho trống.")
-    except Exception as e:
-        st.info("Chưa có dữ liệu giao dịch.")
-
-# --- TAB 4: DANH MỤC VẬT TƯ (GỘP VÀO ĐÂY CHO GỌN) ---
-with tab4:
-    col_tm, col_ds = st.columns([1, 2])
-    
-    with col_tm:
-        st.subheader("1. Thêm Tên Vật Tư Mới")
-        with st.form("form_them_vt"):
-            ten_vt = st.text_input("Nhập tên (VD: Nhựa PP, Hạt màu xanh...)")
-            submit_vt = st.form_submit_button("💾 Lưu Vật Tư", type="primary", use_container_width=True)
-
-            if submit_vt:
-                if ten_vt.strip() == "":
-                    st.warning("⚠️ Vui lòng nhập tên!")
-                else:
-                    # ĐÃ ĐỔI DẤU ? THÀNH %s
-                    c.execute("SELECT ten_vat_tu FROM dm_vat_tu WHERE ten_vat_tu = %s", (ten_vt.strip(),))
-                    if c.fetchone():
-                        st.error(f"⚠️ Đã có trong danh sách!")
-                    else:
-                        try:
-                            # ĐÃ ĐỔI DẤU ? THÀNH %s
-                            c.execute("INSERT INTO dm_vat_tu (ten_vat_tu) VALUES (%s)", (ten_vt.strip(),))
-                            st.success("✅ Đã thêm!")
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Lỗi: {e}")
-
-        # Khu vực xóa nằm ngay dưới form thêm
-        st.markdown("---")
-        st.subheader("🗑️ Xóa Vật Tư")
-        df_vt = pd.read_sql("SELECT * FROM dm_vat_tu", conn)
-        if not df_vt.empty:
-            vt_can_xoa = st.selectbox("Chọn để xóa:", ["-- Chọn --"] + df_vt['ten_vat_tu'].tolist())
-            if st.button("🚨 Xóa Vĩnh Viễn", use_container_width=True):
-                if vt_can_xoa != "-- Chọn --":
-                    # ĐÃ ĐỔI DẤU ? THÀNH %s
-                    c.execute("DELETE FROM dm_vat_tu WHERE ten_vat_tu=%s", (vt_can_xoa,))
-                    st.success("✅ Đã xóa!")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("⚠️ Vui lòng chọn!")
-
-    with col_ds:
-        st.subheader("2. Sửa Tên Vật Tư Hiện Có")
-        if not df_vt.empty:
-            st.caption("Click đúp vào chữ để sửa tên vật tư")
-            edited_vt = st.data_editor(
-                df_vt, key="bang_vat_tu",
-                column_config={"id": None, "ten_vat_tu": "Tên Vật Tư"},
-                use_container_width=True, hide_index=True
-            )
-            if st.button("💾 Lưu Thay Đổi Bảng"):
+        if st.form_submit_button("💾 Lưu Danh Mục Vật Tư", type="primary"):
+            if ten_nl.strip():
                 try:
-                    for index, row in edited_vt.iterrows():
-                        # ĐÃ ĐỔI DẤU ? THÀNH %s VÀ ÉP KIỂU id
-                        c.execute("UPDATE dm_vat_tu SET ten_vat_tu=%s WHERE id=%s", (row['ten_vat_tu'], int(row['id'])))
-                    st.success("✅ Đã cập nhật!")
-                    time.sleep(1)
+                    c.execute("INSERT INTO public.dm_nguyen_lieu (ma_nl, ten_nl, don_vi, ton_kho) VALUES (%s, %s, %s, 0)", 
+                              (ma_nl.strip(), ten_nl.strip(), don_vi))
+                    st.success(f"✅ Đã thêm '{ten_nl}' vào danh mục! Bạn có thể sang trang Sản phẩm để kiểm tra.")
+                    time.sleep(1.5)
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Lỗi: {e}")
-        else:
-            st.info("Chưa có danh sách vật tư.")
+                except Exception as e: 
+                    st.error("⚠️ Mã hoặc tên vật tư này đã tồn tại trong hệ thống!")
+            else: st.warning("⚠️ Vui lòng nhập Tên Vật Tư!")
+    
+    st.markdown("---")
+    st.subheader("2. Cập nhật & Xóa Danh Mục")
+    try:
+        df_dm = pd.read_sql("SELECT id, ma_nl, ten_nl, don_vi FROM public.dm_nguyen_lieu ORDER BY id DESC", conn)
+        if not df_dm.empty:
+            edited_nl = st.data_editor(
+                df_dm, key="bang_sua_nl",
+                column_config={
+                    "id": None, 
+                    "ma_nl": st.column_config.TextColumn("Mã Vật Tư"),
+                    "ten_nl": st.column_config.TextColumn("Tên Vật Tư", disabled=True),
+                    "don_vi": st.column_config.SelectboxColumn("Đơn vị", options=["Kg", "Gram", "Cái", "Thùng", "Cuộn", "Mét"]),
+                }, use_container_width=True, hide_index=True
+            )
+
+            if st.button("💾 Lưu Bảng Danh Mục", type="primary"):
+                for index, row in edited_nl.iterrows():
+                    c.execute("UPDATE public.dm_nguyen_lieu SET ma_nl=%s, don_vi=%s WHERE id=%s", (str(row['ma_nl']), str(row['don_vi']), int(row['id'])))
+                st.success("✅ Đã cập nhật thành công!")
+                time.sleep(1); st.rerun()
+                
+            col_xoa1, col_xoa2 = st.columns([3, 1])
+            with col_xoa1: nl_can_xoa = st.selectbox("Chọn Vật Tư cần xóa:", ["-- Chọn --"] + df_dm['ten_nl'].tolist())
+            with col_xoa2:
+                st.write(""); st.write("")
+                if st.button("🚨 Xóa Vật Tư", type="primary", use_container_width=True):
+                    if nl_can_xoa != "-- Chọn --":
+                        c.execute("DELETE FROM public.dm_nguyen_lieu WHERE ten_nl=%s", (nl_can_xoa,))
+                        st.success("✅ Đã xóa!")
+                        time.sleep(1); st.rerun()
+        else: st.info("Chưa có vật tư nào. Hãy thêm ở form phía trên.")
+    except Exception as e: st.error(f"Lỗi hiển thị: {e}")
+
+# ------------------------------------------
+# TAB 2: NHẬP XUẤT KHO THỦ CÔNG
+# ------------------------------------------
+with tab2:
+    st.subheader("Nhập / Xuất Kho Thủ Công")
+    try:
+        df_nl_ton = pd.read_sql("SELECT ten_nl, don_vi, ton_kho FROM public.dm_nguyen_lieu", conn)
+        if not df_nl_ton.empty:
+            with st.form("form_nhap_xuat", clear_on_submit=True):
+                c_a, c_b, c_c = st.columns(3)
+                loai_tt = c_a.selectbox("Loại thao tác", ["Nhập Kho (Mua vào)", "Xuất Kho (Trừ hao/Hư hỏng)"])
+                nl_chon = c_b.selectbox("Chọn Vật Tư", df_nl_ton['ten_nl'].tolist())
+                sl_tt = c_c.number_input("Số lượng", min_value=0.0, step=1.0)
+                
+                don_gia = st.number_input("Đơn giá nhập (VNĐ) - Chỉ điền khi Mua vào", min_value=0.0, step=1000.0)
+                ghi_chu = st.text_input("Ghi chú (Nhà cung cấp / Lý do xuất)")
+
+                if st.form_submit_button("💾 Xác nhận Thao Tác", type="primary"):
+                    if sl_tt > 0:
+                        ton_hien_tai = df_nl_ton[df_nl_ton['ten_nl'] == nl_chon].iloc[0]['ton_kho']
+                        if loai_tt == "Xuất Kho (Trừ hao/Hư hỏng)" and sl_tt > ton_hien_tai:
+                            st.error(f"⚠️ Vượt quá số lượng tồn! Trong kho chỉ còn **{ton_hien_tai}**.")
+                        else:
+                            sl_thay_doi = sl_tt if "Nhập Kho" in loai_tt else -sl_tt
+                            thanh_tien = sl_tt * don_gia if "Nhập Kho" in loai_tt else 0
+                            ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                            
+                            # 1. Cập nhật tồn kho
+                            c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_thay_doi, nl_chon))
+                            # 2. Ghi lịch sử
+                            c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
+                                         (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu) 
+                                         VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                                      (ngay_tt, loai_tt, nl_chon, sl_tt, don_gia, thanh_tien, ghi_chu))
+                            conn.commit()
+                            st.success(f"✅ Đã {loai_tt.split()[0].lower()} thành công {sl_tt} {nl_chon}!")
+                            time.sleep(1.5); st.rerun()
+                    else: st.warning("⚠️ Số lượng phải lớn hơn 0!")
+        else: st.info("⚠️ Vui lòng qua Tab 1 khai báo danh mục vật tư trước khi nhập kho.")
+    except Exception as e: st.error(f"Lỗi hệ thống: {e}")
+
+# ------------------------------------------
+# TAB 3: BÁO CÁO TỒN KHO & LỊCH SỬ
+# ------------------------------------------
+with tab3:
+    col_tk1, col_tk2 = st.columns([1, 2])
+    with col_tk1:
+        st.subheader("📦 Tồn Kho Hiện Tại")
+        try:
+            df_ton = pd.read_sql("SELECT ten_nl as \"Tên Vật Tư\", ton_kho as \"Tồn Kho\", don_vi as \"Đơn vị\" FROM public.dm_nguyen_lieu ORDER BY ten_nl ASC", conn)
+            st.dataframe(df_ton, use_container_width=True, hide_index=True)
+        except: pass
+
+    with col_tk2:
+        st.subheader("📜 Lịch Sử Nhập/Xuất Mới Nhất")
+        try:
+            df_ls = pd.read_sql("SELECT ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, thanh_tien, ghi_chu FROM public.ls_nhap_xuat_kho ORDER BY id DESC LIMIT 50", conn)
+            if not df_ls.empty:
+                df_ls.columns = ["Thời gian", "Thao tác", "Vật tư", "Số lượng", "Thành tiền (VNĐ)", "Ghi chú"]
+                
+                # Format số tiền cho đẹp
+                df_ls['Thành tiền (VNĐ)'] = df_ls['Thành tiền (VNĐ)'].apply(lambda x: f"{x:,.0f}" if x > 0 else "-")
+                st.dataframe(df_ls, use_container_width=True, hide_index=True)
+            else: st.info("Chưa có phát sinh nhập/xuất.")
+        except: pass
