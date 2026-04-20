@@ -32,7 +32,6 @@ c = conn.cursor()
 # ==========================================
 try:
     c.execute("CREATE SCHEMA IF NOT EXISTS public;")
-    # Bảng này chính là bảng mà File Sản Phẩm đang đọc
     c.execute('''CREATE TABLE IF NOT EXISTS public.dm_nguyen_lieu (
                     id SERIAL PRIMARY KEY,
                     ma_nl TEXT UNIQUE,
@@ -41,7 +40,6 @@ try:
                     ton_kho REAL DEFAULT 0
                 )''')
     
-    # Bảng Lịch sử Nhập/Xuất kho
     c.execute('''CREATE TABLE IF NOT EXISTS public.ls_nhap_xuat_kho (
                     id SERIAL PRIMARY KEY,
                     ngay_thao_tac TEXT,
@@ -61,28 +59,34 @@ except Exception as e: pass
 tab1, tab2, tab3 = st.tabs(["📋 Danh Mục Vật Tư", "📥 Nhập / Xuất Kho", "📊 Báo Cáo Tồn Kho"])
 
 # ------------------------------------------
-# TAB 1: DANH MỤC VẬT TƯ (Nguồn cấp cho file Sản Phẩm)
+# TAB 1: DANH MỤC VẬT TƯ
 # ------------------------------------------
 with tab1:
     st.subheader("1. Khai báo Nguyên Vật Liệu Mới")
-    st.info("💡 Lưu ý: Các vật tư tạo ở đây sẽ tự động xuất hiện bên mục 'Nguyên liệu cấu tạo' của trang Thêm Sản Phẩm.")
+    st.info("💡 Lưu ý: Nếu bạn để trống Mã Vật Tư, hệ thống sẽ tự động tạo một mã ngẫu nhiên để tránh lỗi trùng lặp.")
     with st.form("form_them_nl", clear_on_submit=True):
         c1, c2, c3 = st.columns([1, 2, 1])
-        with c1: ma_nl = st.text_input("Mã Vật Tư (VD: NHUA-PP)")
+        with c1: ma_nl = st.text_input("Mã Vật Tư (Tùy chọn)")
         with c2: ten_nl = st.text_input("Tên Vật Tư (VD: Hạt nhựa PP trắng) (*)")
         with c3: don_vi = st.selectbox("Đơn vị tính", ["Kg", "Gram", "Cái", "Thùng", "Cuộn", "Mét"])
         
         if st.form_submit_button("💾 Lưu Danh Mục Vật Tư", type="primary"):
-            if ten_nl.strip():
+            if not ten_nl.strip():
+                st.warning("⚠️ Vui lòng nhập Tên Vật Tư!")
+            else:
+                # CỘT MỐC SỬA LỖI: Tự động sinh mã nếu để trống
+                ma_luu = ma_nl.strip()
+                if not ma_luu:
+                    ma_luu = f"VT{int(time.time())}" # Tạo mã ngẫu nhiên dựa trên thời gian thực
+                
                 try:
                     c.execute("INSERT INTO public.dm_nguyen_lieu (ma_nl, ten_nl, don_vi, ton_kho) VALUES (%s, %s, %s, 0)", 
-                              (ma_nl.strip(), ten_nl.strip(), don_vi))
-                    st.success(f"✅ Đã thêm '{ten_nl}' vào danh mục! Bạn có thể sang trang Sản phẩm để kiểm tra.")
+                              (ma_luu, ten_nl.strip(), don_vi))
+                    st.success(f"✅ Đã thêm '{ten_nl}' vào danh mục! Sang trang Sản Phẩm là thấy ngay.")
                     time.sleep(1.5)
                     st.rerun()
                 except Exception as e: 
-                    st.error("⚠️ Mã hoặc tên vật tư này đã tồn tại trong hệ thống!")
-            else: st.warning("⚠️ Vui lòng nhập Tên Vật Tư!")
+                    st.error("⚠️ Tên vật tư này (hoặc mã vật tư này) đã tồn tại trong hệ thống. Hãy kiểm tra lại!")
     
     st.markdown("---")
     st.subheader("2. Cập nhật & Xóa Danh Mục")
@@ -93,7 +97,7 @@ with tab1:
                 df_dm, key="bang_sua_nl",
                 column_config={
                     "id": None, 
-                    "ma_nl": st.column_config.TextColumn("Mã Vật Tư"),
+                    "ma_nl": st.column_config.TextColumn("Mã Vật Tư", disabled=True), # Khóa không cho sửa mã lung tung
                     "ten_nl": st.column_config.TextColumn("Tên Vật Tư", disabled=True),
                     "don_vi": st.column_config.SelectboxColumn("Đơn vị", options=["Kg", "Gram", "Cái", "Thùng", "Cuộn", "Mét"]),
                 }, use_container_width=True, hide_index=True
@@ -101,8 +105,8 @@ with tab1:
 
             if st.button("💾 Lưu Bảng Danh Mục", type="primary"):
                 for index, row in edited_nl.iterrows():
-                    c.execute("UPDATE public.dm_nguyen_lieu SET ma_nl=%s, don_vi=%s WHERE id=%s", (str(row['ma_nl']), str(row['don_vi']), int(row['id'])))
-                st.success("✅ Đã cập nhật thành công!")
+                    c.execute("UPDATE public.dm_nguyen_lieu SET don_vi=%s WHERE id=%s", (str(row['don_vi']), int(row['id'])))
+                st.success("✅ Đã cập nhật đơn vị tính thành công!")
                 time.sleep(1); st.rerun()
                 
             col_xoa1, col_xoa2 = st.columns([3, 1])
@@ -144,9 +148,7 @@ with tab2:
                             thanh_tien = sl_tt * don_gia if "Nhập Kho" in loai_tt else 0
                             ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                             
-                            # 1. Cập nhật tồn kho
                             c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_thay_doi, nl_chon))
-                            # 2. Ghi lịch sử
                             c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
                                          (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu) 
                                          VALUES (%s, %s, %s, %s, %s, %s, %s)""",
@@ -176,8 +178,6 @@ with tab3:
             df_ls = pd.read_sql("SELECT ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, thanh_tien, ghi_chu FROM public.ls_nhap_xuat_kho ORDER BY id DESC LIMIT 50", conn)
             if not df_ls.empty:
                 df_ls.columns = ["Thời gian", "Thao tác", "Vật tư", "Số lượng", "Thành tiền (VNĐ)", "Ghi chú"]
-                
-                # Format số tiền cho đẹp
                 df_ls['Thành tiền (VNĐ)'] = df_ls['Thành tiền (VNĐ)'].apply(lambda x: f"{x:,.0f}" if x > 0 else "-")
                 st.dataframe(df_ls, use_container_width=True, hide_index=True)
             else: st.info("Chưa có phát sinh nhập/xuất.")
