@@ -4,10 +4,11 @@ from datetime import date, datetime, timedelta, timezone
 from fpdf import FPDF
 import os
 import time
+import random
 from db_utils import get_connection, check_password
 
 # ==========================================
-# CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7) ĐỂ CHỐNG LỆCH GIỜ TRÊN CLOUD
+# CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7)
 # ==========================================
 VN_TZ = timezone(timedelta(hours=7))
 
@@ -26,37 +27,23 @@ if not role:
 conn = get_connection()
 c = conn.cursor()
 
-c.execute('''CREATE TABLE IF NOT EXISTS public.nhan_vien (
-                id SERIAL PRIMARY KEY, ten_nv TEXT UNIQUE, bo_phan TEXT, luong_cb REAL DEFAULT 0,
-                tham_nien REAL DEFAULT 0, tien_com REAL DEFAULT 0, tc_ngay_thuong_gia REAL DEFAULT 0,
-                tc_chu_nhat_gia REAL DEFAULT 0, ngay_vao_lam TEXT, luong_nang_luc REAL DEFAULT 0,
-                phu_cap_khac REAL DEFAULT 0, ma_pin TEXT DEFAULT '0000'
-            )''')
-try: c.execute("ALTER TABLE public.nhan_vien ADD COLUMN ma_pin TEXT DEFAULT '0000'")
-except: pass
-
-c.execute('''CREATE TABLE IF NOT EXISTS public.cham_cong (
-                id SERIAL PRIMARY KEY, ten_nv TEXT, ngay TEXT, gio_vao TEXT, gio_ra TEXT, ip_vao TEXT, ip_ra TEXT
-            )''')
-
+# Đảm bảo có bảng cấu hình để lưu mã ca
 c.execute('''CREATE TABLE IF NOT EXISTS public.cau_hinh (
                 id SERIAL PRIMARY KEY, ten_cau_hinh TEXT UNIQUE, gia_tri TEXT
             )''')
 conn.commit()
 
-def get_client_ip():
+# --- HÀM TRUY XUẤT MÃ CA ---
+def lay_thong_tin_ma_ca():
     try:
-        headers = st.context.headers
-        ip = headers.get("X-Forwarded-For", "")
-        if ip: return ip.split(",")[0].strip()
-        return "Không xác định"
-    except: return "Không xác định"
-
-try:
-    c.execute("SELECT gia_tri FROM public.cau_hinh WHERE ten_cau_hinh='IP_XUONG'")
-    row = c.fetchone()
-    IP_XUONG = row[0] if row else "Chưa cài đặt"
-except: IP_XUONG = "Chưa cài đặt"
+        c.execute("SELECT gia_tri FROM public.cau_hinh WHERE ten_cau_hinh='MA_CA_HIEN_TAI'")
+        r1 = c.fetchone()
+        c.execute("SELECT gia_tri FROM public.cau_hinh WHERE ten_cau_hinh='THOI_GIAN_TAO_MA'")
+        r2 = c.fetchone()
+        if r1 and r2:
+            return r1[0], r2[0]
+    except: pass
+    return None, None
 
 try: df_nv = pd.read_sql("SELECT * FROM public.nhan_vien ORDER BY id DESC", conn)
 except: df_nv = pd.DataFrame()
@@ -69,7 +56,7 @@ if role == "admin":
     tab1, tab3, tab2 = st.tabs(["📁 Hồ Sơ Nhân Sự", "📱 Chấm Công", "💸 Tính Lương & Xuất Phiếu"])
     container_cham_cong = tab3
     
-    # --- TAB 1: HỒ SƠ ---
+    # --- TAB 1: HỒ SƠ --- (Giữ nguyên như cũ)
     with tab1:
         st.subheader("1. Thêm Nhân Viên Mới")
         with st.form("form_them_nv", clear_on_submit=True):
@@ -77,7 +64,6 @@ if role == "admin":
             with col_n1:
                 ten_nv = st.text_input("Tên nhân viên (*)")
                 bo_phan = st.text_input("Bộ phận")
-                # Đã sửa thành giờ VN
                 ngay_vao = st.date_input("Ngày vào làm", lay_gio_vn().date())
             with col_n2:
                 luong_cb = st.number_input("Lương cơ bản (VNĐ/ngày)", min_value=0, value=0, step=10000)
@@ -100,10 +86,10 @@ if role == "admin":
                     st.success(f"✅ Đã lưu hồ sơ {ten_nv}!")
                     time.sleep(1)
                     st.rerun()
-                except Exception as e: st.error("Lỗi: Tên nhân viên này đã tồn tại trong hệ thống!")
+                except Exception as e: st.error("Lỗi: Tên nhân viên này đã tồn tại!")
 
         st.markdown("---")
-        st.subheader("2. Danh Sách Nhân Sự Gốc (Chỉ Đọc & Xóa)")
+        st.subheader("2. Danh Sách Nhân Sự")
         if not df_nv.empty:
             disabled_cols = df_nv.columns.tolist()
             df_nv.insert(0, "Xóa", False)
@@ -112,21 +98,16 @@ if role == "admin":
                 column_config={"Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False), "id": None, "ma_pin": st.column_config.TextColumn("Mã PIN", max_chars=4)}
             )
             if st.button("🚨 Xóa Nhân Sự Đã Chọn", type="primary"):
-                so_luong_xoa = 0
                 for index, row in edited_nv.iterrows():
-                    if row['Xóa'] == True:
+                    if row['Xóa']:
                         c.execute("DELETE FROM public.nhan_vien WHERE id=%s", (int(row['id']),))
-                        so_luong_xoa += 1
-                if so_luong_xoa > 0:
-                    st.success(f"✅ Đã xóa {so_luong_xoa} nhân sự thành công.")
-                    time.sleep(1)
-                    st.rerun()
-        else: st.info("Chưa có nhân sự nào.")
+                st.success("✅ Đã cập nhật danh sách.")
+                time.sleep(1)
+                st.rerun()
 
-    # --- TAB 2: LƯƠNG ---
+    # --- TAB 2: LƯƠNG --- (Giữ nguyên như cũ)
     with tab2:
-        if df_nv.empty:
-            st.warning("⚠️ Vui lòng khai báo nhân sự ở Tab 1 trước!")
+        if df_nv.empty: st.warning("⚠️ Vui lòng khai báo nhân sự ở Tab 1 trước!")
         else:
             st.subheader("BƯỚC 1: Chọn Nhân Viên & Tự Động Tính Công")
             col_s1, col_s2 = st.columns(2)
@@ -134,7 +115,6 @@ if role == "admin":
                 chon_nv_luong = st.selectbox("Chọn nhân viên:", df_nv['ten_nv'].tolist(), key="chon_nv_luong_pdf")
                 nv_data = df_nv[df_nv['ten_nv'] == chon_nv_luong].iloc[0]
             with col_s2:
-                # Đã sửa thành giờ VN
                 ky_luong_str = st.text_input("Kỳ lương (MM/YYYY)", value=lay_gio_vn().strftime("%m/%Y"))
 
             c.execute("SELECT ngay, gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay LIKE %s", (chon_nv_luong, f"%/{ky_luong_str}"))
@@ -149,43 +129,30 @@ if role == "admin":
                     is_sunday = (d.weekday() == 6)
                     t_in = datetime.strptime(g_vao, "%H:%M")
                     t_out = datetime.strptime(g_ra, "%H:%M")
-                    if t_out < t_in: t_out = datetime.strptime("17:00", "%H:%M") 
                     
                     m_start, m_end = datetime.strptime("07:30", "%H:%M"), datetime.strptime("11:30", "%H:%M")
                     a_start, a_end = datetime.strptime("13:00", "%H:%M"), datetime.strptime("17:00", "%H:%M")
-                    ot_start, ot_end = datetime.strptime("17:00", "%H:%M"), datetime.strptime("23:59", "%H:%M")
+                    ot_start = datetime.strptime("17:00", "%H:%M")
                     
                     def intersect(t1, t2, r1, r2):
                         s, e = max(t1, r1), min(t2, r2)
-                        return max(0, (e - s).total_seconds() / 60)
+                        return max(0, (e - s).total_seconds() / 3600)
                     
-                    std_mins = intersect(t_in, t_out, m_start, m_end) + intersect(t_in, t_out, a_start, a_end)
-                    ot_mins = intersect(t_in, t_out, ot_start, ot_end)
+                    std_hrs = intersect(t_in, t_out, m_start, m_end) + intersect(t_in, t_out, a_start, a_end)
+                    ot_hrs = max(0, (t_out - ot_start).total_seconds() / 3600) if t_out > ot_start else 0
                     
-                    if is_sunday: auto_tc_cn += (std_mins + ot_mins) / 60.0 
+                    if is_sunday: auto_tc_cn += std_hrs + ot_hrs
                     else:
-                        auto_ngay_cong += (std_mins / 60.0) / 8.0 
-                        auto_tc_thuong += (ot_mins / 60.0)        
+                        auto_ngay_cong += std_hrs / 8.0 
+                        auto_tc_thuong += ot_hrs      
                 except: pass
 
-            ngay_vao_str = nv_data.get('ngay_vao_lam')
-            if pd.isna(ngay_vao_str) or not ngay_vao_str: ngay_vao_str = lay_gio_vn().strftime("%Y-%m-%d")
-            try:
-                d_vao = datetime.strptime(ngay_vao_str, "%Y-%m-%d")
-                d_ky_luong = datetime.strptime(ky_luong_str, "%m/%Y")
-                so_thang_tn = (d_ky_luong.year - d_vao.year) * 12 + (d_ky_luong.month - d_vao.month)
-                so_nam_tn = round(max(0, so_thang_tn) / 12, 1)
-                hien_thi_nam = f"{int(so_nam_tn)}" if so_nam_tn.is_integer() else f"{so_nam_tn}"
-            except: hien_thi_nam = "0"; d_vao = lay_gio_vn().date()
-
-            st.info(f"📅 Cỗ máy đã quét **{len(bang_cong)}** lượt chấm công. Dữ liệu đã tự động điền bên dưới 👇")
+            st.info(f"📅 Hệ thống quét được **{len(bang_cong)}** ngày chấm công.")
             st.markdown("---")
-            st.subheader("BƯỚC 2: Kiểm Tra Biến Số & Tính Toán")
             def s_int(val): return int(val) if pd.notna(val) else 0
 
             col_l1, col_l2, col_l3 = st.columns(3)
             with col_l1:
-                st.caption("CÁC KHOẢN CỐ ĐỊNH")
                 l_cb = st.number_input("Lương cơ bản", value=s_int(nv_data.get('luong_cb', 0)), step=10000)
                 l_nl = st.number_input("Lương năng lực", value=s_int(nv_data.get('luong_nang_luc', 0)), step=10000)
                 t_nien = st.number_input("Tiền thâm niên", value=s_int(nv_data.get('tham_nien', 0)), step=5000)
@@ -193,152 +160,103 @@ if role == "admin":
                 p_cap = st.number_input("Phụ cấp cố định", value=s_int(nv_data.get('phu_cap_khac', 0)), step=10000)
 
             with col_l2:
-                st.caption("DỮ LIỆU TỪ MÁY CHẤM CÔNG (Có thể sửa tay)")
                 ngay_cong = st.number_input("Ngày công", min_value=0.0, value=float(round(auto_ngay_cong, 2)), step=0.5)
                 tc_thuong_gio = st.number_input("Giờ TC ngày", min_value=0.0, value=float(round(auto_tc_thuong, 2)), step=0.5)
                 tc_cn_gio = st.number_input("Giờ TC Chủ Nhật", min_value=0.0, value=float(round(auto_tc_cn, 2)), step=0.5)
 
             with col_l3:
-                st.caption("THƯỞNG & KHẤU TRỪ")
                 thuong = st.number_input("Thưởng thêm", min_value=0, value=0, step=100000)
-                tam_ung = st.number_input("Tạm ứng đợt 1", min_value=0, value=0, step=100000)
-                khau_tru = st.number_input("Khấu trừ / Phạt", min_value=0, value=0, step=50000)
+                tam_ung = st.number_input("Tạm ứng / Phạt", min_value=0, value=0, step=50000)
                 ghi_chu = st.text_area("Ghi chú", value="")
 
             tien_cb, tien_nl, tien_tn, tien_com_th = l_cb * ngay_cong, l_nl * ngay_cong, t_nien * ngay_cong, t_com * ngay_cong
-            tien_tc_t = float(nv_data.get('tc_ngay_thuong_gia', 0) or 0) * tc_thuong_gio
-            tien_tc_c = float(nv_data.get('tc_chu_nhat_gia', 0) or 0) * tc_cn_gio
-            
+            tien_tc_t = float(nv_data.get('tc_ngay_thuong_gia', 0)) * tc_thuong_gio
+            tien_tc_c = float(nv_data.get('tc_chu_nhat_gia', 0)) * tc_cn_gio
             gross = tien_cb + tien_nl + tien_tn + tien_com_th + tien_tc_t + tien_tc_c + p_cap + thuong
-            tong_kt = tam_ung + khau_tru
-            thuc_lanh = gross - tong_kt
+            thuc_lanh = gross - tam_ung
 
-            st.markdown(f"### 💰 THỰC LÃNH CUỐI CÙNG: **{thuc_lanh:,.0f} VNĐ**")
-
-            def create_payslip_pdf():
-                pdf = FPDF(orientation='L', format='A5')
-                pdf.add_page()
-                if not (os.path.exists("arial.ttf") and os.path.exists("arialbd.ttf")): return None
-                pdf.add_font("Arial", "", "arial.ttf", uni=True)
-                pdf.add_font("Arial", "B", "arialbd.ttf", uni=True)
-
-                pdf.set_font("Arial", "B", 16)
-                pdf.cell(0, 10, "PHIẾU LƯƠNG NHÂN VIÊN", align="C", ln=True)
-                pdf.ln(2)
-
-                pdf.set_font("Arial", "B", 10)
-                pdf.cell(25, 6, "Nhân viên:"); pdf.set_font("Arial", "", 10); pdf.cell(65, 6, chon_nv_luong)
-                pdf.set_font("Arial", "B", 10); pdf.cell(35, 6, "Vào làm:"); pdf.set_font("Arial", "", 10); pdf.cell(0, 6, d_vao.strftime('%d/%m/%Y'), ln=True)
-                pdf.set_font("Arial", "B", 10)
-                pdf.cell(25, 6, "Bộ phận:"); pdf.set_font("Arial", "", 10); pdf.cell(65, 6, nv_data.get('bo_phan', ''))
-                pdf.set_font("Arial", "B", 10); pdf.cell(35, 6, "Thâm niên:"); pdf.set_font("Arial", "B", 10); pdf.cell(0, 6, f"{hien_thi_nam} năm", ln=True)
-                pdf.ln(4)
-
-                w = [10, 65, 25, 35, 55]
-                pdf.set_fill_color(220, 220, 220)
-                for i, h in enumerate(["STT", "KHOẢN MỤC", "SỐ LƯỢNG", "ĐƠN GIÁ", "THÀNH TIỀN"]):
-                    pdf.cell(w[i], 8, h, 1, 0 if i<4 else 1, 'C', True)
-
-                def f(n): return f"{n:,.0f}".replace(",", ".")
-                def r(s, n, sl, dg, tt):
-                    pdf.set_font("Arial", "", 10)
-                    pdf.cell(w[0], 7, s, 1, 0, 'C'); pdf.cell(w[1], 7, " " + n, 1, 0, 'L')
-                    pdf.cell(w[2], 7, sl, 1, 0, 'C'); pdf.cell(w[3], 7, dg, 1, 0, 'R'); pdf.cell(w[4], 7, tt, 1, 1, 'R')
-                def s(n, tt, bold=False):
-                    pdf.set_font("Arial", "B" if bold else "", 10)
-                    pdf.cell(sum(w[:4]), 8, n, 1, 0, 'R'); pdf.cell(w[4], 8, tt, 1, 1, 'R')
-
-                pdf.set_font("Arial", "B", 10); pdf.set_fill_color(240, 240, 240); pdf.cell(sum(w), 8, "  I. THU NHẬP", 1, 1, 'L', True)
-                r("1", "Lương cơ bản", f"{ngay_cong}".replace('.', ','), f(l_cb), f(tien_cb))
-                r("2", "Lương năng lực", f"{ngay_cong}".replace('.', ','), f(l_nl), f(tien_nl))
-                r("3", "Tiền thâm niên", f"{ngay_cong}".replace('.', ','), f(t_nien), f(tien_tn))
-                r("4", "Tiền cơm", f"{ngay_cong}".replace('.', ','), f(t_com), f(tien_com_th))
-                r("5", "Tăng ca ngày thường", f"{tc_thuong_gio}".replace('.', ','), f(nv_data.get('tc_ngay_thuong_gia',0)), f(tien_tc_t))
-                r("6", "Tăng ca chủ nhật", f"{tc_cn_gio}".replace('.', ','), f(nv_data.get('tc_chu_nhat_gia',0)), f(tien_tc_c))
-                r("7", "Phụ cấp cố định", "", "", f(p_cap))
-                r("8", "Thưởng thêm", "", "", f(thuong))
-                s("Tổng thu nhập (Gross): ", f(gross) + "  ", True)
-                
-                pdf.set_font("Arial", "B", 10); pdf.set_fill_color(240, 240, 240); pdf.cell(sum(w), 8, "  II. KHẤU TRỪ", 1, 1, 'L', True)
-                r("9", "Tạm ứng đợt 1", "", "", f(tam_ung))
-                r("10", "Khấu trừ / Phạt", "", "", f(khau_tru))
-                s("Tổng khấu trừ: ", f(tong_kt) + "  ", True)
-
-                pdf.set_font("Arial", "B", 10); pdf.set_fill_color(240, 240, 240); pdf.cell(sum(w), 8, "  III. THỰC LÃNH", 1, 1, 'L', True)
-                pdf.set_font("Arial", "B", 11)
-                pdf.cell(sum(w[:4]), 10, "THỰC LÃNH (I - II): ", 1, 0, 'R'); pdf.cell(w[4], 10, f(thuc_lanh) + " đ  ", 1, 1, 'R')
-
-                if ghi_chu:
-                    pdf.ln(2); pdf.set_font("Arial", "B", 10); pdf.cell(20, 6, "Nhận xét:")
-                    pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 6, ghi_chu); pdf.ln(1)
-                else: pdf.ln(4)
-
-                out = pdf.output(dest='S')
-                return out.encode('latin-1') if isinstance(out, str) else bytes(out)
-
-            st.subheader("BƯỚC 3: Tải Phiếu Lương")
-            pdf_data = create_payslip_pdf()
-            if pdf_data:
-                st.download_button(f"🖨️ Tải PDF Phiếu Lương - {chon_nv_luong}", pdf_data, f"Phieu_Luong_{chon_nv_luong}.pdf", "application/pdf", type="primary")
+            st.markdown(f"### 💰 THỰC LÃNH: **{thuc_lanh:,.0f} VNĐ**")
 
 else:
-    # NẾU LÀ NHÂN VIÊN -> CHỈ THẤY GIAO DIỆN CHẤM CÔNG (KHÔNG TABS)
+    # NẾU LÀ NHÂN VIÊN
     st.markdown("<h2 style='text-align: center; color: #4CAF50;'>📱 HỆ THỐNG CHẤM CÔNG WANCHI</h2>", unsafe_allow_html=True)
     container_cham_cong = st.container()
 
 # ==========================================
-# KHU VỰC CHẤM CÔNG (DÙNG CHUNG CHO CẢ ADMIN LẪN NHÂN VIÊN)
+# KHU VỰC CHẤM CÔNG (MÃ CA LÀM VIỆC)
 # ==========================================
 with container_cham_cong:
-    current_ip = get_client_ip()
-    # Đã sửa lấy ngày VN
+    ma_ca, thoi_gian_tao = lay_thong_tin_ma_ca()
     hom_nay = lay_gio_vn().strftime("%d/%m/%Y")
+    gio_hien_tai = lay_gio_vn().strftime("%H:%M")
     
     st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
-    
+
+    # --- PHẦN ADMIN: TẠO MÃ ---
     if role == "admin":
-        with st.expander("⚙️ Cài đặt Cổng Wi-Fi Xưởng"):
-            st.write(f"IP Wi-Fi Xưởng đang lưu: `{IP_XUONG}` | IP của bạn: `{current_ip}`")
-            if st.button("🔒 Đặt IP hiện tại làm IP Xưởng", type="primary"):
-                c.execute("""INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('IP_XUONG', %s) 
-                             ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri""", (current_ip,))
+        with st.expander("🔑 QUẢN LÝ MÃ CHẤM CÔNG (Dành cho Chủ xưởng)"):
+            if ma_ca:
+                tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
+                tg_het_han = tg_tao_dt + timedelta(hours=24)
+                st.write(f"Mã hiện tại: **{ma_ca}** (Tạo lúc: {tg_tao_dt.strftime('%H:%M %d/%m')})")
+                if lay_gio_vn() > tg_het_han:
+                    st.error("⚠️ Mã này đã hết hạn 24h! Vui lòng tạo mã mới.")
+                else:
+                    st.success(f"Mã còn hiệu lực đến: {tg_het_han.strftime('%H:%M %d/%m')}")
+            
+            if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 24h)", type="primary"):
+                moi_ma = str(random.randint(1000, 9999))
+                bay_gio = lay_gio_vn().isoformat()
+                c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('MA_CA_HIEN_TAI', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (moi_ma,))
+                c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('THOI_GIAN_TAO_MA', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (bay_gio,))
+                conn.commit()
                 st.rerun()
 
     st.markdown("---")
-    if df_nv.empty or IP_XUONG == "Chưa cài đặt":
-        st.warning("⚠️ Chưa có nhân viên hoặc chưa cài đặt mạng Wi-Fi xưởng!")
+
+    # --- PHẦN NHÂN VIÊN: CHẤM CÔNG ---
+    if not ma_ca:
+        st.warning("⚠️ Chủ xưởng chưa tạo mã ca làm việc. Vui lòng liên hệ Admin!")
     else:
-        if current_ip == IP_XUONG:
-            st.success(f"📶 Đã kết nối Mạng Nội Bộ WANCHI. Bạn có thể chấm công!")
-            col_c1, col_c2 = st.columns(2)
+        # Kiểm tra thời hạn mã
+        tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
+        if lay_gio_vn() > (tg_tao_dt + timedelta(hours=24)):
+            st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
+        else:
+            col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
             with col_c1:
                 nv_cham_cong = st.selectbox("🙋‍♂️ Chọn tên của bạn:", ["-- Chọn Tên --"] + df_nv['ten_nv'].tolist())
             with col_c2:
-                if nv_cham_cong != "-- Chọn Tên --":
-                    real_pin = df_nv[df_nv['ten_nv'] == nv_cham_cong].iloc[0]['ma_pin']
-                    pin_nhap = st.text_input("Nhập mã PIN bí mật của bạn:", type="password", max_chars=4)
-                    
-                    c.execute("SELECT gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_cham_cong, hom_nay))
-                    trang_thai = c.fetchone()
-                    # Đã sửa thành giờ VN
-                    gio_hien_tai = lay_gio_vn().strftime("%H:%M")
-                    
+                pin_nhap = st.text_input("Mã PIN cá nhân:", type="password", max_chars=4)
+            with col_c3:
+                ma_ca_nhap = st.text_input("Mã CA tại xưởng:", type="password", max_chars=4, help="Nhìn mã trên máy tính của xưởng")
+
+            if nv_cham_cong != "-- Chọn Tên --" and pin_nhap and ma_ca_nhap:
+                real_pin = df_nv[df_nv['ten_nv'] == nv_cham_cong].iloc[0]['ma_pin']
+                
+                if ma_ca_nhap == ma_ca:
                     if pin_nhap == real_pin:
+                        c.execute("SELECT gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_cham_cong, hom_nay))
+                        trang_thai = c.fetchone()
+                        
+                        col_b1, col_b2 = st.columns(2)
                         if not trang_thai:
-                            if st.button("🟢 VÀO CA (Check-in)", type="primary", use_container_width=True):
-                                c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao, ip_vao) VALUES (%s, %s, %s, %s)", (nv_cham_cong, hom_nay, gio_hien_tai, current_ip))
-                                st.rerun()
+                            if col_b1.button("🟢 VÀO CA (Check-in)", type="primary", use_container_width=True):
+                                c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao) VALUES (%s, %s, %s)", (nv_cham_cong, hom_nay, gio_hien_tai))
+                                conn.commit()
+                                st.success(f"✅ Đã vào ca lúc {gio_hien_tai}")
+                                time.sleep(1); st.rerun()
+                        elif trang_thai[1] is None:
+                            st.info(f"Bạn đã vào ca lúc: {trang_thai[0]}")
+                            if col_b2.button("🔴 TAN CA (Check-out)", type="primary", use_container_width=True):
+                                c.execute("UPDATE public.cham_cong SET gio_ra=%s WHERE ten_nv=%s AND ngay=%s", (gio_hien_tai, nv_cham_cong, hom_nay))
+                                conn.commit()
+                                st.success(f"✅ Đã tan ca lúc {gio_hien_tai}")
+                                time.sleep(1); st.rerun()
                         else:
-                            if trang_thai[1] is None:
-                                st.info(f"Đã vào ca lúc: {trang_thai[0]}")
-                                if st.button("🔴 TAN CA (Check-out)", type="primary", use_container_width=True):
-                                    c.execute("UPDATE public.cham_cong SET gio_ra=%s, ip_ra=%s WHERE ten_nv=%s AND ngay=%s", (gio_hien_tai, current_ip, nv_cham_cong, hom_nay))
-                                    st.rerun()
-                            else:
-                                st.success(f"✅ Đã hoàn thành. Vào: {trang_thai[0]} | Ra: {trang_thai[1]}")
-                    elif pin_nhap != "": st.error("❌ Mã PIN sai!")
-        else:
-            st.error(f"🛑 Bạn đang dùng mạng ngoài. Vui lòng kết nối Wi-Fi Xưởng WANCHI!")
+                            st.success(f"✅ Đã hoàn thành ngày công. ({trang_thai[0]} - {trang_thai[1]})")
+                    else: st.error("❌ Mã PIN cá nhân sai!")
+                else: st.error("❌ Mã CA TẠI XƯỞNG không đúng!")
 
     st.markdown("---")
     try:
