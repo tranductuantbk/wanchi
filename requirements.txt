@@ -1,5 +1,6 @@
 streamlit
-pandas
-fpdf
 psycopg2-binary
-plotly
+SQLAlchemy
+pandas
+fpdf2
+Pillow
