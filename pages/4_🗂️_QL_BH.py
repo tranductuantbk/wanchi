@@ -25,7 +25,7 @@ st.header("🗂️ Sổ Dữ Liệu Bán Hàng (Chi Tiết)")
 # Kết nối database
 conn = get_connection()
 try:
-    df_raw = pd.read_sql("SELECT * FROM don_hang ORDER BY id DESC", conn)
+    df_raw = pd.read_sql("SELECT * FROM public.don_hang ORDER BY id DESC", conn)
 except:
     df_raw = pd.DataFrame()
 
@@ -39,7 +39,6 @@ if not df_raw.empty:
             if pd.notna(row['chi_tiet']) and str(row['chi_tiet']).strip() != "":
                 items = json.loads(row['chi_tiet'])
                 for item in items:
-                    # Hỗ trợ cả tên key của Hàng Chuẩn và Hàng OME
                     ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME', 'Không rõ'))
                     don_gia = item.get('Đơn Giá', item.get('Đơn Giá OME', 0))
                     so_luong = item.get('Số Lượng', 0)
@@ -56,7 +55,6 @@ if not df_raw.empty:
                         "Doanh Thu": float(thanh_tien)
                     })
             else:
-                # Dành cho các đơn hàng cực cũ (nếu có)
                 flat_data.append({
                     "Ngày": str(row.get('ngay_tao', ''))[:10],
                     "Mã Đơn": str(row.get('ma_don', '')),
@@ -102,7 +100,7 @@ if not df_raw.empty:
 
     st.markdown("---")
     
-    # Khung chứa 2 nút tải xuống
+    # Khung chứa nút tải xuống
     col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 6])
 
     with col_btn1:
@@ -123,12 +121,10 @@ if not df_raw.empty:
             if not (os.path.exists("arial.ttf") and os.path.exists("arialbd.ttf")):
                 pdf.set_font("Helvetica", "B", 18)
                 f_name = "Helvetica"
-                has_font = False
             else:
                 pdf.add_font("Arial", "", "arial.ttf", uni=True)
                 pdf.add_font("Arial", "B", "arialbd.ttf", uni=True)
                 f_name = "Arial"
-                has_font = True
             
             pdf.set_font(f_name, "B", 18)
             pdf.cell(0, 10, "BÁO CÁO DỮ LIỆU BÁN HÀNG CHI TIẾT", align="C", ln=True)
@@ -136,7 +132,6 @@ if not df_raw.empty:
             pdf.cell(0, 6, f"Ngày trích xuất: {date.today().strftime('%d/%m/%Y')}", align="C", ln=True)
             pdf.ln(5)
 
-            # Độ rộng các cột (Tổng 270)
             w_ngay, w_phieu, w_kh, w_sp, w_sl, w_gia, w_doanhthu = 25, 25, 50, 80, 20, 35, 35
 
             def draw_header():
@@ -187,8 +182,16 @@ if not df_raw.empty:
             pdf.cell(w_ngay + w_phieu + w_kh + w_sp + w_sl + w_gia, 10, "TỔNG CỘNG:", border=1, align="R")
             pdf.cell(w_doanhthu, 10, f"{tong_doanh_thu:,.0f}", border=1, align="R", ln=True)
 
-            # ĐÃ SỬA DỨT ĐIỂM LỖI TYPE ERROR Ở DÒNG NÀY
-            return pdf.output(dest='S').encode('latin-1')
+            # ==========================================
+            # BỘ LỌC XUẤT BẢN PDF THÔNG MINH (CHỐNG LỖI ĐỜI FPDF MỚI)
+            # ==========================================
+            try:
+                # Cách 1: Cho FPDF2 (Phiên bản mới nhất trên Streamlit Cloud)
+                return bytes(pdf.output())
+            except Exception:
+                # Cách 2: Cho FPDF bản cũ
+                out = pdf.output(dest='S')
+                return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
         pdf_bytes = create_report_pdf(df_hien_thi)
         
