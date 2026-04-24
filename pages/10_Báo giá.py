@@ -203,18 +203,27 @@ with tab1:
                 elif tong_goc < 9000000: ck = 0.90
                 else: ck = 0.85
                 
-                # Bước 3: Cập nhật Đơn Giá chốt cho TẤT CẢ sản phẩm trong giỏ (Chỉ chạy 1 lần khi thêm SP)
+                # Bước 3: Cập nhật Đơn Giá chốt cho TẤT CẢ sản phẩm trong giỏ
                 for item in st.session_state.gio_bao_gia:
                     item['Đơn Giá'] = round((item['Giá Gốc'] / 0.6) * ck, 0)
                     
                 st.rerun()
 
     if st.session_state.gio_bao_gia:
+        # BỘ VÁ LỖI GIỎ HÀNG CŨ (Chống KeyError)
+        for item in st.session_state.gio_bao_gia:
+            if 'Đơn Giá' not in item:
+                item['Đơn Giá'] = round(item.get('Giá Gốc', 0) / 0.6, 0)
+            if 'Giá Gốc' not in item:
+                item['Giá Gốc'] = 0
+            if 'Giá công ty' not in item:
+                item['Giá công ty'] = 0
+
         df_curr = pd.DataFrame(st.session_state.gio_bao_gia)
         
         st.info("💡 **Mẹo Pro:** Bạn có thể **nhấp đúp chuột** vào cột **Số Lượng** và **Đơn Giá** bên dưới để sửa đè giá cho khách quen!")
         
-        # Tính trước Thành Tiền để hiển thị ra bảng
+        # Tính trước Thành Tiền
         df_curr['Thành Tiền'] = df_curr['Số Lượng'] * df_curr['Đơn Giá']
         
         # BẢNG TÍNH INTERACTIVE BÁO GIÁ
@@ -231,7 +240,7 @@ with tab1:
             },
             hide_index=True,
             use_container_width=True,
-            key="editor_bg1" # Cần key để lưu lại thao tác sửa
+            key="editor_bg1"
         )
         
         # TÍNH LẠI NGAY LẬP TỨC NẾU NGƯỜI DÙNG SỬA SỐ
@@ -255,7 +264,6 @@ with tab1:
                     ma_bg = f"BG{ngay_gio_obj.strftime('%y%m%d%H%M')}"
                     ngay_gio_str = ngay_gio_obj.strftime("%d/%m/%Y %H:%M")
                     
-                    # TẠO PDF (Bỏ qua cột Giá công ty)
                     st.session_state['pdf_data_t1'] = generate_generic_pdf(
                         df_hien_thi, 
                         "BÁO GIÁ SẢN PHẨM", 
@@ -312,6 +320,11 @@ with tab2:
                 st.warning("Vui lòng nhập tên sản phẩm/dịch vụ!")
 
     if st.session_state.gio_bao_gia_custom:
+        # BỘ VÁ LỖI GIỎ HÀNG CŨ CHO TAB TÙY CHỈNH
+        for item in st.session_state.gio_bao_gia_custom:
+            if 'Đơn Giá' not in item:
+                item['Đơn Giá'] = 0
+
         df_curr_c = pd.DataFrame(st.session_state.gio_bao_gia_custom)
         
         st.info("💡 **Mẹo Pro:** Bạn có thể **nhấp đúp chuột** vào cột **Số Lượng** và **Đơn Giá** bên dưới để sửa lại!")
