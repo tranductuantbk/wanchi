@@ -98,7 +98,8 @@ with tab1:
         
         with col2:
             gia_dai_ly = st.number_input("Giá bán Đại lý (VNĐ)", min_value=0.0, step=1000.0)
-            st.markdown("*(Giá khách lẻ tự động = Giá Đại Lý / 0.6)*")
+            # ĐÃ ĐỔI TÊN THUẬT NGỮ Ở ĐÂY
+            st.markdown("*(Giá Công ty tự động = Giá Đại Lý / 0.6)*")
             chi_phi_khac_chuan = st.number_input("Chi phí khác (Tem, thùng, công...) (VNĐ)", min_value=0.0, step=1000.0)
             
         st.markdown("---")
@@ -169,7 +170,8 @@ with tab2:
                     "ten_sp": st.column_config.TextColumn("Tên Sản Phẩm", disabled=True),
                     "thanh_phan_hien_thi": st.column_config.TextColumn("Thành Phần Vật Tư", disabled=True),
                     "gia_dai_ly": st.column_config.NumberColumn("Giá Đại lý", format="%d"),
-                    "gia_khach_le": st.column_config.NumberColumn("Giá Khách lẻ", disabled=True, format="%d"),
+                    # ĐÃ ĐỔI TÊN TIÊU ĐỀ CỘT Ở ĐÂY
+                    "gia_khach_le": st.column_config.NumberColumn("Giá Công ty", disabled=True, format="%d"),
                     "gia_von": st.column_config.NumberColumn("Giá Vốn", format="%d"),
                     "chi_phi_khac": st.column_config.NumberColumn("Chi phí khác", format="%d"),
                 },
