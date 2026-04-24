@@ -45,18 +45,21 @@ st.header("📝 Hệ Thống Lên Đơn Hàng WANCHI")
 conn = get_connection()
 c = conn.cursor()
 
-# BẢNG ĐƠN HÀNG 
+# KHỞI TẠO BẢNG ĐƠN HÀNG (CÓ BỘ MỞ KHÓA)
 try:
     c.execute('''CREATE TABLE IF NOT EXISTS don_hang (id SERIAL PRIMARY KEY)''')
-    cac_cot = {
-        "ma_don": "TEXT", "ngay_tao": "TEXT", "ten_kh": "TEXT", 
-        "loai_don": "TEXT", "tong_tien": "REAL", "chi_tiet": "TEXT", "trang_thai": "TEXT DEFAULT 'Mới tạo'"
-    }
-    for cot, kieu in cac_cot.items():
-        try: c.execute(f"ALTER TABLE don_hang ADD COLUMN {cot} {kieu}")
-        except: pass
-except: pass 
-conn.commit()
+    conn.commit()
+except: conn.rollback()
+
+cac_cot = {
+    "ma_don": "TEXT", "ngay_tao": "TEXT", "ten_kh": "TEXT", 
+    "loai_don": "TEXT", "tong_tien": "REAL", "chi_tiet": "TEXT", "trang_thai": "TEXT DEFAULT 'Mới tạo'"
+}
+for cot, kieu in cac_cot.items():
+    try: 
+        c.execute(f"ALTER TABLE don_hang ADD COLUMN {cot} {kieu}")
+        conn.commit()
+    except: conn.rollback()
 
 # LẤY DỮ LIỆU TỪ CÁC KHO
 try: df_kh = pd.read_sql("SELECT ten_kh, nhom_kh, so_dien_thoai FROM dm_khach_hang", conn)
@@ -122,7 +125,7 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
     pdf.ln(12)
 
     pdf.set_font(font_name, 'B' if has_font else '', 16)
-    pdf.cell(0, 10, "HÓA ĐƠN BÁN HÀNG" if loai_don == "Hàng Chuẩn" else "HÓA ĐƠN GIA CÔNG (OME)", ln=True, align='C')
+    pdf.cell(0, 10, "HÓA ĐƠN BÁN HÀNG" if loai_don != "Hàng OME" else "HÓA ĐƠN GIA CÔNG (OME)", ln=True, align='C')
     
     pdf.set_font(font_name, size=11)
     pdf.cell(0, 8, f"Mã Đơn: {ma_dh}   |   Ngày: {lay_gio_vn().strftime('%d/%m/%Y')}", ln=True, align='C')
@@ -161,15 +164,19 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
     pdf.cell(95, 6, "Người Lập Phiếu", align='C')
     pdf.cell(95, 6, "Khách Hàng", align='C')
     
-    return pdf.output(dest='S').encode('latin-1')
+    try:
+        return bytes(pdf.output())
+    except Exception:
+        out = pdf.output(dest='S')
+        return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
 # ==========================================
-# GIAO DIỆN TẠO ĐƠN
+# GIAO DIỆN TẠO ĐƠN (4 TABS)
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["🛒 Lên Đơn Hàng Chuẩn", "🛠️ Lên Đơn Hàng OME", "📂 Lịch Sử Đơn Hàng"])
+tab1, tab2, tab3, tab4 = st.tabs(["🛒 Lên Đơn Hàng Đại lý", "🛠️ Lên Đơn Hàng OME", "📑 Lên Đơn Hàng Báo Giá", "📂 Lịch Sử Đơn Hàng"])
 
 # ------------------------------------------
-# TAB 1: ĐƠN HÀNG CHUẨN
+# TAB 1: ĐƠN HÀNG ĐẠI LÝ / CÔNG TY
 # ------------------------------------------
 with tab1:
     st.subheader(f"Mã Đơn Tiếp Theo: {ma_don_hien_tai}")
@@ -181,8 +188,9 @@ with tab1:
     if kh_chuan != "-- Chọn Khách Hàng --":
         thong_tin_kh = df_kh[df_kh['ten_kh'] == kh_chuan].iloc[0]
         sdt_kh_chot = thong_tin_kh.get('so_dien_thoai', '')
-        nhom_kh = thong_tin_kh.get('nhom_kh', 'Khách lẻ')
-        loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Khách Lẻ"
+        # ĐỒNG BỘ: Nhận diện "Công ty" thay vì "Khách lẻ"
+        nhom_kh = thong_tin_kh.get('nhom_kh', 'Công ty')
+        loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Công ty"
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
     
     with st.form("form_chuan", clear_on_submit=True):
@@ -211,14 +219,12 @@ with tab1:
         df_gio_chuan = pd.DataFrame(st.session_state.gio_chuan)
         st.dataframe(df_gio_chuan, use_container_width=True, hide_index=True)
         
-        # ĐÃ ÉP KIỂU SỐ FLOAT ĐỂ CHỐNG LỖI DATABASE np.float64
         tong_tien_chuan = float(df_gio_chuan['Thành Tiền'].sum())
-        
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien_chuan)} VNĐ")
         
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
-            if st.button("💾 CHỐT ĐƠN & TẠO PDF (HÀNG CHUẨN)", type="primary", use_container_width=True):
+            if st.button("💾 CHỐT ĐƠN & TẠO PDF (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True):
                 st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_gio_chuan, tong_tien_chuan, "Hàng Chuẩn")
                 st.session_state['pdf_ten_chuan'] = f"{ma_don_hien_tai}_{kh_chuan}.pdf"
                 
@@ -227,8 +233,10 @@ with tab1:
                     ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                     c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ma_don_hien_tai, ngay_gio, kh_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
+                    conn.commit()
                     st.success("✅ Chốt đơn thành công! Dữ liệu đã lưu vào lịch sử. Vui lòng tải file in bên dưới.")
                 except Exception as e:
+                    conn.rollback()
                     st.error(f"⚠️ Lỗi Database: {e}")
         
         if 'pdf_don_chuan' in st.session_state:
@@ -275,9 +283,7 @@ with tab2:
         df_gio_ome = pd.DataFrame(st.session_state.gio_ome)
         st.dataframe(df_gio_ome, use_container_width=True, hide_index=True)
         
-        # ĐÃ ÉP KIỂU SỐ FLOAT ĐỂ CHỐNG LỖI DATABASE np.float64
         tong_tien_ome = float(df_gio_ome['Thành Tiền'].sum())
-        
         st.write(f"### 💰 TỔNG CỘNG OME: {format_vn(tong_tien_ome)} VNĐ")
         
         col_btn_o1, col_btn_o2 = st.columns([1, 1])
@@ -294,8 +300,10 @@ with tab2:
                         ngay_gio_ome = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                         c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                                   (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
+                        conn.commit()
                         st.success("✅ Chốt đơn OME thành công! Dữ liệu đã lưu vào lịch sử. Tải PDF bên dưới.")
                     except Exception as e: 
+                        conn.rollback()
                         st.error(f"⚠️ Lỗi Database: {e}")
         
         if 'pdf_don_ome' in st.session_state:
@@ -308,9 +316,83 @@ with tab2:
                 st.rerun()
 
 # ------------------------------------------
-# TAB 3: LỊCH SỬ ĐƠN HÀNG
+# TAB 3: LÊN ĐƠN HÀNG BÁO GIÁ (MỚI)
 # ------------------------------------------
 with tab3:
+    st.subheader("📑 Chuyển đổi Báo Giá thành Đơn Hàng")
+    st.info(f"Hệ thống sẽ lấy dữ liệu từ Báo Giá và cấp cho nó một Mã Đơn Hàng chính thức (**{ma_don_hien_tai}**) để ghi nhận doanh thu và xuất kho.")
+    
+    try:
+        df_bg = pd.read_sql("SELECT id, ma_bao_gia, ngay_tao, ten_kh, so_dien_thoai, tong_tien, chi_tiet FROM public.lich_su_bao_gia ORDER BY id DESC", conn)
+        if not df_bg.empty:
+            df_bg['ma_bao_gia'] = df_bg['ma_bao_gia'].fillna("Mã Cũ")
+            options_bg = ["-- Chọn Báo Giá --"]
+            for _, r in df_bg.iterrows():
+                options_bg.append(f"[{r['ma_bao_gia']}] Khách: {r['ten_kh']} ({r['ngay_tao']})")
+            
+            chon_bg = st.selectbox("🔍 Chọn Mã Báo Giá khách đã chốt:", options_bg)
+            
+            if chon_bg != "-- Chọn Báo Giá --":
+                ma_bg_chon = chon_bg.split("] ")[0].replace("[", "")
+                
+                # Tìm đúng dòng báo giá
+                if ma_bg_chon == "Mã Cũ":
+                    # Lấy tạm bằng tên khách và ngày nếu là mã cũ
+                    ten_kh_split = chon_bg.split("Khách: ")[1].split(" (")[0]
+                    bg_info = df_bg[df_bg['ten_kh'] == ten_kh_split].iloc[0]
+                else:
+                    bg_info = df_bg[df_bg['ma_bao_gia'] == ma_bg_chon].iloc[0]
+                
+                st.write(f"**Khách hàng:** {bg_info['ten_kh']} | **SĐT:** {bg_info['so_dien_thoai']}")
+                
+                if pd.notna(bg_info['chi_tiet']) and bg_info['chi_tiet']:
+                    bg_items = json.loads(bg_info['chi_tiet'])
+                    
+                    # Dịch form dữ liệu từ Báo Giá sang form Đơn Hàng để Kho đọc được
+                    order_items = []
+                    for item in bg_items:
+                        order_items.append({
+                            "Tên Sản Phẩm": item.get("Tên SP", item.get("Tên Sản Phẩm", "N/A")),
+                            "Loại Giá": f"Từ Báo Giá ({ma_bg_chon})",
+                            "Số Lượng": item.get("Số Lượng", 0),
+                            "Đơn Giá": item.get("Đơn Giá", 0),
+                            "Thành Tiền": item.get("Thành Tiền", 0)
+                        })
+                        
+                    df_order_bg = pd.DataFrame(order_items)
+                    st.dataframe(df_order_bg, use_container_width=True, hide_index=True)
+                    tong_tien_bg = float(df_order_bg['Thành Tiền'].sum())
+                    
+                    st.write(f"### 💰 TỔNG CỘNG CHỐT DEAL: {format_vn(tong_tien_bg)} VNĐ")
+                    
+                    if st.button("🚀 CHỐT ĐƠN & TẠO PDF TỪ BÁO GIÁ", type="primary", use_container_width=True):
+                        # Dùng header "Hàng Chuẩn" để PDF in ra chữ "HÓA ĐƠN BÁN HÀNG"
+                        st.session_state['pdf_don_bg'] = generate_order_pdf(ma_don_hien_tai, bg_info['ten_kh'], bg_info['so_dien_thoai'], df_order_bg, tong_tien_bg, "Hàng Chuẩn") 
+                        st.session_state['pdf_ten_bg'] = f"{ma_don_hien_tai}_TuBaoGia_{bg_info['ten_kh']}.pdf"
+                        
+                        try:
+                            chi_tiet_json_bg = df_order_bg.to_json(orient='records')
+                            ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                            c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
+                                      (ma_don_hien_tai, ngay_gio, bg_info['ten_kh'], f'Từ Báo Giá {ma_bg_chon}', tong_tien_bg, chi_tiet_json_bg))
+                            conn.commit()
+                            st.success(f"✅ Đã chuyển đổi thành công! Mã Báo Giá {ma_bg_chon} đã trở thành Đơn Hàng chính thức: **{ma_don_hien_tai}**")
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"Lỗi hệ thống: {e}")
+                            
+                if 'pdf_don_bg' in st.session_state:
+                    st.download_button("🖨️ TẢI HÓA ĐƠN PDF", data=st.session_state['pdf_don_bg'], file_name=st.session_state['pdf_ten_bg'], mime="application/pdf", type="primary", use_container_width=True)
+
+        else:
+            st.info("Chưa có báo giá nào trong hệ thống.")
+    except Exception as e:
+        st.error(f"Không thể tải lịch sử báo giá. Lỗi: {e}")
+
+# ------------------------------------------
+# TAB 4: LỊCH SỬ ĐƠN HÀNG
+# ------------------------------------------
+with tab4:
     st.subheader("📂 Danh sách Đơn Hàng đã tạo")
     try:
         df_his = pd.read_sql("SELECT ma_don, ngay_tao, ten_kh, loai_don, tong_tien, trang_thai, chi_tiet FROM don_hang ORDER BY id DESC", conn)
@@ -331,10 +413,14 @@ with tab3:
                     
                     sdt_his = "" 
                     if row_data['loai_don'] == 'Hàng Chuẩn': sdt_his = df_kh[df_kh['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == row_data['ten_kh']].empty else ""
-                    else: sdt_his = df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].empty else ""
+                    elif row_data['loai_don'] == 'Hàng OME': sdt_his = df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].empty else ""
+                    else: # Dành cho Đơn Hàng từ Báo Giá
+                        sdt_his = "Theo Báo Giá"
 
-                    # Ép kiểu float khi xuất lại PDF để đồng bộ
-                    pdf_re = generate_order_pdf(chon_don, row_data['ten_kh'], sdt_his, df_chi_tiet, float(row_data['tong_tien']), row_data['loai_don'])
+                    # Dùng Hàng Chuẩn header cho các đơn từ báo giá
+                    loai_pdf_header = "Hàng Chuẩn" if "Báo Giá" in row_data['loai_don'] else row_data['loai_don']
+                    
+                    pdf_re = generate_order_pdf(chon_don, row_data['ten_kh'], sdt_his, df_chi_tiet, float(row_data['tong_tien']), loai_pdf_header)
                     st.download_button("📥 XUẤT LẠI FILE PDF", data=pdf_re, file_name=f"{chon_don}_{row_data['ten_kh']}.pdf", mime="application/pdf", type="primary")
         else: st.info("Chưa có đơn hàng nào.")
     except: st.info("Hệ thống chưa có dữ liệu lịch sử.")
