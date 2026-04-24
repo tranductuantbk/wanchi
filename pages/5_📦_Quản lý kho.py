@@ -41,7 +41,6 @@ try:
                     ton_kho REAL DEFAULT 0
                 )''')
     
-    # GIỮ NGUYÊN TÊN CỘT 'ten_nl' ĐỂ KHÔNG BỊ LỖI VỚI DATABASE CŨ
     c.execute('''CREATE TABLE IF NOT EXISTS public.ls_nhap_xuat_kho (
                     id SERIAL PRIMARY KEY,
                     ngay_thao_tac TEXT,
@@ -53,7 +52,6 @@ try:
                     ghi_chu TEXT
                 )''')
     
-    # Nâng cấp bảng sản phẩm và đơn hàng để phục vụ Xuất/Nhập kho
     c.execute("ALTER TABLE public.dm_san_pham ADD COLUMN IF NOT EXISTS ton_kho REAL DEFAULT 0")
     c.execute("ALTER TABLE public.dm_san_pham_ome ADD COLUMN IF NOT EXISTS ton_kho REAL DEFAULT 0")
     c.execute("ALTER TABLE public.don_hang ADD COLUMN IF NOT EXISTS trang_thai TEXT DEFAULT 'Chờ xuất kho'")
@@ -66,7 +64,7 @@ except Exception as e: pass
 tab1, tab2, tab3 = st.tabs(["📋 Danh Mục NVL", "📥 Nhập / Xuất Kho (Thông Minh)", "📊 Báo Cáo Tồn Kho"])
 
 # ------------------------------------------
-# TAB 1: DANH MỤC NVL (Giữ nguyên)
+# TAB 1: DANH MỤC NVL
 # ------------------------------------------
 with tab1:
     st.subheader("Khai báo Danh Mục Nguyên Vật Liệu")
@@ -98,7 +96,7 @@ with tab1:
     except Exception as e: pass
 
 # ------------------------------------------
-# TAB 2: NHẬP XUẤT KHO THÔNG MINH (3 CHẾ ĐỘ)
+# TAB 2: NHẬP XUẤT KHO THÔNG MINH
 # ------------------------------------------
 with tab2:
     st.subheader("Hệ Thống Nhập / Xuất Kho Tự Động")
@@ -126,7 +124,6 @@ with tab2:
                     if st.form_submit_button("💾 Xác nhận Nhập NVL", type="primary"):
                         ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                         c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_tt, nl_chon))
-                        # SỬ DỤNG ten_nl THAY VÌ ten_vat_tu
                         c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu) 
                                      VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s)""", (ngay_tt, nl_chon, sl_tt, don_gia, sl_tt*don_gia, ghi_chu))
                         conn.commit()
@@ -134,7 +131,7 @@ with tab2:
                         time.sleep(1); st.rerun()
         except: pass
 
-    # --- CHẾ ĐỘ 2: NHẬP THÀNH PHẨM (TRỪ NVL) ---
+    # --- CHẾ ĐỘ 2: NHẬP THÀNH PHẨM ---
     elif "2. Nhập Thành Phẩm" in chuyem_muc:
         st.markdown("#### 📦 Nhập Thành Phẩm Vừa Sản Xuất (Tự động trừ NVL cấu thành)")
         try:
@@ -153,14 +150,11 @@ with tab2:
                         ds_nl_json = sp_info['ds_nguyen_lieu']
                         ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
 
-                        # 1. Tăng tồn kho Thành Phẩm
                         bang_update = "public.dm_san_pham" if loai_sp == 'chuẩn' else "public.dm_san_pham_ome"
                         c.execute(f"UPDATE {bang_update} SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl_nhap, sp_chon))
-                        # SỬ DỤNG ten_nl THAY VÌ ten_vat_tu
                         c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
                                      VALUES (%s, 'Nhập Thành Phẩm', %s, %s, 'Sản xuất hoàn thành')""", (ngay_tt, sp_chon, sl_nhap))
                         
-                        # 2. Rã đông BOM và Trừ kho Nguyên Vật Liệu
                         try:
                             ds_vat_tu = json.loads(ds_nl_json) if ds_nl_json else []
                             for vt in ds_vat_tu:
@@ -168,13 +162,11 @@ with tab2:
                                 dinh_muc = float(vt.get('dinh_muc', 0))
                                 tong_hao_phi = dinh_muc * sl_nhap
                                 
-                                # Trừ kho NVL
                                 c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho - %s WHERE ten_nl = %s", (tong_hao_phi, ten_vt))
-                                # Ghi lịch sử xuất cấn trừ
                                 c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
                                              VALUES (%s, 'Xuất cấn trừ BOM', %s, %s, %s)""", 
                                           (ngay_tt, ten_vt, -tong_hao_phi, f"Làm {sl_nhap} {sp_chon}"))
-                        except Exception as e: st.error(f"Lỗi đọc định mức BOM: {e}")
+                        except Exception as e: pass
                         
                         conn.commit()
                         st.success(f"✅ Đã nhập {sl_nhap} {sp_chon}. Kho NVL đã được tự động trừ hao phí tương ứng!")
@@ -182,47 +174,59 @@ with tab2:
             else: st.info("Chưa có danh mục sản phẩm.")
         except Exception as e: st.error(str(e))
 
-    # --- CHẾ ĐỘ 3: XUẤT KHO THEO ĐƠN HÀNG ---
+    # --- CHẾ ĐỘ 3: XUẤT KHO THEO ĐƠN HÀNG (CẬP NHẬT MỚI) ---
     elif "3. Xuất Kho" in chuyem_muc:
         st.markdown("#### 🚚 Lấy Phiếu Đơn Hàng Để Xuất Kho")
         try:
-            # Chỉ lấy các đơn hàng chưa xuất kho
-            df_dh = pd.read_sql("SELECT ma_don, ten_kh, ngay_tao, chi_tiet FROM public.don_hang WHERE trang_thai = 'Chờ xuất kho' OR trang_thai IS NULL", conn)
+            # Lấy TOÀN BỘ đơn hàng ra để hiển thị cho rõ ràng
+            df_dh = pd.read_sql("SELECT ma_don, ten_kh, ngay_tao, trang_thai, chi_tiet FROM public.don_hang ORDER BY id DESC", conn)
+            
             if not df_dh.empty:
-                don_chon = st.selectbox("📌 Chọn Mã Đơn Hàng cần xuất", df_dh['ma_don'].tolist())
-                don_info = df_dh[df_dh['ma_don'] == don_chon].iloc[0]
+                # Nếu đơn cũ chưa có trạng thái, mặc định là Chờ xuất kho
+                df_dh['trang_thai'] = df_dh['trang_thai'].fillna('Chờ xuất kho')
+                
+                # Tạo danh sách thả xuống có kèm Nhãn trạng thái
+                options = []
+                for _, row in df_dh.iterrows():
+                    options.append(f"[{row['trang_thai']}] {row['ma_don']} - Khách: {row['ten_kh']}")
+                
+                don_chon_str = st.selectbox("📌 Chọn Mã Đơn Hàng", options)
+                
+                # Trích xuất mã đơn hàng thực tế
+                ma_don_chon = don_chon_str.split("] ")[1].split(" - ")[0]
+                don_info = df_dh[df_dh['ma_don'] == ma_don_chon].iloc[0]
                 
                 st.write(f"**Khách hàng:** {don_info['ten_kh']} | **Ngày tạo:** {str(don_info['ngay_tao'])[:10]}")
                 
-                # Hiển thị giỏ hàng bên trong Đơn hàng
                 try: 
                     items = json.loads(don_info['chi_tiet'])
                     df_items = pd.DataFrame(items)
                     st.dataframe(df_items, use_container_width=True)
                     
-                    if st.button("📦 XÁC NHẬN XUẤT KHO TOÀN BỘ ĐƠN NÀY", type="primary"):
-                        ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
-                        
-                        for item in items:
-                            ten_sp_xuat = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
-                            sl_xuat = float(item.get('Số Lượng', 0))
+                    # KIỂM TRA TRẠNG THÁI ĐỂ KHÓA NÚT
+                    if don_info['trang_thai'] == 'Đã xuất kho':
+                        st.success("✅ Đơn hàng này ĐÃ ĐƯỢC XUẤT KHO TRƯỚC ĐÓ! Hệ thống đã khóa nút xuất để tránh cấn trừ kho 2 lần.")
+                    else:
+                        if st.button("📦 XÁC NHẬN XUẤT KHO TOÀN BỘ ĐƠN NÀY", type="primary"):
+                            ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                             
-                            # Trừ Tồn kho Sản phẩm (Thử cả bảng chuẩn và OME)
-                            c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl_xuat, ten_sp_xuat))
-                            c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl_xuat, ten_sp_xuat))
-                            
-                            # Ghi lịch sử (SỬ DỤNG ten_nl THAY VÌ ten_vat_tu)
-                            c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
-                                         VALUES (%s, 'Xuất Bán Hàng', %s, %s, %s)""", 
-                                      (ngay_tt, ten_sp_xuat, -sl_xuat, f"Xuất cho đơn {don_chon}"))
-                            
-                        # Đổi trạng thái đơn hàng
-                        c.execute("UPDATE public.don_hang SET trang_thai = 'Đã xuất kho' WHERE ma_don = %s", (don_chon,))
-                        conn.commit()
-                        st.success(f"✅ Đã xuất kho thành công Đơn {don_chon}!")
-                        time.sleep(2); st.rerun()
+                            for item in items:
+                                ten_sp_xuat = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
+                                sl_xuat = float(item.get('Số Lượng', 0))
+                                
+                                c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl_xuat, ten_sp_xuat))
+                                c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl_xuat, ten_sp_xuat))
+                                
+                                c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
+                                             VALUES (%s, 'Xuất Bán Hàng', %s, %s, %s)""", 
+                                          (ngay_tt, ten_sp_xuat, -sl_xuat, f"Xuất cho đơn {ma_don_chon}"))
+                                
+                            c.execute("UPDATE public.don_hang SET trang_thai = 'Đã xuất kho' WHERE ma_don = %s", (ma_don_chon,))
+                            conn.commit()
+                            st.success(f"✅ Đã xuất kho thành công Đơn {ma_don_chon}!")
+                            time.sleep(2); st.rerun()
                 except Exception as e: st.error("Lỗi đọc chi tiết đơn hàng.")
-            else: st.success("🎉 Mọi đơn hàng đều đã được xuất kho (hoặc chưa có đơn mới)!")
+            else: st.info("Chưa có đơn hàng nào trong hệ thống.")
         except Exception as e: st.error(str(e))
 
 # ------------------------------------------
@@ -249,7 +253,6 @@ with tab3:
     st.markdown("---")
     st.subheader("📜 Sổ Lịch Sử Nhập / Xuất (NVL & Sản Phẩm)")
     try:
-        # TRUY VẤN CỘT ten_nl
         df_ls = pd.read_sql("SELECT ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu FROM public.ls_nhap_xuat_kho ORDER BY id DESC LIMIT 100", conn)
         if not df_ls.empty:
             df_ls.columns = ["Thời gian", "Nghiệp vụ", "Tên Món Hàng", "Số lượng (+/-)", "Ghi chú"]
