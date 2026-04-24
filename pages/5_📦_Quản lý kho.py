@@ -4,15 +4,26 @@ from datetime import datetime, timedelta, timezone
 import time
 import json
 import os
+import urllib.request
 from fpdf import FPDF
 from db_utils import get_connection, check_password
 
 # ==========================================
-# CẤU HÌNH MÚI GIỜ & TRÌNH BÀY
+# CẤU HÌNH MÚI GIỜ & FONT PDF
 # ==========================================
 VN_TZ = timezone(timedelta(hours=7))
 def lay_gio_vn():
     return datetime.now(VN_TZ)
+
+FONT_FILE = "Roboto-Regular.ttf"
+FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf"
+
+@st.cache_resource
+def download_font():
+    if not os.path.exists(FONT_FILE):
+        try: urllib.request.urlretrieve(FONT_URL, FONT_FILE)
+        except: pass
+download_font()
 
 st.set_page_config(page_title="Quản Lý Kho WANCHI", page_icon="📦", layout="wide")
 
@@ -50,23 +61,28 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# HÀM TẠO PHIẾU XUẤT KHO PDF
+# HÀM TẠO PHIẾU XUẤT KHO PDF (ĐÃ VÁ LỖI FONT TIẾNG VIỆT)
 # ==========================================
 def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf = FPDF()
     pdf.add_page()
     
-    # Cấu hình Font (Dùng font mặc định để tránh lỗi Cloud nếu chưa tải Roboto)
-    pdf.set_font("Helvetica", "B", 16)
+    # Kích hoạt Font Tiếng Việt
+    has_font = os.path.exists(FONT_FILE)
+    if has_font:
+        pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+        font_name = "Roboto"
+    else: font_name = "Helvetica"
+
+    pdf.set_font(font_name, "", 16)
     pdf.cell(0, 10, "PHIẾU XUẤT KHO HÀNG HÓA", ln=True, align="C")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font(font_name, "", 10)
     pdf.cell(0, 6, f"Mã đơn: {ma_don}", ln=True, align="C")
     pdf.cell(0, 6, f"Khách hàng: {ten_kh}", ln=True, align="C")
     pdf.cell(0, 6, f"Ngày xuất: {lay_gio_vn().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
     pdf.ln(10)
 
     # Tiêu đề bảng
-    pdf.set_font("Helvetica", "B", 10)
     pdf.set_fill_color(230, 230, 230)
     pdf.cell(10, 10, "STT", 1, 0, "C", True)
     pdf.cell(110, 10, "Tên Sản Phẩm", 1, 0, "C", True)
@@ -74,12 +90,11 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf.cell(35, 10, "Đơn Vị", 1, 1, "C", True)
 
     # Nội dung bảng
-    pdf.set_font("Helvetica", "", 10)
     for i, row in df_items.iterrows():
-        ten = row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A'))
+        ten = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
         sl = row.get('Số Lượng', 0)
         pdf.cell(10, 8, str(i+1), 1, 0, "C")
-        pdf.cell(110, 8, str(ten), 1, 0, "L")
+        pdf.cell(110, 8, ten, 1, 0, "L")
         pdf.cell(35, 8, format_vn(sl), 1, 0, "C")
         pdf.cell(35, 8, "Cái/Bộ", 1, 1, "C")
     
@@ -177,8 +192,69 @@ with tab2:
             else: st.info("Chưa có đơn hàng nào.")
         except Exception as e: st.error(str(e))
     
-    # (Giữ nguyên logic Nhập NVL và Nhập Thành Phẩm như bản trước...)
-    # ... [Code phần Nhập 1 & 2 giống như mình đã gửi ở lượt trước] ...
+    elif "1. Nhập NVL" in chuyem_muc:
+        st.markdown("#### 📥 Nhập Cấu Kiện / Nguyên Vật Liệu")
+        try:
+            df_nl_ton = pd.read_sql("SELECT ten_nl, don_vi, ton_kho FROM public.dm_nguyen_lieu", conn)
+            if not df_nl_ton.empty:
+                with st.form("form_nhap_nvl"):
+                    nl_chon = st.selectbox("Chọn Vật Tư", df_nl_ton['ten_nl'].tolist())
+                    c_sl, c_gia = st.columns(2)
+                    sl_tt = c_sl.number_input("Số lượng nhập", min_value=1.0, step=1.0)
+                    don_gia = c_gia.number_input("Đơn giá nhập (VNĐ)", min_value=0.0, step=1000.0)
+                    ghi_chu = st.text_input("Ghi chú (Nhà cung cấp)")
+
+                    if st.form_submit_button("💾 Xác nhận Nhập NVL", type="primary"):
+                        ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                        c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_tt, nl_chon))
+                        c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu) 
+                                     VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s)""", (ngay_tt, nl_chon, sl_tt, don_gia, sl_tt*don_gia, ghi_chu))
+                        conn.commit()
+                        st.success(f"✅ Đã nhập {sl_tt} {nl_chon} vào kho!")
+                        time.sleep(1); st.rerun()
+        except: pass
+
+    elif "2. Nhập Thành Phẩm" in chuyem_muc:
+        st.markdown("#### 📦 Nhập Thành Phẩm Vừa Sản Xuất (Tự động trừ NVL cấu thành)")
+        try:
+            df_sp_chuan = pd.read_sql("SELECT ten_sp, ds_nguyen_lieu, ton_kho, 'chuẩn' as loai FROM public.dm_san_pham", conn)
+            df_sp_ome = pd.read_sql("SELECT ten_sp, ds_nguyen_lieu, ton_kho, 'ome' as loai FROM public.dm_san_pham_ome", conn)
+            df_all_sp = pd.concat([df_sp_chuan, df_sp_ome])
+            
+            if not df_all_sp.empty:
+                with st.form("form_nhap_sp"):
+                    sp_chon = st.selectbox("Chọn Thành Phẩm đã làm xong", df_all_sp['ten_sp'].tolist())
+                    sl_nhap = st.number_input("Số lượng thành phẩm nhập kho (Cái/Bộ)", min_value=1.0, step=1.0)
+                    
+                    if st.form_submit_button("🔄 Lưu & Tự Động Cấn Trừ BOM", type="primary"):
+                        sp_info = df_all_sp[df_all_sp['ten_sp'] == sp_chon].iloc[0]
+                        loai_sp = sp_info['loai']
+                        ds_nl_json = sp_info['ds_nguyen_lieu']
+                        ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+
+                        bang_update = "public.dm_san_pham" if loai_sp == 'chuẩn' else "public.dm_san_pham_ome"
+                        c.execute(f"UPDATE {bang_update} SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl_nhap, sp_chon))
+                        c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
+                                     VALUES (%s, 'Nhập Thành Phẩm', %s, %s, 'Sản xuất hoàn thành')""", (ngay_tt, sp_chon, sl_nhap))
+                        
+                        try:
+                            ds_vat_tu = json.loads(ds_nl_json) if ds_nl_json else []
+                            for vt in ds_vat_tu:
+                                ten_vt = vt.get('vat_tu')
+                                dinh_muc = float(vt.get('dinh_muc', 0))
+                                tong_hao_phi = dinh_muc * sl_nhap
+                                
+                                c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho - %s WHERE ten_nl = %s", (tong_hao_phi, ten_vt))
+                                c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
+                                             VALUES (%s, 'Xuất cấn trừ BOM', %s, %s, %s)""", 
+                                          (ngay_tt, ten_vt, -tong_hao_phi, f"Làm {sl_nhap} {sp_chon}"))
+                        except: pass
+                        
+                        conn.commit()
+                        st.success(f"✅ Đã nhập {sl_nhap} {sp_chon}. Kho NVL đã được tự động trừ hao phí tương ứng!")
+                        time.sleep(2); st.rerun()
+            else: st.info("Chưa có danh mục sản phẩm.")
+        except Exception as e: st.error(str(e))
 
 # --- TAB 3: BÁO CÁO TỒN KHO ---
 with tab3:
