@@ -53,9 +53,13 @@ c = conn.cursor()
 if 'gio_bao_gia' not in st.session_state: st.session_state.gio_bao_gia = []
 if 'gio_bao_gia_custom' not in st.session_state: st.session_state.gio_bao_gia_custom = []
 
-# Khởi tạo Schema và Bảng
+# ĐÃ SỬA: KHỞI TẠO BẢNG VỚI BỘ MỞ KHÓA (ROLLBACK) TRÁNH TREO DATABASE
 try:
     c.execute("CREATE SCHEMA IF NOT EXISTS public;")
+    conn.commit()
+except: conn.rollback()
+
+try:
     c.execute('''CREATE TABLE IF NOT EXISTS public.lich_su_bao_gia (
                     id SERIAL PRIMARY KEY,
                     ma_bao_gia TEXT,
@@ -66,10 +70,18 @@ try:
                     loai_bao_gia TEXT DEFAULT 'Tiêu chuẩn',
                     chi_tiet TEXT
                 )''')
-    c.execute("ALTER TABLE public.lich_su_bao_gia ADD COLUMN IF NOT EXISTS chi_tiet TEXT")
-    c.execute("ALTER TABLE public.lich_su_bao_gia ADD COLUMN IF NOT EXISTS ma_bao_gia TEXT")
     conn.commit()
-except: pass 
+except: conn.rollback()
+
+try:
+    c.execute("ALTER TABLE public.lich_su_bao_gia ADD COLUMN chi_tiet TEXT")
+    conn.commit()
+except: conn.rollback()
+
+try:
+    c.execute("ALTER TABLE public.lich_su_bao_gia ADD COLUMN ma_bao_gia TEXT")
+    conn.commit()
+except: conn.rollback()
 
 # Hàm dọn dẹp lịch sử: Chỉ giữ lại 10 phiếu mới nhất
 def don_dep_lich_su():
@@ -80,7 +92,8 @@ def don_dep_lich_su():
                          ORDER BY id DESC LIMIT 10
                      )""")
         conn.commit()
-    except Exception as e: pass
+    except Exception as e: 
+        conn.rollback()
 
 # LẤY THÊM CỘT GIA_KHACH_LE LÀM "GIÁ CÔNG TY" THAM KHẢO
 try: df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly, gia_khach_le FROM public.dm_san_pham", conn)
@@ -169,7 +182,7 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["🤝 Báo Giá", "🛠️ Báo Giá Tùy Chỉnh", "📂 Lịch Sử & Xuất Lại"])
 
-# --- TAB 1: BÁO GIÁ CHUẨN TỪ DANH MỤC ---
+# --- TAB 1: BÁO GIÁ TỪ DANH MỤC ---
 with tab1:
     st.subheader("Tạo báo giá từ danh mục có sẵn")
     c1, c2 = st.columns(2)
@@ -284,7 +297,8 @@ with tab1:
                         don_dep_lich_su()
                         st.success(f"✅ Đã chốt báo giá {ma_bg}! Vui lòng tải File PDF bên dưới.")
                     except Exception as e:
-                        st.warning("⚠️ Báo giá PDF đã tạo thành công! (Lưu lịch sử đang lỗi nhẹ nhưng không ảnh hưởng)")
+                        conn.rollback() # Gỡ khóa nếu lỗi
+                        st.warning(f"⚠️ Báo giá PDF đã tạo thành công! (Nhưng không lưu được vào lịch sử do lỗi: {e})")
             else:
                 st.error("⚠️ Vui lòng nhập Tên Khách Hàng để xuất file!")
                 
@@ -380,7 +394,8 @@ with tab2:
                         don_dep_lich_su()
                         st.success(f"✅ Đã chốt báo giá {ma_bg_c}!")
                     except Exception as e:
-                        st.warning("⚠️ Báo giá PDF đã tạo thành công! Bạn có thể tải file bên dưới.")
+                        conn.rollback() # Gỡ khóa nếu lỗi
+                        st.warning(f"⚠️ Báo giá PDF đã tạo thành công! (Nhưng không lưu được lịch sử: {e})")
             else:
                 st.error("⚠️ Vui lòng nhập Tên Khách Hàng!")
 
@@ -441,4 +456,5 @@ with tab3:
         else:
             st.info("Chưa có lịch sử báo giá.")
     except Exception as e:
-        st.info(f"Chưa có lịch sử hoặc bảng dữ liệu trống. ({e})")
+        conn.rollback()
+        st.info(f"Chưa có lịch sử hoặc bảng dữ liệu trống.")
