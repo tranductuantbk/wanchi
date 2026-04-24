@@ -59,7 +59,7 @@ try:
     cac_cot_moi = {
         "gia_von": "REAL DEFAULT 0",
         "chi_phi_khac": "REAL DEFAULT 0",
-        "ds_nguyen_lieu": "TEXT"  # Cột mới dùng để lưu JSON danh sách nhiều nguyên liệu
+        "ds_nguyen_lieu": "TEXT"
     }
     for cot, kieu in cac_cot_moi.items():
         try: c.execute(f"ALTER TABLE public.dm_san_pham ADD COLUMN {cot} {kieu}")
@@ -77,18 +77,18 @@ try:
 except: danh_sach_nl = ["-- Kho đang trống --"]
 
 # ==========================================
-# GIAO DIỆN 4 TABS
+# GIAO DIỆN 4 TABS (ĐÃ ĐỔI TÊN BỎ CHỮ "CHUẨN")
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs([
-    "➕ Thêm SP Chuẩn", "📋 Danh Sách SP Chuẩn", 
+    "➕ Thêm SP", "📋 Danh Sách SP", 
     "➕ Thêm SP OME", "📋 Danh Sách SP OME"
 ])
 
 # ------------------------------------------
-# TAB 1: THÊM SẢN PHẨM CHUẨN
+# TAB 1: THÊM SẢN PHẨM
 # ------------------------------------------
 with tab1:
-    st.subheader("Thêm Sản Phẩm Chuẩn & Khai Báo Định Mức")
+    st.subheader("Thêm Sản Phẩm & Khai Báo Định Mức")
     with st.form("form_them_sp", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
@@ -98,15 +98,13 @@ with tab1:
         
         with col2:
             gia_dai_ly = st.number_input("Giá bán Đại lý (VNĐ)", min_value=0.0, step=1000.0)
-            # ĐÃ ĐỔI TÊN THUẬT NGỮ Ở ĐÂY
-            st.markdown("*(Giá Công ty tự động = Giá Đại Lý / 0.6)*")
+            st.markdown("*(Giá Công ty tự động = Giá Đại Lý / 0.6 - Làm tròn hàng chục)*")
             chi_phi_khac_chuan = st.number_input("Chi phí khác (Tem, thùng, công...) (VNĐ)", min_value=0.0, step=1000.0)
             
         st.markdown("---")
         st.markdown("### 🧬 Thành Phần Nguyên Liệu Cấu Tạo (BOM)")
         st.info("💡 Bạn có thể bấm vào bảng bên dưới để thêm nhiều loại vật tư cho sản phẩm này (VD: Dòng 1 chọn ABS, Dòng 2 chọn Vít...). Bấm dấu + hoặc click đúp vào dòng trắng để thêm.")
         
-        # Bảng tính Mini để nhập đa vật tư
         df_mau_nl = pd.DataFrame([{"vat_tu": None, "dinh_muc": 0.0}])
         edited_recipe = st.data_editor(
             df_mau_nl,
@@ -123,9 +121,9 @@ with tab1:
             if not ma_sp.strip() or not ten_sp.strip():
                 st.warning("⚠️ Vui lòng nhập Mã và Tên sản phẩm!")
             else:
-                gia_khach_le_calc = round(gia_dai_ly / 0.6)
+                # ĐÃ SỬA: LÀM TRÒN HÀNG CHỤC (Dùng round(..., -1))
+                gia_khach_le_calc = int(round(gia_dai_ly / 0.6, -1))
                 
-                # Lọc bỏ các dòng trắng và chuyển thành JSON
                 valid_recipe = edited_recipe.dropna(subset=["vat_tu"])
                 valid_recipe = valid_recipe[(valid_recipe["vat_tu"] != "-- Kho đang trống --") & (valid_recipe["dinh_muc"] > 0)]
                 json_ds_nguyen_lieu = valid_recipe.to_json(orient="records") if not valid_recipe.empty else ""
@@ -141,15 +139,14 @@ with tab1:
                 except Exception as e: st.error(f"⚠️ Mã hoặc Tên này đã tồn tại!")
 
 # ------------------------------------------
-# TAB 2: QUẢN LÝ DANH SÁCH SP CHUẨN
+# TAB 2: QUẢN LÝ DANH SÁCH SP
 # ------------------------------------------
 with tab2:
-    st.subheader("Cập Nhật & Sửa Chữa SP Chuẩn")
+    st.subheader("Cập Nhật & Sửa Chữa SP")
     try:
         df_sp = pd.read_sql("SELECT id, ma_sp, ten_sp, gia_dai_ly, gia_khach_le, gia_von, chi_phi_khac, ds_nguyen_lieu FROM public.dm_san_pham ORDER BY id DESC", conn)
         
         if not df_sp.empty:
-            # Hàm dịch JSON ra chữ dễ nhìn cho bảng
             def format_recipe(json_str):
                 if not json_str or pd.isna(json_str) or json_str == "": return "Không có"
                 try:
@@ -158,8 +155,6 @@ with tab2:
                 except: return "Lỗi hiển thị"
 
             df_sp['thanh_phan_hien_thi'] = df_sp['ds_nguyen_lieu'].apply(format_recipe)
-            
-            # Chỉ cho sửa giá, ẩn cột JSON phức tạp
             df_edit = df_sp.drop(columns=['ds_nguyen_lieu'])
 
             edited_sp = st.data_editor(
@@ -170,7 +165,6 @@ with tab2:
                     "ten_sp": st.column_config.TextColumn("Tên Sản Phẩm", disabled=True),
                     "thanh_phan_hien_thi": st.column_config.TextColumn("Thành Phần Vật Tư", disabled=True),
                     "gia_dai_ly": st.column_config.NumberColumn("Giá Đại lý", format="%d"),
-                    # ĐÃ ĐỔI TÊN TIÊU ĐỀ CỘT Ở ĐÂY
                     "gia_khach_le": st.column_config.NumberColumn("Giá Công ty", disabled=True, format="%d"),
                     "gia_von": st.column_config.NumberColumn("Giá Vốn", format="%d"),
                     "chi_phi_khac": st.column_config.NumberColumn("Chi phí khác", format="%d"),
@@ -180,7 +174,8 @@ with tab2:
 
             if st.button("💾 Lưu Bảng Thay Đổi", type="primary"):
                 for index, row in edited_sp.iterrows():
-                    gia_kl = round(float(row['gia_dai_ly']) / 0.6)
+                    # ĐÃ SỬA: LÀM TRÒN HÀNG CHỤC (Dùng round(..., -1))
+                    gia_kl = int(round(float(row['gia_dai_ly']) / 0.6, -1))
                     c.execute("""UPDATE public.dm_san_pham 
                                  SET gia_dai_ly=%s, gia_khach_le=%s, gia_von=%s, chi_phi_khac=%s 
                                  WHERE id=%s""",
@@ -259,7 +254,6 @@ with tab4:
     try:
         df_ome = pd.read_sql("SELECT id, ten_sp, gia_ome, gia_von, chi_phi_khac, ds_nguyen_lieu FROM public.dm_san_pham_ome ORDER BY id DESC", conn)
         if not df_ome.empty:
-            
             def format_recipe(json_str):
                 if not json_str or pd.isna(json_str) or json_str == "": return "Không có"
                 try:
