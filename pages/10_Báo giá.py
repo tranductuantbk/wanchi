@@ -53,7 +53,7 @@ c = conn.cursor()
 if 'gio_bao_gia' not in st.session_state: st.session_state.gio_bao_gia = []
 if 'gio_bao_gia_custom' not in st.session_state: st.session_state.gio_bao_gia_custom = []
 
-# ĐÃ SỬA: KHỞI TẠO BẢNG VỚI BỘ MỞ KHÓA (ROLLBACK) TRÁNH TREO DATABASE
+# KHỞI TẠO BẢNG VỚI BỘ MỞ KHÓA (ROLLBACK) TRÁNH TREO DATABASE
 try:
     c.execute("CREATE SCHEMA IF NOT EXISTS public;")
     conn.commit()
@@ -223,7 +223,7 @@ with tab1:
                 st.rerun()
 
     if st.session_state.gio_bao_gia:
-        # BỘ VÁ LỖI GIỎ HÀNG CŨ (Chống KeyError)
+        # BỘ VÁ LỖI GIỎ HÀNG CŨ
         for item in st.session_state.gio_bao_gia:
             if 'Đơn Giá' not in item:
                 item['Đơn Giá'] = round(item.get('Giá Gốc', 0) / 0.6, 0)
@@ -258,7 +258,8 @@ with tab1:
         
         # TÍNH LẠI NGAY LẬP TỨC NẾU NGƯỜI DÙNG SỬA SỐ
         edited_df['Thành Tiền'] = edited_df['Số Lượng'] * edited_df['Đơn Giá']
-        tong_cuoi = edited_df['Thành Tiền'].sum()
+        # ĐÃ SỬA: ÉP KIỂU FLOAT CHO TỔNG CUỐI ĐỂ KHÔNG BỊ LỖI NUMPY KHI LƯU DATABASE
+        tong_cuoi = float(edited_df['Thành Tiền'].sum())
         
         # LƯU NGƯỢC LẠI STATE ĐỂ KHÔNG BỊ MẤT DỮ LIỆU SỬA TAY
         st.session_state.gio_bao_gia = edited_df[["Mã SP", "Tên SP", "Số Lượng", "Giá Gốc", "Giá công ty", "Đơn Giá"]].to_dict('records')
@@ -362,7 +363,8 @@ with tab2:
         )
         
         edited_df_c['Thành Tiền'] = edited_df_c['Số Lượng'] * edited_df_c['Đơn Giá']
-        tong_cuoi_c = edited_df_c['Thành Tiền'].sum()
+        # ĐÃ SỬA: ÉP KIỂU FLOAT CHỐNG LỖI NUMPY
+        tong_cuoi_c = float(edited_df_c['Thành Tiền'].sum())
         
         st.session_state.gio_bao_gia_custom = edited_df_c[["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá"]].to_dict('records')
         df_hien_thi_c = edited_df_c[["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"]]
@@ -457,4 +459,4 @@ with tab3:
             st.info("Chưa có lịch sử báo giá.")
     except Exception as e:
         conn.rollback()
-        st.info(f"Chưa có lịch sử hoặc bảng dữ liệu trống.")
+        st.info(f"Chưa có lịch sử hoặc bảng dữ liệu trống. ({e})")
