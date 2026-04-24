@@ -17,7 +17,7 @@ if role == "employee":
     st.stop() # Lớp 2: Có mật khẩu nhân viên -> Báo lỗi và đuổi ra ngoài
 # ==========================================
 
-st.header("👥 Quản Lý Danh Mục Khách Hàng Chuẩn & OME")
+st.header("👥 Quản Lý Danh Mục Khách Hàng & OME")
 
 # Kết nối database
 conn = get_connection()
@@ -26,7 +26,7 @@ c = conn.cursor()
 # ==========================================
 # KHỞI TẠO BẢNG DATABASE
 # ==========================================
-# 1. Bảng Khách Hàng Chuẩn
+# 1. Bảng Khách Hàng
 c.execute('''CREATE TABLE IF NOT EXISTS dm_khach_hang (
                 id SERIAL PRIMARY KEY,
                 ten_kh TEXT UNIQUE,
@@ -40,7 +40,7 @@ for cot in cac_cot_can_them:
     try: c.execute(f"ALTER TABLE dm_khach_hang ADD COLUMN {cot}")
     except: pass 
 
-# 2. Bảng Khách Hàng OME (MỚI)
+# 2. Bảng Khách Hàng OME
 c.execute('''CREATE TABLE IF NOT EXISTS dm_khach_hang_ome (
                 id SERIAL PRIMARY KEY,
                 ten_kh TEXT UNIQUE,
@@ -50,26 +50,27 @@ c.execute('''CREATE TABLE IF NOT EXISTS dm_khach_hang_ome (
 conn.commit()
 
 # ==========================================
-# GIAO DIỆN 4 TABS RÕ RÀNG
+# GIAO DIỆN 4 TABS RÕ RÀNG (ĐÃ BỎ CHỮ "CHUẨN")
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["➕ Thêm KH Chuẩn", "📋 Danh Sách KH Chuẩn", "➕ Thêm KH OME", "📋 Danh Sách KH OME"])
+tab1, tab2, tab3, tab4 = st.tabs(["➕ Thêm KH", "📋 Danh Sách KH", "➕ Thêm KH OME", "📋 Danh Sách KH OME"])
 
 # ------------------------------------------
-# TAB 1: THÊM KHÁCH HÀNG CHUẨN
+# TAB 1: THÊM KHÁCH HÀNG
 # ------------------------------------------
 with tab1:
-    st.subheader("1. Thêm Khách Hàng Mới (Hàng Chuẩn)")
+    st.subheader("1. Thêm Khách Hàng Mới")
     
     with st.form("form_them_kh", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             ten_kh = st.text_input("Tên Khách hàng / Tên Đơn vị (*)")
-            nhom_kh = st.selectbox("Nhóm khách hàng", ["Đại lý", "Khách lẻ"])
+            # ĐÃ ĐỔI TÊN THÀNH "Công ty"
+            nhom_kh = st.selectbox("Nhóm khách hàng", ["Đại lý", "Công ty"])
         with col2:
             sdt = st.text_input("Số điện thoại")
             dia_chi = st.text_input("Địa chỉ / Khu vực")
 
-        if st.form_submit_button("💾 Lưu KH Chuẩn", type="primary"):
+        if st.form_submit_button("💾 Lưu Khách Hàng", type="primary"):
             if not ten_kh.strip():
                 st.warning("⚠️ Vui lòng nhập tên khách hàng!")
             else:
@@ -80,17 +81,30 @@ with tab1:
                     try:
                         c.execute("""INSERT INTO dm_khach_hang (ten_kh, nhom_kh, so_dien_thoai, dia_chi) 
                                      VALUES (%s, %s, %s, %s)""", (ten_kh.strip(), nhom_kh, sdt, dia_chi))
-                        st.success(f"✅ Đã thêm KH Chuẩn: **{ten_kh}**")
+                        st.success(f"✅ Đã thêm Khách hàng: **{ten_kh}**")
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as e:
                         st.error(f"Lỗi: {e}")
 
 # ------------------------------------------
-# TAB 2: QUẢN LÝ KHÁCH HÀNG CHUẨN
+# TAB 2: QUẢN LÝ KHÁCH HÀNG
 # ------------------------------------------
 with tab2:
-    st.subheader("2. Cập Nhật & Xóa KH Chuẩn")
+    st.subheader("2. Cập Nhật & Xóa Khách Hàng")
+    
+    # BỘ CÔNG CỤ ĐỒNG BỘ DỮ LIỆU CŨ
+    with st.expander("🛠️ Công cụ đồng bộ dữ liệu (Khách lẻ -> Công ty)"):
+        st.info("Bấm nút này để hệ thống tự động quét và đổi toàn bộ khách hàng cũ thuộc nhóm 'Khách lẻ' sang nhóm 'Công ty'.")
+        if st.button("🔄 Chạy tự động đồng bộ nhóm khách", type="secondary"):
+            try:
+                c.execute("UPDATE dm_khach_hang SET nhom_kh = 'Công ty' WHERE nhom_kh = 'Khách lẻ'")
+                conn.commit()
+                st.success("✅ Đã đồng bộ thành công dữ liệu cũ!")
+                time.sleep(1.5)
+                st.rerun()
+            except Exception as e: st.error(f"Lỗi: {e}")
+
     df_kh = pd.read_sql("SELECT * FROM dm_khach_hang ORDER BY id DESC", conn)
     
     if not df_kh.empty:
@@ -101,25 +115,26 @@ with tab2:
             column_config={
                 "id": None, 
                 "ten_kh": st.column_config.TextColumn("Tên Khách Hàng", disabled=True),
-                "nhom_kh": st.column_config.SelectboxColumn("Nhóm Khách", options=["Đại lý", "Khách lẻ"]),
+                # ĐÃ ĐỔI TÊN THÀNH "Công ty"
+                "nhom_kh": st.column_config.SelectboxColumn("Nhóm Khách", options=["Đại lý", "Công ty"]),
                 "so_dien_thoai": st.column_config.TextColumn("Số Điện Thoại"),
                 "dia_chi": st.column_config.TextColumn("Địa Chỉ"),
             },
             use_container_width=True, hide_index=True
         )
 
-        if st.button("💾 Lưu Sửa Đổi (KH Chuẩn)", type="primary"):
+        if st.button("💾 Lưu Sửa Đổi", type="primary"):
             for index, row in edited_kh.iterrows():
                 c.execute("""UPDATE dm_khach_hang 
                              SET nhom_kh=%s, so_dien_thoai=%s, dia_chi=%s 
                              WHERE id=%s""",
                           (row['nhom_kh'], row['so_dien_thoai'], row['dia_chi'], int(row['id'])))
-            st.success("✅ Đã cập nhật KH Chuẩn thành công!")
+            st.success("✅ Đã cập nhật thông tin thành công!")
             time.sleep(1)
             st.rerun()
 
         st.markdown("---")
-        st.subheader("🗑️ Xóa KH Chuẩn")
+        st.subheader("🗑️ Xóa Khách Hàng")
         col_xoa1, col_xoa2 = st.columns([3, 1])
         with col_xoa1: kh_can_xoa = st.selectbox("Chọn khách hàng cần xóa:", ["-- Chọn --"] + df_kh['ten_kh'].tolist(), key="del_kh_chuan")
         with col_xoa2:
@@ -127,10 +142,10 @@ with tab2:
             if st.button("🚨 Xóa Vĩnh Viễn", type="primary", use_container_width=True, key="btn_del_chuan"):
                 if kh_can_xoa != "-- Chọn --":
                     c.execute("DELETE FROM dm_khach_hang WHERE ten_kh=%s", (kh_can_xoa,))
-                    st.success(f"✅ Đã xóa KH Chuẩn: {kh_can_xoa}")
+                    st.success(f"✅ Đã xóa khách hàng: {kh_can_xoa}")
                     time.sleep(1.5)
                     st.rerun()
-    else: st.info("Danh sách khách chuẩn trống.")
+    else: st.info("Danh sách khách hàng đang trống.")
 
 # ------------------------------------------
 # TAB 3: THÊM KHÁCH HÀNG OME
@@ -145,7 +160,7 @@ with tab3:
             sdt_ome = st.text_input("Số điện thoại")
         with col_o2:
             dia_chi_ome = st.text_input("Địa chỉ / Đơn vị")
-            st.write("") # Dòng trống cho cân bằng form
+            st.write("") 
 
         if st.form_submit_button("💾 Lưu KH OME", type="primary"):
             if not ten_kh_ome.strip():
