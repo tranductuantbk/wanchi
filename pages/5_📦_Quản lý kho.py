@@ -41,11 +41,12 @@ try:
                     ton_kho REAL DEFAULT 0
                 )''')
     
+    # GIỮ NGUYÊN TÊN CỘT 'ten_nl' ĐỂ KHÔNG BỊ LỖI VỚI DATABASE CŨ
     c.execute('''CREATE TABLE IF NOT EXISTS public.ls_nhap_xuat_kho (
                     id SERIAL PRIMARY KEY,
                     ngay_thao_tac TEXT,
                     loai_thao_tac TEXT,
-                    ten_vat_tu TEXT,
+                    ten_nl TEXT, 
                     so_luong REAL,
                     don_gia REAL DEFAULT 0,
                     thanh_tien REAL DEFAULT 0,
@@ -125,7 +126,8 @@ with tab2:
                     if st.form_submit_button("💾 Xác nhận Nhập NVL", type="primary"):
                         ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                         c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_tt, nl_chon))
-                        c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_vat_tu, so_luong, don_gia, thanh_tien, ghi_chu) 
+                        # SỬ DỤNG ten_nl THAY VÌ ten_vat_tu
+                        c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu) 
                                      VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s)""", (ngay_tt, nl_chon, sl_tt, don_gia, sl_tt*don_gia, ghi_chu))
                         conn.commit()
                         st.success(f"✅ Đã nhập {sl_tt} {nl_chon} vào kho!")
@@ -154,7 +156,8 @@ with tab2:
                         # 1. Tăng tồn kho Thành Phẩm
                         bang_update = "public.dm_san_pham" if loai_sp == 'chuẩn' else "public.dm_san_pham_ome"
                         c.execute(f"UPDATE {bang_update} SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl_nhap, sp_chon))
-                        c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_vat_tu, so_luong, ghi_chu) 
+                        # SỬ DỤNG ten_nl THAY VÌ ten_vat_tu
+                        c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
                                      VALUES (%s, 'Nhập Thành Phẩm', %s, %s, 'Sản xuất hoàn thành')""", (ngay_tt, sp_chon, sl_nhap))
                         
                         # 2. Rã đông BOM và Trừ kho Nguyên Vật Liệu
@@ -168,7 +171,7 @@ with tab2:
                                 # Trừ kho NVL
                                 c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho - %s WHERE ten_nl = %s", (tong_hao_phi, ten_vt))
                                 # Ghi lịch sử xuất cấn trừ
-                                c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_vat_tu, so_luong, ghi_chu) 
+                                c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
                                              VALUES (%s, 'Xuất cấn trừ BOM', %s, %s, %s)""", 
                                           (ngay_tt, ten_vt, -tong_hao_phi, f"Làm {sl_nhap} {sp_chon}"))
                         except Exception as e: st.error(f"Lỗi đọc định mức BOM: {e}")
@@ -208,8 +211,8 @@ with tab2:
                             c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl_xuat, ten_sp_xuat))
                             c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl_xuat, ten_sp_xuat))
                             
-                            # Ghi lịch sử
-                            c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_vat_tu, so_luong, ghi_chu) 
+                            # Ghi lịch sử (SỬ DỤNG ten_nl THAY VÌ ten_vat_tu)
+                            c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
                                          VALUES (%s, 'Xuất Bán Hàng', %s, %s, %s)""", 
                                       (ngay_tt, ten_sp_xuat, -sl_xuat, f"Xuất cho đơn {don_chon}"))
                             
@@ -246,7 +249,8 @@ with tab3:
     st.markdown("---")
     st.subheader("📜 Sổ Lịch Sử Nhập / Xuất (NVL & Sản Phẩm)")
     try:
-        df_ls = pd.read_sql("SELECT ngay_thao_tac, loai_thao_tac, ten_vat_tu, so_luong, ghi_chu FROM public.ls_nhap_xuat_kho ORDER BY id DESC LIMIT 100", conn)
+        # TRUY VẤN CỘT ten_nl
+        df_ls = pd.read_sql("SELECT ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu FROM public.ls_nhap_xuat_kho ORDER BY id DESC LIMIT 100", conn)
         if not df_ls.empty:
             df_ls.columns = ["Thời gian", "Nghiệp vụ", "Tên Món Hàng", "Số lượng (+/-)", "Ghi chú"]
             st.dataframe(df_ls, use_container_width=True, hide_index=True)
