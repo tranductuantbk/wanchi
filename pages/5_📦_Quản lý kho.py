@@ -61,13 +61,12 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# HÀM TẠO PHIẾU XUẤT KHO PDF (ĐÃ VÁ LỖI FONT TIẾNG VIỆT)
+# HÀM TẠO PHIẾU XUẤT KHO PDF
 # ==========================================
 def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf = FPDF()
     pdf.add_page()
     
-    # Kích hoạt Font Tiếng Việt
     has_font = os.path.exists(FONT_FILE)
     if has_font:
         pdf.add_font("Roboto", "", FONT_FILE, uni=True)
@@ -82,14 +81,12 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf.cell(0, 6, f"Ngày xuất: {lay_gio_vn().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
     pdf.ln(10)
 
-    # Tiêu đề bảng
     pdf.set_fill_color(230, 230, 230)
     pdf.cell(10, 10, "STT", 1, 0, "C", True)
     pdf.cell(110, 10, "Tên Sản Phẩm", 1, 0, "C", True)
     pdf.cell(35, 10, "Số Lượng", 1, 0, "C", True)
     pdf.cell(35, 10, "Đơn Vị", 1, 1, "C", True)
 
-    # Nội dung bảng
     for i, row in df_items.iterrows():
         ten = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
         sl = row.get('Số Lượng', 0)
@@ -102,7 +99,6 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf.cell(95, 6, "Người lập phiếu", 0, 0, "C")
     pdf.cell(95, 6, "Người nhận hàng", 0, 1, "C")
     
-    # Xuất byte an toàn
     try: return bytes(pdf.output())
     except:
         out = pdf.output(dest='S')
@@ -113,7 +109,6 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["📋 Danh Mục NVL", "📥 Nhập / Xuất Kho (Thông Minh)", "📊 Báo Cáo Tồn Kho"])
 
-# --- TAB 1: DANH MỤC NVL ---
 with tab1:
     with st.form("form_them_nl", clear_on_submit=True):
         c1, c2, c3 = st.columns([1, 2, 1])
@@ -127,7 +122,6 @@ with tab1:
                     conn.commit(); st.success("Đã thêm!"); time.sleep(1); st.rerun()
                 except: st.error("Lỗi: Trùng tên hoặc mã!")
 
-# --- TAB 2: NHẬP XUẤT KHO ---
 with tab2:
     chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📥 1. Nhập NVL", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)"], horizontal=True)
     st.markdown("---")
@@ -150,8 +144,8 @@ with tab2:
                 
                 c_btn1, c_btn2, c_btn3 = st.columns([2, 2, 2])
                 
-                # --- TRƯỜNG HỢP 1: ĐƠN CHỜ XUẤT ---
-                if don_info['trang_thai'] == 'Chờ xuất kho':
+                # --- ĐÃ SỬA CHỖ NÀY: CHẤP NHẬN CẢ "MỚI TẠO" VÀ "CHỜ XUẤT KHO" ---
+                if don_info['trang_thai'] in ['Chờ xuất kho', 'Mới tạo']:
                     with c_btn1:
                         if st.button("📦 XÁC NHẬN XUẤT KHO", type="primary", use_container_width=True):
                             for item in items:
@@ -168,7 +162,6 @@ with tab2:
                             c.execute("UPDATE public.don_hang SET trang_thai = 'Đã hủy' WHERE ma_don = %s", (ma_don_chon,))
                             conn.commit(); st.warning("Đã hủy đơn."); time.sleep(1); st.rerun()
 
-                # --- TRƯỜNG HỢP 2: ĐƠN ĐÃ XUẤT ---
                 elif don_info['trang_thai'] == 'Đã xuất kho':
                     with c_btn1:
                         pdf_bytes = generate_phieu_xuat_pdf(df_items, ma_don_chon, don_info['ten_kh'])
@@ -179,7 +172,6 @@ with tab2:
                             for item in items:
                                 ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
                                 sl = float(item.get('Số Lượng', 0))
-                                # CỘNG LẠI VÀO KHO
                                 c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl, ten_sp))
                                 c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl, ten_sp))
                                 c.execute("INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) VALUES (%s, 'Thu hồi đơn', %s, %s, %s)", (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, sl, f"Thu hồi đơn {ma_don_chon}"))
@@ -256,7 +248,6 @@ with tab2:
             else: st.info("Chưa có danh mục sản phẩm.")
         except Exception as e: st.error(str(e))
 
-# --- TAB 3: BÁO CÁO TỒN KHO ---
 with tab3:
     c_tk1, c_tk2 = st.columns(2)
     with c_tk1:
