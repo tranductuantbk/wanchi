@@ -53,7 +53,7 @@ c = conn.cursor()
 if 'gio_bao_gia' not in st.session_state: st.session_state.gio_bao_gia = []
 if 'gio_bao_gia_custom' not in st.session_state: st.session_state.gio_bao_gia_custom = []
 
-# Ép khởi tạo Schema và Bảng ngầm (Có lỗi cũng bỏ qua để app không sập)
+# Khởi tạo Schema và Bảng
 try:
     c.execute("CREATE SCHEMA IF NOT EXISTS public;")
     c.execute('''CREATE TABLE IF NOT EXISTS public.lich_su_bao_gia (
@@ -68,15 +68,16 @@ try:
     c.execute("ALTER TABLE public.lich_su_bao_gia ADD COLUMN chi_tiet TEXT")
 except: pass 
 
-try: df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly FROM public.dm_san_pham", conn)
-except: df_sp = pd.DataFrame(columns=['ma_sp', 'ten_sp', 'gia_dai_ly'])
+# LẤY THÊM CỘT GIA_KHACH_LE LÀM "GIÁ CÔNG TY" THAM KHẢO
+try: df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly, gia_khach_le FROM public.dm_san_pham", conn)
+except: df_sp = pd.DataFrame(columns=['ma_sp', 'ten_sp', 'gia_dai_ly', 'gia_khach_le'])
 
 def format_vn(value):
     try: return "{:,.0f}".format(value).replace(",", ".")
     except: return str(value)
 
 # ==========================================
-# 2. HÀM XUẤT PDF AN TOÀN
+# 2. HÀM XUẤT PDF AN TOÀN (ĐÃ VÁ LỖI)
 # ==========================================
 def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, col_widths=None, total_amount=None):
     pdf = FPDF()
@@ -126,7 +127,7 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
     pdf.set_font(font_name, size=9)
     for _, row in dataframe.iterrows():
         for i, col in enumerate(columns_to_print):
-            val = row[col]
+            val = row.get(col, "")
             display_val = format_vn(val) if isinstance(val, (int, float)) else str(val)
             pdf.cell(col_widths[i], 9, display_val, border=1, align='C' if not isinstance(val, (int, float)) else 'R')
         pdf.ln()
@@ -143,7 +144,12 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
     pdf.cell(0, 6, "* Phiếu báo giá có giá trị trong 10 ngày.", ln=True)
     pdf.cell(0, 6, "* Giá chưa bao gồm phí vận chuyển.", ln=True)
     
-    return pdf.output(dest='S').encode('latin-1')
+    # BỘ VÁ LỖI XUẤT PDF TRÊN CLOUD
+    try:
+        return bytes(pdf.output())
+    except Exception:
+        out = pdf.output(dest='S')
+        return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
 # ==========================================
 # 3. GIAO DIỆN CHÍNH
@@ -165,8 +171,13 @@ with tab1:
         if st.form_submit_button("Thêm vào danh sách"):
             if sp_chon != "-- Chọn --":
                 info = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
+                # LƯU THÊM GIÁ KHÁCH LẺ LÀM GIÁ CÔNG TY
                 st.session_state.gio_bao_gia.append({
-                    "Mã SP": info['ma_sp'], "Tên SP": sp_chon, "Số Lượng": sl_chon, "Giá Gốc": info['gia_dai_ly']
+                    "Mã SP": info['ma_sp'], 
+                    "Tên SP": sp_chon, 
+                    "Số Lượng": sl_chon, 
+                    "Giá Gốc": info['gia_dai_ly'],
+                    "Giá công ty": info.get('gia_khach_le', 0)
                 })
                 st.rerun()
 
@@ -183,7 +194,8 @@ with tab1:
         df_curr['Thành Tiền'] = df_curr['Đơn Giá'] * df_curr['Số Lượng']
         tong_cuoi = df_curr['Thành Tiền'].sum()
         
-        df_hien_thi = df_curr[["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"]]
+        # HIỂN THỊ CỘT GIÁ CÔNG TY TRÊN WEB (Nhưng không in ra PDF)
+        df_hien_thi = df_curr[["Mã SP", "Tên SP", "Số Lượng", "Giá công ty", "Đơn Giá", "Thành Tiền"]]
         st.dataframe(df_hien_thi, use_container_width=True, hide_index=True)
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_cuoi)} VNĐ")
         
@@ -192,11 +204,17 @@ with tab1:
             if ten_kh.strip():
                 if st.button("💾 CHỐT ĐƠN & TẠO FILE PDF", type="primary", use_container_width=True, key="luu_t1"):
                     
-                    # 1. ƯU TIÊN 1: VẼ PDF NGAY LẬP TỨC ĐỂ APP KHÔNG BỊ SẬP
-                    st.session_state['pdf_data_t1'] = generate_generic_pdf(df_hien_thi, "BÁO GIÁ SẢN PHẨM", f"Khách hàng: {ten_kh} | SĐT: {sdt_kh}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35], total_amount=tong_cuoi)
+                    # TẠO PDF (Bỏ qua cột Giá công ty)
+                    st.session_state['pdf_data_t1'] = generate_generic_pdf(
+                        df_hien_thi, 
+                        "BÁO GIÁ SẢN PHẨM", 
+                        f"Khách hàng: {ten_kh} | SĐT: {sdt_kh}", 
+                        ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], # Cố tình ẩn cột Giá công ty đi
+                        col_widths=[30, 70, 20, 35, 35], 
+                        total_amount=tong_cuoi
+                    )
                     st.session_state['pdf_name_t1'] = f"BaoGia_{ten_kh}.pdf"
                     
-                    # 2. ƯU TIÊN 2: LƯU NGẦM VÀO DATABASE (Đưa vào vùng an toàn)
                     try:
                         chi_tiet_json = df_hien_thi.to_json(orient='records')
                         ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
@@ -204,7 +222,7 @@ with tab1:
                                   (ngay_gio, ten_kh, sdt_kh, tong_cuoi, 'Tiêu chuẩn', chi_tiet_json))
                         st.success("✅ Đã chốt đơn và lưu lịch sử thành công! Vui lòng tải File PDF bên dưới.")
                     except Exception as e:
-                        st.warning("⚠️ Báo giá PDF đã tạo thành công! (Dữ liệu lịch sử đám mây đang trễ nhịp, nhưng bạn vẫn tải file được bình thường)")
+                        st.warning("⚠️ Báo giá PDF đã tạo thành công! (Lưu lịch sử đang lỗi nhẹ nhưng không ảnh hưởng)")
             else:
                 st.error("⚠️ Vui lòng nhập Tên Khách Hàng để xuất file!")
                 
@@ -250,12 +268,9 @@ with tab2:
         with col_btn_c1:
             if ten_kh_c.strip():
                 if st.button("💾 CHỐT ĐƠN & TẠO FILE PDF", type="primary", use_container_width=True, key="luu_t2"):
-                    
-                    # 1. TẠO PDF AN TOÀN TRƯỚC
                     st.session_state['pdf_data_t2'] = generate_generic_pdf(df_curr_c, "BÁO GIÁ", f"Khách hàng: {ten_kh_c} | SĐT: {sdt_kh_c}", ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35], total_amount=tong_cuoi_c)
                     st.session_state['pdf_name_t2'] = f"BaoGia_TuyChinh_{ten_kh_c}.pdf"
                     
-                    # 2. LƯU LỊCH SỬ NGẦM
                     try:
                         chi_tiet_json_c = df_curr_c.to_json(orient='records')
                         ngay_gio_c = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
@@ -304,6 +319,7 @@ with tab3:
                     st.write(f"**Nội dung đơn hàng (Mã {bg_id}):**")
                     st.dataframe(df_chi_tiet, use_container_width=True, hide_index=True)
                     
+                    # Ẩn cột Giá Công Ty (nếu có) khi xuất lại PDF cũ
                     pdf_re = generate_generic_pdf(
                         dataframe=df_chi_tiet, 
                         title="BÁO GIÁ SẢN PHẨM" if row_data['loai_bao_gia'] == 'Tiêu chuẩn' else "BÁO GIÁ", 
