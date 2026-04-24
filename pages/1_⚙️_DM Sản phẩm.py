@@ -121,7 +121,7 @@ with tab1:
             if not ma_sp.strip() or not ten_sp.strip():
                 st.warning("⚠️ Vui lòng nhập Mã và Tên sản phẩm!")
             else:
-                # ĐÃ SỬA: LÀM TRÒN HÀNG CHỤC (Dùng round(..., -1))
+                # ĐÃ SỬA: LÀM TRÒN HÀNG CHỤC (Dùng hàm round với -1)
                 gia_khach_le_calc = int(round(gia_dai_ly / 0.6, -1))
                 
                 valid_recipe = edited_recipe.dropna(subset=["vat_tu"])
@@ -143,6 +143,22 @@ with tab1:
 # ------------------------------------------
 with tab2:
     st.subheader("Cập Nhật & Sửa Chữa SP")
+    
+    # BỘ CÔNG CỤ QUÉT VÀ LÀM TRÒN DỮ LIỆU CŨ
+    with st.expander("🛠️ Công cụ sửa lỗi giá Công ty cũ bị lẻ (Bấm vào đây)"):
+        st.info("Vì các sản phẩm cũ được tạo trước khi có tính năng làm tròn, giá Công ty vẫn đang bị lẻ. Bấm nút dưới đây để hệ thống tự động làm tròn toàn bộ dữ liệu trong kho!")
+        if st.button("🔄 Chạy tự động làm tròn hàng chục cho toàn bộ SP", type="secondary"):
+            try:
+                df_old = pd.read_sql("SELECT id, gia_dai_ly FROM public.dm_san_pham", conn)
+                for _, r in df_old.iterrows():
+                    gia_kl_moi = int(round(float(r['gia_dai_ly']) / 0.6, -1))
+                    c.execute("UPDATE public.dm_san_pham SET gia_khach_le=%s WHERE id=%s", (gia_kl_moi, int(r['id'])))
+                conn.commit()
+                st.success("✅ Đã quét cơ sở dữ liệu và làm tròn toàn bộ giá Công ty thành công!")
+                time.sleep(1.5)
+                st.rerun()
+            except Exception as e: st.error(f"Lỗi: {e}")
+
     try:
         df_sp = pd.read_sql("SELECT id, ma_sp, ten_sp, gia_dai_ly, gia_khach_le, gia_von, chi_phi_khac, ds_nguyen_lieu FROM public.dm_san_pham ORDER BY id DESC", conn)
         
@@ -174,7 +190,7 @@ with tab2:
 
             if st.button("💾 Lưu Bảng Thay Đổi", type="primary"):
                 for index, row in edited_sp.iterrows():
-                    # ĐÃ SỬA: LÀM TRÒN HÀNG CHỤC (Dùng round(..., -1))
+                    # LÀM TRÒN KHI SỬA
                     gia_kl = int(round(float(row['gia_dai_ly']) / 0.6, -1))
                     c.execute("""UPDATE public.dm_san_pham 
                                  SET gia_dai_ly=%s, gia_khach_le=%s, gia_von=%s, chi_phi_khac=%s 
