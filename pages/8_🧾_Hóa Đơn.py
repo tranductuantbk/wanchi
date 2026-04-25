@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import date
 import time
 import json
-import io # Thư viện mới để tạo file Excel
+import io 
 from db_utils import get_connection, check_password
 
 st.set_page_config(page_title="Hóa Đơn & Công Nợ", page_icon="🧾", layout="wide")
@@ -118,7 +118,6 @@ with tab1:
                 st.success("✅ Khách đã thanh toán đủ 100%.")
 
             if st.button("💾 LƯU HÓA ĐƠN & CÔNG NỢ", type="primary"):
-                # Kiểm tra trùng lặp Hóa đơn
                 check_hd = pd.read_sql("SELECT ma_don FROM hoa_don WHERE ma_don = %s OR so_phieu = %s", conn, params=(ma_don_input, ma_don_input))
                 if not check_hd.empty:
                     st.error(f"⚠️ Hóa đơn cho Mã Đơn {ma_don_input} đã được lập và lưu trước đó!")
@@ -221,7 +220,7 @@ with tab3:
                 with col_p2:
                     st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền: {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
 
-                # ĐÃ SỬA: BỎ MÃ SẢN PHẨM THEO YÊU CẦU
+                # Bỏ hoàn toàn Mã SP
                 df_import_thue = pd.DataFrame({
                     "Mã vt": "",
                     "Tên vt": df_items.get('ten_sp', ""),
@@ -248,18 +247,33 @@ with tab3:
 
                 st.markdown("---")
                 
-                # ĐÃ SỬA: XUẤT RA FILE EXCEL (.xlsx) THAY VÌ .csv
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_import_thue.to_excel(writer, index=False, sheet_name='Import_Thue')
-                excel_data = output.getvalue()
-                
-                st.download_button(
-                    label="📥 Tải File Excel Để Import Kế Toán",
-                    data=excel_data,
-                    file_name=f"Import_Thue_{ma_don_import}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary"
-                )
+                # CHỐNG LỖI KHI THIẾU THƯ VIỆN OPENPYXL
+                try:
+                    import openpyxl
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df_import_thue.to_excel(writer, index=False, sheet_name='Import_Thue')
+                    excel_data = output.getvalue()
+                    
+                    st.download_button(
+                        label="📥 Tải File Excel (.xlsx) Để Import Kế Toán",
+                        data=excel_data,
+                        file_name=f"Import_Thue_{ma_don_import}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary"
+                    )
+                except ImportError:
+                    st.error("⚠️ Đám mây đang thiếu thư viện `openpyxl` để tạo file Excel. Hãy làm theo Hướng dẫn Bước 1 để cài đặt nhé!")
+                    
+                    # Cho xuất tạm file CSV trong lúc chờ bạn thêm vào requirements.txt
+                    csv_data = df_import_thue.to_csv(index=False).encode('utf-8-sig') 
+                    st.download_button(
+                        label="📥 Tải Tạm File CSV (Chống cháy)",
+                        data=csv_data,
+                        file_name=f"Import_Thue_{ma_don_import}.csv",
+                        mime="text/csv",
+                        type="secondary"
+                    )
+
             except Exception as e:
                 st.error(f"Lỗi xử lý dữ liệu: {e}")
