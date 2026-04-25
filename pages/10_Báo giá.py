@@ -83,7 +83,7 @@ try:
     conn.commit()
 except: conn.rollback()
 
-# ĐÃ SỬA: Giữ lại 50 phiếu mới nhất
+# Giữ lại 50 phiếu mới nhất
 def don_dep_lich_su():
     try:
         c.execute("""DELETE FROM public.lich_su_bao_gia 
@@ -184,7 +184,6 @@ tab1, tab2, tab3 = st.tabs(["🤝 Báo Giá", "🛠️ Báo Giá Tùy Chỉnh", 
 
 # --- TAB 1: BÁO GIÁ TỪ DANH MỤC ---
 with tab1:
-    # ĐÃ THÊM: Cơ chế nhận diện chỉnh sửa
     edit_bg = st.session_state.get('edit_bg_data', None)
     is_edit = edit_bg is not None
 
@@ -193,13 +192,16 @@ with tab1:
         if st.button("❌ Hủy chỉnh sửa (Quay về Tạo mới)", key="cancel_t1"):
             st.session_state['edit_bg_data'] = None
             st.session_state.gio_bao_gia = []
+            st.session_state['t1_kh'] = ""  # Xóa Tên KH trên màn hình
+            st.session_state['t1_sdt'] = "" # Xóa SĐT trên màn hình
             st.rerun()
     else:
         st.subheader("Tạo báo giá từ danh mục có sẵn")
         
     c1, c2 = st.columns(2)
-    ten_kh = c1.text_input("Tên khách hàng:", value=edit_bg['ten_kh'] if is_edit else "", key="t1_kh")
-    sdt_kh = c2.text_input("Số điện thoại:", value=edit_bg['so_dien_thoai'] if is_edit else "", key="t1_sdt")
+    # Loại bỏ thuộc tính value=, gắn chặt nó vào Session State qua key
+    ten_kh = c1.text_input("Tên khách hàng:", key="t1_kh")
+    sdt_kh = c2.text_input("Số điện thoại:", key="t1_sdt")
 
     with st.form("add_sp_t1", clear_on_submit=True):
         col_s1, col_s2 = st.columns([3, 1])
@@ -273,7 +275,6 @@ with tab1:
         col_btn1, col_btn2 = st.columns([2, 2])
         with col_btn1:
             if ten_kh.strip():
-                # Đổi tên nút tùy theo chế độ
                 btn_label = "🔄 CẬP NHẬT BÁO GIÁ & TẠO LẠI PDF" if is_edit else "💾 CHỐT ĐƠN & TẠO FILE PDF"
                 if st.button(btn_label, type="primary", use_container_width=True, key="luu_t1"):
                     
@@ -327,11 +328,12 @@ with tab1:
                 if 'pdf_data_t1' in st.session_state: del st.session_state['pdf_data_t1']
                 st.session_state.gio_bao_gia = []
                 st.session_state['edit_bg_data'] = None
+                st.session_state['t1_kh'] = ""
+                st.session_state['t1_sdt'] = ""
                 st.rerun()
 
 # --- TAB 2: BÁO GIÁ TÙY CHỈNH ---
 with tab2:
-    # ĐÃ THÊM: Cơ chế nhận diện chỉnh sửa Tùy chỉnh
     edit_bg_c = st.session_state.get('edit_bg_custom_data', None)
     is_edit_c = edit_bg_c is not None
 
@@ -340,13 +342,16 @@ with tab2:
         if st.button("❌ Hủy chỉnh sửa (Quay về Tạo mới)", key="cancel_t2"):
             st.session_state['edit_bg_custom_data'] = None
             st.session_state.gio_bao_gia_custom = []
+            st.session_state['t2_kh'] = ""  # Xóa Tên KH trên màn hình
+            st.session_state['t2_sdt'] = "" # Xóa SĐT trên màn hình
             st.rerun()
     else:
         st.subheader("🛠️ Tạo Báo Giá Dịch Vụ / Sản Phẩm Tự Nhập")
         
     c_t2_1, c_t2_2 = st.columns(2)
-    ten_kh_c = c_t2_1.text_input("Tên khách hàng:", value=edit_bg_c['ten_kh'] if is_edit_c else "", key="t2_kh")
-    sdt_kh_c = c_t2_2.text_input("Số điện thoại:", value=edit_bg_c['so_dien_thoai'] if is_edit_c else "", key="t2_sdt")
+    # Gắn chặt vào Session State
+    ten_kh_c = c_t2_1.text_input("Tên khách hàng:", key="t2_kh")
+    sdt_kh_c = c_t2_2.text_input("Số điện thoại:", key="t2_sdt")
 
     with st.form("add_sp_t2", clear_on_submit=True):
         col_s1, col_s2, col_s3 = st.columns([2, 1, 1])
@@ -448,14 +453,14 @@ with tab2:
                 if 'pdf_data_t2' in st.session_state: del st.session_state['pdf_data_t2']
                 st.session_state.gio_bao_gia_custom = []
                 st.session_state['edit_bg_custom_data'] = None
+                st.session_state['t2_kh'] = ""
+                st.session_state['t2_sdt'] = ""
                 st.rerun()
 
 # --- TAB 3: XEM LỊCH SỬ & XUẤT LẠI ---
 with tab3:
-    # ĐÃ ĐỔI: Thành 50 Phiếu Gần Nhất
     st.subheader("📂 50 Phiếu Báo Giá Gần Nhất")
     try:
-        # ĐÃ ĐỔI: Lấy 50 Phiếu thay vì 10
         df_his = pd.read_sql("SELECT id, ma_bao_gia, ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet FROM public.lich_su_bao_gia ORDER BY id DESC LIMIT 50", conn)
         if not df_his.empty:
             df_hien_thi_his = df_his.drop(columns=['chi_tiet'])
@@ -499,19 +504,22 @@ with tab3:
                         )
                         st.download_button("📥 XUẤT LẠI FILE PDF NÀY", data=pdf_re, file_name=f"{ma_tim_kiem}_ReExport_{row_data['ten_kh']}.pdf", mime="application/pdf", type="primary", use_container_width=True)
                     
-                    # ĐÃ THÊM: NÚT CHỈNH SỬA
                     with col_his2:
                         if st.button("🛠️ Nạp dữ liệu để Chỉnh Sửa", type="primary", use_container_width=True):
-                            # Tự động nhận diện nhóm để đưa về đúng Form (Chuẩn hoặc Tùy chỉnh)
+                            # ÉP NHẬN TÊN VÀ SĐT VÀO THẲNG BỘ NHỚ (Khắc phục lỗi ô nhập liệu trống)
                             if row_data['loai_bao_gia'] == 'Tiêu chuẩn':
                                 st.session_state['edit_bg_data'] = row_data.to_dict()
                                 st.session_state.gio_bao_gia = json.loads(row_data['chi_tiet'])
+                                st.session_state['t1_kh'] = str(row_data['ten_kh'])
+                                st.session_state['t1_sdt'] = str(row_data['so_dien_thoai'])
                                 st.success("✅ Đã nạp thành công! Hãy bấm sang Tab '🤝 Báo Giá' để sửa.")
                                 time.sleep(1.5)
                                 st.rerun()
                             else:
                                 st.session_state['edit_bg_custom_data'] = row_data.to_dict()
                                 st.session_state.gio_bao_gia_custom = json.loads(row_data['chi_tiet'])
+                                st.session_state['t2_kh'] = str(row_data['ten_kh'])
+                                st.session_state['t2_sdt'] = str(row_data['so_dien_thoai'])
                                 st.success("✅ Đã nạp thành công! Hãy bấm sang Tab '🛠️ Báo Giá Tùy Chỉnh' để sửa.")
                                 time.sleep(1.5)
                                 st.rerun()
