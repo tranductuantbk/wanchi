@@ -100,8 +100,18 @@ with tab1:
         tc_val = tc_res[0] if tc_res else ""
     except: tc_val = ""
     
-    # Ô nhập Tăng ca sẽ bị khóa nếu không ở chế độ sửa
-    tang_ca = col_t2.text_input("Kế hoạch tăng ca (VD: 2, 3):", value=tc_val, disabled=not is_editing)
+    # ĐÃ ĐỔI: Dùng Multiselect (Chọn nhiều) thay vì gõ chữ thủ công
+    danh_sach_thu = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
+    tc_default = [x.strip() for x in tc_val.split(",")] if tc_val else []
+    tc_default = [x for x in tc_default if x in danh_sach_thu] # Lọc chống lỗi dữ liệu cũ
+    
+    tang_ca_list = col_t2.multiselect(
+        "🌙 Lịch tăng ca tuần này (Nhấp để chọn):", 
+        options=danh_sach_thu, 
+        default=tc_default, 
+        disabled=not is_editing
+    )
+    tang_ca_str = ", ".join(tang_ca_list) # Gom lại thành chuỗi để lưu Database
     
     st.markdown("---")
     
@@ -153,13 +163,11 @@ with tab1:
                 col_cfg[d] = st.column_config.NumberColumn(d, min_value=0.0, format="%g", width="small")
                 
             if is_editing:
-                # Nếu đang Sửa: Hiện bảng gõ, có dấu CỘNG
                 edited_dfs[may] = st.data_editor(
                     df_table, num_rows="dynamic", column_config=col_cfg, 
                     hide_index=True, key=f"ed_{may}_{tuan_str}", use_container_width=True
                 )
             else:
-                # Nếu chỉ Xem: Lọc bỏ hàng rỗng, in ra bảng tĩnh
                 if not df_table.empty: df_table = df_table.dropna(subset=['Sản Phẩm'])
                 
                 if df_table.empty:
@@ -177,7 +185,9 @@ with tab1:
             with col_btn1:
                 if st.button("💾 LƯU LẠI KHI CHỈNH SỬA XONG", type="primary", use_container_width=True):
                     try:
-                        c.execute("INSERT INTO public.ke_hoach_tang_ca (tuan, ghi_chu) VALUES (%s, %s) ON CONFLICT (tuan) DO UPDATE SET ghi_chu=EXCLUDED.ghi_chu", (tuan_str, tang_ca))
+                        # Lưu ghi chú tăng ca
+                        c.execute("INSERT INTO public.ke_hoach_tang_ca (tuan, ghi_chu) VALUES (%s, %s) ON CONFLICT (tuan) DO UPDATE SET ghi_chu=EXCLUDED.ghi_chu", (tuan_str, tang_ca_str))
+                        
                         c.execute("DELETE FROM public.ke_hoach_sx_ngay WHERE ngay >= %s AND ngay <= %s", (db_dates[0], db_dates[-1]))
                         
                         for may, edf in edited_dfs.items():
@@ -230,7 +240,16 @@ with tab2:
             for col in ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']:
                 if col not in pivot_df.columns: pivot_df[col] = 0.0
 
+            # Lấy thông tin Tăng ca để in vào PDF
+            try:
+                c.execute("SELECT ghi_chu FROM public.ke_hoach_tang_ca WHERE tuan=%s", (chon_tuan_in,))
+                tc_res_pdf = c.fetchone()
+                tc_pdf = tc_res_pdf[0] if tc_res_pdf and tc_res_pdf[0] else "Không có"
+            except: tc_pdf = "Không có"
+
             st.markdown(f"**Bản xem trước: Từ {tu_ngay_str} đến {den_ngay_str}**")
+            st.markdown(f"*Lịch tăng ca: {tc_pdf}*")
+            
             hien_thi_df = pivot_df[['may_ep', 'san_pham', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']]
             hien_thi_df.columns = ['Máy Ép', 'Sản Phẩm', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật']
             st.dataframe(hien_thi_df, use_container_width=True, hide_index=True)
@@ -248,11 +267,15 @@ with tab2:
                     
                 pdf.set_font(font_name, "", 16)
                 pdf.set_text_color(180, 0, 0) 
-                pdf.cell(0, 10, "KẾ HOẠCH SẢN XUẤT", align="L", ln=True)
+                pdf.cell(0, 10, "KẾ HOẠCH SẢN XUẤT", align="C", ln=True)
                 pdf.set_font(font_name, "", 12)
                 pdf.set_text_color(0, 0, 0)
-                pdf.cell(0, 8, f"Từ ngày: {tu_ngay_str}    đến: {den_ngay_str}", align="C", ln=True)
-                pdf.ln(5)
+                pdf.cell(0, 6, f"Từ ngày: {tu_ngay_str}    đến: {den_ngay_str}", align="C", ln=True)
+                
+                # IN DÒNG TĂNG CA VÀO PDF
+                pdf.set_font(font_name, "", 11)
+                pdf.cell(0, 8, f"Các ngày dự kiến tăng ca: {tc_pdf}", align="C", ln=True)
+                pdf.ln(3)
                 
                 cac_may = pivot_df['may_ep'].unique()
                 for may in cac_may:
