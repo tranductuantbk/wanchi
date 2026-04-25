@@ -242,38 +242,46 @@ with tab1:
                     "Đơn Giá": 0 
                 })
                 
-                # TÍNH LẠI TOÀN BỘ THEO MỐC MỚI NHẤT
+                # TÍNH LẠI TOÀN BỘ THEO 7 MỐC MỚI NHẤT
                 tong_goc = sum([(item.get('Giá Gốc', 0) / 0.6) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
                 
-                if tong_goc < 3000000: ck = 1.0          # Dưới 3tr: x1.0
-                elif tong_goc < 8000000: ck = 0.95       # Từ 3tr đến <8tr: x0.95
-                elif tong_goc < 14000000: ck = 0.90      # Từ 8tr đến <14tr: x0.90
-                elif tong_goc < 20000000: ck = 0.85      # Từ 14tr đến <20tr: x0.85
-                else: ck = 0.80                          # Từ 20tr trở lên: x0.80
+                # ==========================================
+                # CHÍNH SÁCH 7 MỐC TỪ 3TR ĐẾN 20TR (MAX 15%)
+                # ==========================================
+                if tong_goc < 3000000: ck = 1.0          # Mốc 1: Dưới 3tr (Không giảm)
+                elif tong_goc < 5000000: ck = 0.98       # Mốc 2: Từ 3tr đến <5tr (Giảm 2%)
+                elif tong_goc < 8000000: ck = 0.95       # Mốc 3: Từ 5tr đến <8tr (Giảm 5%)
+                elif tong_goc < 12000000: ck = 0.92      # Mốc 4: Từ 8tr đến <12tr (Giảm 8%)
+                elif tong_goc < 16000000: ck = 0.90      # Mốc 5: Từ 12tr đến <16tr (Giảm 10%)
+                elif tong_goc < 20000000: ck = 0.88      # Mốc 6: Từ 16tr đến <20tr (Giảm 12%)
+                else: ck = 0.85                          # Mốc 7: Từ 20tr trở lên (Giảm 15%)
                 
                 for item in st.session_state.gio_bao_gia:
                     g_cty = item.get('Giá Gốc', 0) / 0.6 if item.get('Giá Gốc', 0) > 0 else item.get('Giá công ty', 0)
-                    item['Đơn Giá'] = int(round(g_cty * ck, -1)) # Làm tròn đúng hàng chục
+                    item['Đơn Giá'] = int(round(g_cty * ck, -1)) 
                     item['Giá công ty'] = int(round(g_cty, -1))
                     
                 st.rerun()
 
     if st.session_state.gio_bao_gia:
-        # NÚT "PHÉP THUẬT" DÀNH CHO CÁC GIỎ HÀNG BỊ KẸT CACHE CŨ
         st.markdown("---")
         if st.button("🔄 TỰ ĐỘNG TÍNH LẠI CHIẾT KHẤU THEO TỔNG ĐƠN MỚI NHẤT", type="secondary"):
             tong_goc = sum([(item.get('Giá Gốc', 0) / 0.6) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
+            
+            # Cập nhật thuật toán tính lại cho Nút (7 mốc)
             if tong_goc < 3000000: ck = 1.0
+            elif tong_goc < 5000000: ck = 0.98
             elif tong_goc < 8000000: ck = 0.95
-            elif tong_goc < 14000000: ck = 0.90
-            elif tong_goc < 20000000: ck = 0.85
-            else: ck = 0.80
+            elif tong_goc < 12000000: ck = 0.92
+            elif tong_goc < 16000000: ck = 0.90
+            elif tong_goc < 20000000: ck = 0.88
+            else: ck = 0.85
             
             for item in st.session_state.gio_bao_gia:
                 g_cty = item.get('Giá Gốc', 0) / 0.6 if item.get('Giá Gốc', 0) > 0 else item.get('Giá công ty', 0)
                 item['Đơn Giá'] = int(round(g_cty * ck, -1))
                 item['Giá công ty'] = int(round(g_cty, -1))
-            st.success(f"✅ Đã quét lại toàn bộ giỏ hàng và áp dụng mức chiết khấu: Giảm {int((1-ck)*100)}%")
+            st.success(f"✅ Đã quét lại toàn bộ giỏ hàng và áp dụng mức chiết khấu: Giảm {round((1-ck)*100, 1)}%")
             time.sleep(1.5)
             st.rerun()
             
