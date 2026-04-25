@@ -50,8 +50,43 @@ st.title("🏭 Hệ Thống Báo Giá Khách Hàng WANCHI")
 conn = get_connection()
 c = conn.cursor()
 
+# ---------------------------------------------------------
+# BỘ HÀM CALLBACK: TRỊ DỨT ĐIỂM LỖI WIDGET INSTANTIATED
+# ---------------------------------------------------------
+# Khởi tạo trước các chìa khóa (key) để bộ nhớ không bị bỡ ngỡ
+if 't1_kh' not in st.session_state: st.session_state['t1_kh'] = ""
+if 't1_sdt' not in st.session_state: st.session_state['t1_sdt'] = ""
+if 't2_kh' not in st.session_state: st.session_state['t2_kh'] = ""
+if 't2_sdt' not in st.session_state: st.session_state['t2_sdt'] = ""
 if 'gio_bao_gia' not in st.session_state: st.session_state.gio_bao_gia = []
 if 'gio_bao_gia_custom' not in st.session_state: st.session_state.gio_bao_gia_custom = []
+
+def clear_t1():
+    st.session_state['edit_bg_data'] = None
+    st.session_state.gio_bao_gia = []
+    st.session_state['t1_kh'] = ""
+    st.session_state['t1_sdt'] = ""
+    if 'pdf_data_t1' in st.session_state: del st.session_state['pdf_data_t1']
+
+def clear_t2():
+    st.session_state['edit_bg_custom_data'] = None
+    st.session_state.gio_bao_gia_custom = []
+    st.session_state['t2_kh'] = ""
+    st.session_state['t2_sdt'] = ""
+    if 'pdf_data_t2' in st.session_state: del st.session_state['pdf_data_t2']
+
+def nap_du_lieu_sua(row_dict, chi_tiet_list, is_chuan):
+    if is_chuan:
+        st.session_state['edit_bg_data'] = row_dict
+        st.session_state.gio_bao_gia = chi_tiet_list
+        st.session_state['t1_kh'] = str(row_dict.get('ten_kh', ''))
+        st.session_state['t1_sdt'] = str(row_dict.get('so_dien_thoai', ''))
+    else:
+        st.session_state['edit_bg_custom_data'] = row_dict
+        st.session_state.gio_bao_gia_custom = chi_tiet_list
+        st.session_state['t2_kh'] = str(row_dict.get('ten_kh', ''))
+        st.session_state['t2_sdt'] = str(row_dict.get('so_dien_thoai', ''))
+# ---------------------------------------------------------
 
 # KHỞI TẠO BẢNG
 try:
@@ -189,17 +224,13 @@ with tab1:
 
     if is_edit:
         st.warning(f"🛠️ **CHẾ ĐỘ SỬA CHỮA BÁO GIÁ:** Đang chỉnh sửa phiếu **{edit_bg['ma_bao_gia']}**.")
-        if st.button("❌ Hủy chỉnh sửa (Quay về Tạo mới)", key="cancel_t1"):
-            st.session_state['edit_bg_data'] = None
-            st.session_state.gio_bao_gia = []
-            st.session_state['t1_kh'] = ""  # Xóa Tên KH trên màn hình
-            st.session_state['t1_sdt'] = "" # Xóa SĐT trên màn hình
-            st.rerun()
+        # Chạy hàm clear ngầm định bằng on_click
+        st.button("❌ Hủy chỉnh sửa (Quay về Tạo mới)", key="cancel_t1", on_click=clear_t1)
     else:
         st.subheader("Tạo báo giá từ danh mục có sẵn")
         
     c1, c2 = st.columns(2)
-    # Loại bỏ thuộc tính value=, gắn chặt nó vào Session State qua key
+    # Khóa chặt với Session State thông qua key
     ten_kh = c1.text_input("Tên khách hàng:", key="t1_kh")
     sdt_kh = c2.text_input("Số điện thoại:", key="t1_sdt")
 
@@ -305,7 +336,7 @@ with tab1:
                                       (ten_kh, sdt_kh, tong_cuoi, chi_tiet_json, edit_bg['id']))
                             conn.commit()
                             st.success(f"✅ Đã CẬP NHẬT báo giá {ma_bg} thành công! Tải PDF bên dưới.")
-                            st.session_state['edit_bg_data'] = None
+                            clear_t1()
                         else:
                             c.execute("""INSERT INTO public.lich_su_bao_gia 
                                          (ma_bao_gia, ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet) 
@@ -324,13 +355,7 @@ with tab1:
             st.download_button("📥 TẢI FILE BÁO GIÁ XUỐNG MÁY (PDF)", data=st.session_state['pdf_data_t1'], file_name=st.session_state['pdf_name_t1'], mime="application/pdf", type="primary", use_container_width=True)
             
         with col_btn2:
-            if st.button("🗑️ Dọn dẹp giỏ hàng & Làm mới", use_container_width=True):
-                if 'pdf_data_t1' in st.session_state: del st.session_state['pdf_data_t1']
-                st.session_state.gio_bao_gia = []
-                st.session_state['edit_bg_data'] = None
-                st.session_state['t1_kh'] = ""
-                st.session_state['t1_sdt'] = ""
-                st.rerun()
+            st.button("🗑️ Dọn dẹp giỏ hàng & Làm mới", use_container_width=True, on_click=clear_t1)
 
 # --- TAB 2: BÁO GIÁ TÙY CHỈNH ---
 with tab2:
@@ -339,17 +364,11 @@ with tab2:
 
     if is_edit_c:
         st.warning(f"🛠️ **CHẾ ĐỘ SỬA CHỮA TÙY CHỈNH:** Đang chỉnh sửa phiếu **{edit_bg_c['ma_bao_gia']}**.")
-        if st.button("❌ Hủy chỉnh sửa (Quay về Tạo mới)", key="cancel_t2"):
-            st.session_state['edit_bg_custom_data'] = None
-            st.session_state.gio_bao_gia_custom = []
-            st.session_state['t2_kh'] = ""  # Xóa Tên KH trên màn hình
-            st.session_state['t2_sdt'] = "" # Xóa SĐT trên màn hình
-            st.rerun()
+        st.button("❌ Hủy chỉnh sửa (Quay về Tạo mới)", key="cancel_t2", on_click=clear_t2)
     else:
         st.subheader("🛠️ Tạo Báo Giá Dịch Vụ / Sản Phẩm Tự Nhập")
         
     c_t2_1, c_t2_2 = st.columns(2)
-    # Gắn chặt vào Session State
     ten_kh_c = c_t2_1.text_input("Tên khách hàng:", key="t2_kh")
     sdt_kh_c = c_t2_2.text_input("Số điện thoại:", key="t2_sdt")
 
@@ -430,7 +449,7 @@ with tab2:
                                       (ten_kh_c, sdt_kh_c, tong_cuoi_c, chi_tiet_json_c, edit_bg_c['id']))
                             conn.commit()
                             st.success(f"✅ Đã CẬP NHẬT báo giá {ma_bg_c} thành công! Tải PDF bên dưới.")
-                            st.session_state['edit_bg_custom_data'] = None
+                            clear_t2()
                         else:
                             c.execute("""INSERT INTO public.lich_su_bao_gia 
                                          (ma_bao_gia, ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet) 
@@ -449,13 +468,7 @@ with tab2:
             st.download_button("📥 TẢI FILE BÁO GIÁ (PDF)", data=st.session_state['pdf_data_t2'], file_name=st.session_state['pdf_name_t2'], mime="application/pdf", type="primary", use_container_width=True)
             
         with col_btn_c2:
-            if st.button("🗑️ Xóa sạch báo giá này", use_container_width=True, key="clear_t2"):
-                if 'pdf_data_t2' in st.session_state: del st.session_state['pdf_data_t2']
-                st.session_state.gio_bao_gia_custom = []
-                st.session_state['edit_bg_custom_data'] = None
-                st.session_state['t2_kh'] = ""
-                st.session_state['t2_sdt'] = ""
-                st.rerun()
+            st.button("🗑️ Xóa sạch báo giá này", use_container_width=True, key="clear_t2", on_click=clear_t2)
 
 # --- TAB 3: XEM LỊCH SỬ & XUẤT LẠI ---
 with tab3:
@@ -505,24 +518,13 @@ with tab3:
                         st.download_button("📥 XUẤT LẠI FILE PDF NÀY", data=pdf_re, file_name=f"{ma_tim_kiem}_ReExport_{row_data['ten_kh']}.pdf", mime="application/pdf", type="primary", use_container_width=True)
                     
                     with col_his2:
-                        if st.button("🛠️ Nạp dữ liệu để Chỉnh Sửa", type="primary", use_container_width=True):
-                            # ÉP NHẬN TÊN VÀ SĐT VÀO THẲNG BỘ NHỚ (Khắc phục lỗi ô nhập liệu trống)
-                            if row_data['loai_bao_gia'] == 'Tiêu chuẩn':
-                                st.session_state['edit_bg_data'] = row_data.to_dict()
-                                st.session_state.gio_bao_gia = json.loads(row_data['chi_tiet'])
-                                st.session_state['t1_kh'] = str(row_data['ten_kh'])
-                                st.session_state['t1_sdt'] = str(row_data['so_dien_thoai'])
+                        # Kích hoạt ngầm định bằng on_click để bơm dữ liệu vào form trước khi load Tab 1/2
+                        is_chuan_flag = (row_data['loai_bao_gia'] == 'Tiêu chuẩn')
+                        if st.button("🛠️ Nạp dữ liệu để Chỉnh Sửa", type="primary", use_container_width=True, on_click=nap_du_lieu_sua, args=(row_data.to_dict(), json.loads(row_data['chi_tiet']), is_chuan_flag)):
+                            if is_chuan_flag:
                                 st.success("✅ Đã nạp thành công! Hãy bấm sang Tab '🤝 Báo Giá' để sửa.")
-                                time.sleep(1.5)
-                                st.rerun()
                             else:
-                                st.session_state['edit_bg_custom_data'] = row_data.to_dict()
-                                st.session_state.gio_bao_gia_custom = json.loads(row_data['chi_tiet'])
-                                st.session_state['t2_kh'] = str(row_data['ten_kh'])
-                                st.session_state['t2_sdt'] = str(row_data['so_dien_thoai'])
                                 st.success("✅ Đã nạp thành công! Hãy bấm sang Tab '🛠️ Báo Giá Tùy Chỉnh' để sửa.")
-                                time.sleep(1.5)
-                                st.rerun()
                 else:
                     st.warning("⚠️ Báo giá này là dữ liệu cũ, không lưu chi tiết sản phẩm nên máy không thể vẽ lại PDF hoặc chỉnh sửa được.")
         else:
