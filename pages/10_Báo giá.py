@@ -53,7 +53,6 @@ c = conn.cursor()
 # ---------------------------------------------------------
 # BỘ HÀM CALLBACK: TRỊ DỨT ĐIỂM LỖI WIDGET INSTANTIATED
 # ---------------------------------------------------------
-# Khởi tạo trước các chìa khóa (key) để bộ nhớ không bị bỡ ngỡ
 if 't1_kh' not in st.session_state: st.session_state['t1_kh'] = ""
 if 't1_sdt' not in st.session_state: st.session_state['t1_sdt'] = ""
 if 't2_kh' not in st.session_state: st.session_state['t2_kh'] = ""
@@ -118,7 +117,6 @@ try:
     conn.commit()
 except: conn.rollback()
 
-# Giữ lại 50 phiếu mới nhất
 def don_dep_lich_su():
     try:
         c.execute("""DELETE FROM public.lich_su_bao_gia 
@@ -224,13 +222,11 @@ with tab1:
 
     if is_edit:
         st.warning(f"🛠️ **CHẾ ĐỘ SỬA CHỮA BÁO GIÁ:** Đang chỉnh sửa phiếu **{edit_bg['ma_bao_gia']}**.")
-        # Chạy hàm clear ngầm định bằng on_click
         st.button("❌ Hủy chỉnh sửa (Quay về Tạo mới)", key="cancel_t1", on_click=clear_t1)
     else:
         st.subheader("Tạo báo giá từ danh mục có sẵn")
         
     c1, c2 = st.columns(2)
-    # Khóa chặt với Session State thông qua key
     ten_kh = c1.text_input("Tên khách hàng:", key="t1_kh")
     sdt_kh = c2.text_input("Số điện thoại:", key="t1_sdt")
 
@@ -254,10 +250,15 @@ with tab1:
                 })
                 
                 tong_goc = sum([item['Giá Gốc'] / 0.6 * item['Số Lượng'] for item in st.session_state.gio_bao_gia])
-                if tong_goc < 3000000: ck = 1.0
-                elif tong_goc < 6000000: ck = 0.95
-                elif tong_goc < 9000000: ck = 0.90
-                else: ck = 0.85
+                
+                # ====================================================
+                # ĐÃ CẬP NHẬT CÁC MỐC CHIẾT KHẤU THEO YÊU CẦU MỚI NHẤT
+                # ====================================================
+                if tong_goc < 3000000: ck = 1.0          # Dưới 3tr: x1.0
+                elif tong_goc < 8000000: ck = 0.95       # Từ 3tr đến <8tr: x0.95
+                elif tong_goc < 14000000: ck = 0.90      # Từ 8tr đến <14tr: x0.90
+                elif tong_goc < 20000000: ck = 0.85      # Từ 14tr đến <20tr: x0.85
+                else: ck = 0.80                          # Từ 20tr trở lên: x0.80
                 
                 for item in st.session_state.gio_bao_gia:
                     item['Đơn Giá'] = round((item['Giá Gốc'] / 0.6) * ck, 0)
@@ -518,7 +519,6 @@ with tab3:
                         st.download_button("📥 XUẤT LẠI FILE PDF NÀY", data=pdf_re, file_name=f"{ma_tim_kiem}_ReExport_{row_data['ten_kh']}.pdf", mime="application/pdf", type="primary", use_container_width=True)
                     
                     with col_his2:
-                        # Kích hoạt ngầm định bằng on_click để bơm dữ liệu vào form trước khi load Tab 1/2
                         is_chuan_flag = (row_data['loai_bao_gia'] == 'Tiêu chuẩn')
                         if st.button("🛠️ Nạp dữ liệu để Chỉnh Sửa", type="primary", use_container_width=True, on_click=nap_du_lieu_sua, args=(row_data.to_dict(), json.loads(row_data['chi_tiet']), is_chuan_flag)):
                             if is_chuan_flag:
