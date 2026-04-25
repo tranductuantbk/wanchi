@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import date
 import time
 import json
+import io # Thư viện mới để tạo file Excel
 from db_utils import get_connection, check_password
 
 st.set_page_config(page_title="Hóa Đơn & Công Nợ", page_icon="🧾", layout="wide")
@@ -186,7 +187,7 @@ with tab2:
 # ==========================================
 with tab3:
     st.subheader("Trích Xuất Dữ Liệu Khai Báo Thuế")
-    st.markdown("💡 *Nhập Mã Đơn đã tạo để trích xuất form tự động chuẩn xác theo phần mềm kế toán (MISA, FAST...)*")
+    st.markdown("💡 *Nhập Mã Đơn đã tạo để trích xuất file Excel tự động chuẩn xác theo phần mềm kế toán (MISA, FAST...)*")
     
     col_p1, col_p2 = st.columns([1, 2])
     with col_p1:
@@ -215,27 +216,19 @@ with tab3:
                 if 'Đơn Giá OME' in df_items.columns:
                     df_items['don_gia'] = df_items['Đơn Giá OME']
 
-                # Nối với danh mục để lấy Mã SP
-                try:
-                    df_sp_ma = pd.read_sql("SELECT ma_sp, ten_sp FROM dm_san_pham", conn)
-                    df_merged = pd.merge(df_items, df_sp_ma, on='ten_sp', how='left')
-                except:
-                    df_merged = df_items.copy()
-                    df_merged['ma_sp'] = ""
-
-                tong_tien_import = df_merged['doanh_thu'].sum()
+                tong_tien_import = df_items['doanh_thu'].sum()
 
                 with col_p2:
                     st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền: {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
 
-                # Form Excel chuẩn Kế toán Wanchi
+                # ĐÃ SỬA: BỎ MÃ SẢN PHẨM THEO YÊU CẦU
                 df_import_thue = pd.DataFrame({
-                    "Mã vt": df_merged.get('ma_sp', ""),
-                    "Tên vt": df_merged.get('ten_sp', ""),
+                    "Mã vt": "",
+                    "Tên vt": df_items.get('ten_sp', ""),
                     "Đvt": "Cái",
-                    "Số lượng": df_merged.get('so_luong', 0),
-                    "Giá": df_merged.get('don_gia', 0),
-                    "Tiền": df_merged.get('doanh_thu', 0),
+                    "Số lượng": df_items.get('so_luong', 0),
+                    "Giá": df_items.get('don_gia', 0),
+                    "Tiền": df_items.get('doanh_thu', 0),
                     "Giá ngoại tệ": "",
                     "Tiền ngoại tệ": "",
                     "%CK": "",
@@ -254,12 +247,18 @@ with tab3:
                 )
 
                 st.markdown("---")
-                csv_data = df_import_thue.to_csv(index=False).encode('utf-8-sig') 
+                
+                # ĐÃ SỬA: XUẤT RA FILE EXCEL (.xlsx) THAY VÌ .csv
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_import_thue.to_excel(writer, index=False, sheet_name='Import_Thue')
+                excel_data = output.getvalue()
+                
                 st.download_button(
-                    label="📥 Tải File Excel (CSV) Để Import",
-                    data=csv_data,
-                    file_name=f"Import_Thue_{ma_don_import}.csv",
-                    mime="text/csv",
+                    label="📥 Tải File Excel Để Import Kế Toán",
+                    data=excel_data,
+                    file_name=f"Import_Thue_{ma_don_import}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     type="primary"
                 )
             except Exception as e:
