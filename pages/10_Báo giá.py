@@ -230,43 +230,55 @@ with tab1:
             if sp_chon != "-- Chọn --":
                 info = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
                 
-                # Đảm bảo lấy giá công ty an toàn
-                gia_cty_goc = info.get('gia_khach_le', 0)
+                gia_goc = info.get('gia_dai_ly', 0)
+                gia_cty_chuan = gia_goc / 0.6 if gia_goc > 0 else info.get('gia_khach_le', 0)
                 
                 st.session_state.gio_bao_gia.append({
                     "Mã SP": info['ma_sp'], 
                     "Tên SP": sp_chon, 
                     "Số Lượng": sl_chon, 
-                    "Giá Gốc": info['gia_dai_ly'],
-                    "Giá công ty": gia_cty_goc,
+                    "Giá Gốc": gia_goc,
+                    "Giá công ty": int(round(gia_cty_chuan, -1)),
                     "Đơn Giá": 0 
                 })
                 
-                # SỬA LỖI: Tính tổng mốc chiết khấu dựa trên Giá Công Ty (tránh lệch pha)
-                tong_goc = sum([item['Giá công ty'] * item['Số Lượng'] for item in st.session_state.gio_bao_gia])
+                # TÍNH LẠI TOÀN BỘ THEO MỐC MỚI NHẤT
+                tong_goc = sum([(item.get('Giá Gốc', 0) / 0.6) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
                 
-                # BẢNG CHIẾT KHẤU MỚI
                 if tong_goc < 3000000: ck = 1.0          # Dưới 3tr: x1.0
-                elif tong_goc < 8000000: ck = 0.95       # Từ 3tr đến dưới 8tr: x0.95
-                elif tong_goc < 14000000: ck = 0.90      # Từ 8tr đến dưới 14tr: x0.90
-                elif tong_goc < 20000000: ck = 0.85      # Từ 14tr đến dưới 20tr: x0.85
+                elif tong_goc < 8000000: ck = 0.95       # Từ 3tr đến <8tr: x0.95
+                elif tong_goc < 14000000: ck = 0.90      # Từ 8tr đến <14tr: x0.90
+                elif tong_goc < 20000000: ck = 0.85      # Từ 14tr đến <20tr: x0.85
                 else: ck = 0.80                          # Từ 20tr trở lên: x0.80
                 
-                # SỬA LỖI: Áp dụng chiết khấu trực tiếp lên Giá Công Ty
                 for item in st.session_state.gio_bao_gia:
-                    item['Đơn Giá'] = int(round(item['Giá công ty'] * ck, 0))
+                    g_cty = item.get('Giá Gốc', 0) / 0.6 if item.get('Giá Gốc', 0) > 0 else item.get('Giá công ty', 0)
+                    item['Đơn Giá'] = int(round(g_cty * ck, -1)) # Làm tròn đúng hàng chục
+                    item['Giá công ty'] = int(round(g_cty, -1))
                     
                 st.rerun()
 
     if st.session_state.gio_bao_gia:
-        # Vá lỗi dữ liệu rỗng cho giỏ hàng cũ
-        for item in st.session_state.gio_bao_gia:
-            if 'Giá công ty' not in item: item['Giá công ty'] = 0
-            if 'Đơn Giá' not in item: item['Đơn Giá'] = item['Giá công ty']
-            if 'Giá Gốc' not in item: item['Giá Gốc'] = 0
-
+        # NÚT "PHÉP THUẬT" DÀNH CHO CÁC GIỎ HÀNG BỊ KẸT CACHE CŨ
+        st.markdown("---")
+        if st.button("🔄 TỰ ĐỘNG TÍNH LẠI CHIẾT KHẤU THEO TỔNG ĐƠN MỚI NHẤT", type="secondary"):
+            tong_goc = sum([(item.get('Giá Gốc', 0) / 0.6) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
+            if tong_goc < 3000000: ck = 1.0
+            elif tong_goc < 8000000: ck = 0.95
+            elif tong_goc < 14000000: ck = 0.90
+            elif tong_goc < 20000000: ck = 0.85
+            else: ck = 0.80
+            
+            for item in st.session_state.gio_bao_gia:
+                g_cty = item.get('Giá Gốc', 0) / 0.6 if item.get('Giá Gốc', 0) > 0 else item.get('Giá công ty', 0)
+                item['Đơn Giá'] = int(round(g_cty * ck, -1))
+                item['Giá công ty'] = int(round(g_cty, -1))
+            st.success(f"✅ Đã quét lại toàn bộ giỏ hàng và áp dụng mức chiết khấu: Giảm {int((1-ck)*100)}%")
+            time.sleep(1.5)
+            st.rerun()
+            
         df_curr = pd.DataFrame(st.session_state.gio_bao_gia)
-        st.info("💡 **Mẹo Pro:** Bạn có thể **nhấp đúp chuột** vào cột **Số Lượng** và **Đơn Giá** bên dưới để sửa đè giá cho khách quen!")
+        st.info("💡 **Mẹo Pro:** Nếu số lượng đổi làm thay đổi mốc, hãy bấm nút 🔄 TÍNH LẠI phía trên. Hoặc bạn có thể **nhấp đúp** vào cột Đơn Giá để sửa tay!")
         
         df_curr['Thành Tiền'] = df_curr['Số Lượng'] * df_curr['Đơn Giá']
         
