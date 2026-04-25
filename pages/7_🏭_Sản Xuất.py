@@ -34,25 +34,21 @@ c = conn.cursor()
 try:
     c.execute("CREATE SCHEMA IF NOT EXISTS public;")
     
-    # Bảng Quản lý danh sách máy ép
     c.execute('''CREATE TABLE IF NOT EXISTS public.dm_may_ep (
                     id SERIAL PRIMARY KEY, ten_may TEXT UNIQUE, loai_may TEXT
                 )''')
 
-    # Bảng Kế hoạch sản xuất
     c.execute('''CREATE TABLE IF NOT EXISTS public.ke_hoach_sx_ngay (
                     id SERIAL PRIMARY KEY,
                     ngay TEXT, tuan TEXT, may_ep TEXT, san_pham TEXT, so_luong REAL DEFAULT 0
                 )''')
                 
-    # Bảng Ghi chú tăng ca theo tuần
     c.execute('''CREATE TABLE IF NOT EXISTS public.ke_hoach_tang_ca (
                     tuan TEXT PRIMARY KEY, ghi_chu TEXT
                 )''')
     conn.commit()
 except Exception as e: 
     conn.rollback()
-# ==========================================
 
 # Lấy dữ liệu Sản phẩm & Máy ép
 try: 
@@ -80,30 +76,43 @@ with tab1:
     # 1. BỘ CHỌN TUẦN VÀ TÍNH TOÁN NGÀY
     ngay_chon = st.date_input("🗓️ Chọn một ngày bất kỳ để nạp bảng kế hoạch của Tuần đó:", lay_gio_vn().date())
     
-    # Tính ra Thứ 2 và Chủ Nhật của tuần được chọn
     start_of_week = ngay_chon - timedelta(days=ngay_chon.weekday())
     dates = [start_of_week + timedelta(days=i) for i in range(7)]
     
-    date_cols = [d.strftime('%d/%m') for d in dates] # Để hiện trên cột bảng (VD: 30/03)
-    db_dates = [d.strftime('%Y-%m-%d') for d in dates] # Để lưu vào DB
+    date_cols = [d.strftime('%d/%m') for d in dates] 
+    db_dates = [d.strftime('%Y-%m-%d') for d in dates] 
     
     tuan_iso = start_of_week.isocalendar()
-    tuan_str = f"{tuan_iso[0]}-W{tuan_iso[1]:02d}" # Identifier: 2026-W14
+    tuan_str = f"{tuan_iso[0]}-W{tuan_iso[1]:02d}"
     
+    # QUẢN LÝ TRẠNG THÁI CHỈNH SỬA
+    if 'edit_plan_week' not in st.session_state:
+        st.session_state['edit_plan_week'] = None
+        
+    is_editing = (st.session_state['edit_plan_week'] == tuan_str)
+
     col_t1, col_t2 = st.columns([1, 1])
     col_t1.markdown(f"**Từ ngày:** `{date_cols[0]}/{start_of_week.year}` &nbsp;&nbsp;➔&nbsp;&nbsp; **đến:** `{date_cols[-1]}/{dates[-1].year}`")
     
-    # Lấy ghi chú tăng ca của tuần này
     try:
         c.execute("SELECT ghi_chu FROM public.ke_hoach_tang_ca WHERE tuan=%s", (tuan_str,))
         tc_res = c.fetchone()
         tc_val = tc_res[0] if tc_res else ""
     except: tc_val = ""
     
-    tang_ca = col_t2.text_input("Kế hoạch tăng ca (VD: 2, 3):", value=tc_val)
-    st.info("💡 **Hướng dẫn:** Chọn Sản Phẩm, gõ số lượng vào các ngày. Bấm dấu `+` ở góc dưới bảng để THÊM HÀNG.")
+    # Ô nhập Tăng ca sẽ bị khóa nếu không ở chế độ sửa
+    tang_ca = col_t2.text_input("Kế hoạch tăng ca (VD: 2, 3):", value=tc_val, disabled=not is_editing)
+    
+    st.markdown("---")
+    
+    # NÚT BẬT CHẾ ĐỘ SỬA
+    if not is_editing:
+        if st.button("✏️ CHỈNH SỬA BẢN KẾ HOẠCH NÀY", type="primary"):
+            st.session_state['edit_plan_week'] = tuan_str
+            st.rerun()
+    else:
+        st.warning("🛠️ **HỆ THỐNG ĐÃ MỞ KHÓA:** Bạn có thể chỉnh sửa bảng bên dưới. Kéo xuống dưới cùng để bấm LƯU LẠI.")
 
-    # 2. TRÍCH XUẤT DỮ LIỆU CŨ TỪ DATABASE ĐỂ ĐIỀN VÀO BẢNG
     try:
         df_week = pd.read_sql(f"SELECT ngay, may_ep, san_pham, so_luong FROM public.ke_hoach_sx_ngay WHERE ngay >= '{db_dates[0]}' AND ngay <= '{db_dates[-1]}'", conn)
     except:
@@ -116,79 +125,85 @@ with tab1:
         st.warning("⚠️ Chưa có Máy Ép nào. Vui lòng sang Tab Cài Đặt (⚙️) để thêm máy trước!")
     else:
         for may in list_may:
-            st.markdown(f"<h5 style='color:#b30000; margin-top: 20px;'>KẾ HOẠCH CHẠY MÁY: {may.upper()}</h5>", unsafe_allow_html=True)
+            st.markdown(f"<h5 style='color:#b30000; margin-top: 15px;'>KẾ HOẠCH CHẠY MÁY: {may.upper()}</h5>", unsafe_allow_html=True)
             
             df_m = df_week[df_week['may_ep'] == may]
             records = []
             
             if not df_m.empty:
-                # Gom nhóm theo sản phẩm để đưa lên cùng 1 hàng
                 for sp, group in df_m.groupby('san_pham'):
                     row = {"Sản Phẩm": sp}
-                    for d in date_cols: row[d] = None # Khởi tạo giá trị rỗng
+                    for d in date_cols: row[d] = None 
                     for _, r in group.iterrows():
                         try:
                             idx = db_dates.index(r['ngay'])
-                            if r['so_luong'] > 0:
-                                row[date_cols[idx]] = float(r['so_luong'])
+                            if r['so_luong'] > 0: row[date_cols[idx]] = float(r['so_luong'])
                         except: pass
                     records.append(row)
                     
-            # Nếu bảng trống, tạo sẵn 2 hàng trắng để user dễ nhập (Thay thế cho số 1, 2, 3 cố định)
-            if len(records) == 0:
+            if is_editing and len(records) == 0:
                 empty_row = {"Sản Phẩm": None}
                 for d in date_cols: empty_row[d] = None
                 records = [empty_row.copy() for _ in range(2)]
                 
             df_table = pd.DataFrame(records)
             
-            # Cấu hình form nhập liệu cho Bảng
-            col_cfg = {
-                "Sản Phẩm": st.column_config.SelectboxColumn("Sản Phẩm", options=list_sp, width="large")
-            }
+            col_cfg = {"Sản Phẩm": st.column_config.SelectboxColumn("Sản Phẩm", options=list_sp, width="large")}
             for d in date_cols:
                 col_cfg[d] = st.column_config.NumberColumn(d, min_value=0.0, format="%g", width="small")
                 
-            # data_editor với num_rows="dynamic" chính là tính năng có dấu CỘNG để thêm hàng
-            edited_dfs[may] = st.data_editor(
-                df_table, 
-                num_rows="dynamic", 
-                column_config=col_cfg, 
-                hide_index=True, 
-                key=f"ed_{may}_{tuan_str}", 
-                use_container_width=True
-            )
+            if is_editing:
+                # Nếu đang Sửa: Hiện bảng gõ, có dấu CỘNG
+                edited_dfs[may] = st.data_editor(
+                    df_table, num_rows="dynamic", column_config=col_cfg, 
+                    hide_index=True, key=f"ed_{may}_{tuan_str}", use_container_width=True
+                )
+            else:
+                # Nếu chỉ Xem: Lọc bỏ hàng rỗng, in ra bảng tĩnh
+                if not df_table.empty: df_table = df_table.dropna(subset=['Sản Phẩm'])
+                
+                if df_table.empty:
+                    st.info(f"Chưa có phân việc cho {may}")
+                else:
+                    st.dataframe(
+                        df_table, column_config=col_cfg, 
+                        hide_index=True, use_container_width=True
+                    )
 
-        # 4. NÚT LƯU TOÀN BỘ KẾ HOẠCH VÀO DATABASE
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("💾 LƯU TOÀN BỘ BẢNG KẾ HOẠCH TUẦN NÀY", type="primary", use_container_width=True):
-            try:
-                # Lưu tăng ca
-                c.execute("INSERT INTO public.ke_hoach_tang_ca (tuan, ghi_chu) VALUES (%s, %s) ON CONFLICT (tuan) DO UPDATE SET ghi_chu=EXCLUDED.ghi_chu", (tuan_str, tang_ca))
-                
-                # Xóa sạch kế hoạch cũ của tuần này để ghi đè (Chống trùng lặp)
-                c.execute("DELETE FROM public.ke_hoach_sx_ngay WHERE ngay >= %s AND ngay <= %s", (db_dates[0], db_dates[-1]))
-                
-                # Quét lại toàn bộ các bảng trên màn hình để insert
-                for may, edf in edited_dfs.items():
-                    for _, row in edf.iterrows():
-                        sp = row.get("Sản Phẩm")
-                        if not sp or pd.isna(sp) or sp == "-- Chưa có Sản Phẩm --": continue
+        # 4. NÚT CHỐT LƯU KHI CHỈNH SỬA XONG
+        if is_editing:
+            st.markdown("---")
+            col_btn1, col_btn2 = st.columns([2, 1])
+            with col_btn1:
+                if st.button("💾 LƯU LẠI KHI CHỈNH SỬA XONG", type="primary", use_container_width=True):
+                    try:
+                        c.execute("INSERT INTO public.ke_hoach_tang_ca (tuan, ghi_chu) VALUES (%s, %s) ON CONFLICT (tuan) DO UPDATE SET ghi_chu=EXCLUDED.ghi_chu", (tuan_str, tang_ca))
+                        c.execute("DELETE FROM public.ke_hoach_sx_ngay WHERE ngay >= %s AND ngay <= %s", (db_dates[0], db_dates[-1]))
                         
-                        # Quét qua 7 cột ngày
-                        for i, d_col in enumerate(date_cols):
-                            sl = row.get(d_col)
-                            if pd.notna(sl) and sl > 0:
-                                c.execute("""INSERT INTO public.ke_hoach_sx_ngay 
-                                             (ngay, tuan, may_ep, san_pham, so_luong) 
-                                             VALUES (%s, %s, %s, %s, %s)""",
-                                          (db_dates[i], tuan_str, may, sp, float(sl)))
-                conn.commit()
-                st.success("✅ Đã lưu toàn bộ kế hoạch vào hệ thống thành công!")
-                time.sleep(1.5); st.rerun()
-            except Exception as e:
-                conn.rollback()
-                st.error(f"Lỗi khi lưu Database: {e}")
+                        for may, edf in edited_dfs.items():
+                            for _, row in edf.iterrows():
+                                sp = row.get("Sản Phẩm")
+                                if not sp or pd.isna(sp) or sp == "-- Chưa có Sản Phẩm --": continue
+                                
+                                for i, d_col in enumerate(date_cols):
+                                    sl = row.get(d_col)
+                                    if pd.notna(sl) and sl > 0:
+                                        c.execute("""INSERT INTO public.ke_hoach_sx_ngay 
+                                                     (ngay, tuan, may_ep, san_pham, so_luong) 
+                                                     VALUES (%s, %s, %s, %s, %s)""",
+                                                  (db_dates[i], tuan_str, may, sp, float(sl)))
+                        conn.commit()
+                        st.success("✅ Đã lưu toàn bộ kế hoạch vào hệ thống thành công!")
+                        st.session_state['edit_plan_week'] = None
+                        time.sleep(1.5); st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"Lỗi khi lưu Database: {e}")
+            
+            with col_btn2:
+                if st.button("❌ Hủy chỉnh sửa", use_container_width=True):
+                    st.session_state['edit_plan_week'] = None
+                    st.rerun()
 
 # ------------------------------------------
 # TAB 2: IN KẾ HOẠCH (PDF)
