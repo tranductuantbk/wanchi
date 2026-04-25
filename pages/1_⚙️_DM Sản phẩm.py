@@ -77,7 +77,7 @@ try:
 except: danh_sach_nl = ["-- Kho đang trống --"]
 
 # ==========================================
-# GIAO DIỆN 4 TABS (ĐÃ ĐỔI TÊN BỎ CHỮ "CHUẨN")
+# GIAO DIỆN 4 TABS
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs([
     "➕ Thêm SP", "📋 Danh Sách SP", 
@@ -99,7 +99,7 @@ with tab1:
         with col2:
             gia_dai_ly = st.number_input("Giá bán Đại lý (VNĐ)", min_value=0.0, step=1000.0)
             st.markdown("*(Giá Công ty tự động = Giá Đại Lý / 0.6 - Làm tròn hàng chục)*")
-            chi_phi_khac_chuan = st.number_input("Chi phí khác (Tem, thùng, công...) (VNĐ)", min_value=0.0, step=1000.0)
+            # ĐÃ XÓA MỤC CHI PHÍ KHÁC Ở ĐÂY
             
         st.markdown("---")
         st.markdown("### 🧬 Thành Phần Nguyên Liệu Cấu Tạo (BOM)")
@@ -121,7 +121,6 @@ with tab1:
             if not ma_sp.strip() or not ten_sp.strip():
                 st.warning("⚠️ Vui lòng nhập Mã và Tên sản phẩm!")
             else:
-                # ĐÃ SỬA: LÀM TRÒN HÀNG CHỤC (Dùng hàm round với -1)
                 gia_khach_le_calc = int(round(gia_dai_ly / 0.6, -1))
                 
                 valid_recipe = edited_recipe.dropna(subset=["vat_tu"])
@@ -129,10 +128,11 @@ with tab1:
                 json_ds_nguyen_lieu = valid_recipe.to_json(orient="records") if not valid_recipe.empty else ""
 
                 try:
+                    # Gán mặc định chi_phi_khac = 0 vào Database
                     c.execute("""INSERT INTO public.dm_san_pham 
                                  (ma_sp, ten_sp, gia_dai_ly, gia_khach_le, gia_von, chi_phi_khac, ds_nguyen_lieu) 
                                  VALUES (%s, %s, %s, %s, %s, %s, %s)""", 
-                              (ma_sp.strip(), ten_sp.strip(), gia_dai_ly, gia_khach_le_calc, gia_von, chi_phi_khac_chuan, json_ds_nguyen_lieu))
+                              (ma_sp.strip(), ten_sp.strip(), gia_dai_ly, gia_khach_le_calc, gia_von, 0, json_ds_nguyen_lieu))
                     st.success(f"✅ Đã thêm {ten_sp} cùng bộ định mức thành công!")
                     time.sleep(1.5)
                     st.rerun()
@@ -144,7 +144,6 @@ with tab1:
 with tab2:
     st.subheader("Cập Nhật & Sửa Chữa SP")
     
-    # BỘ CÔNG CỤ QUÉT VÀ LÀM TRÒN DỮ LIỆU CŨ
     with st.expander("🛠️ Công cụ sửa lỗi giá Công ty cũ bị lẻ (Bấm vào đây)"):
         st.info("Vì các sản phẩm cũ được tạo trước khi có tính năng làm tròn, giá Công ty vẫn đang bị lẻ. Bấm nút dưới đây để hệ thống tự động làm tròn toàn bộ dữ liệu trong kho!")
         if st.button("🔄 Chạy tự động làm tròn hàng chục cho toàn bộ SP", type="secondary"):
@@ -171,7 +170,8 @@ with tab2:
                 except: return "Lỗi hiển thị"
 
             df_sp['thanh_phan_hien_thi'] = df_sp['ds_nguyen_lieu'].apply(format_recipe)
-            df_edit = df_sp.drop(columns=['ds_nguyen_lieu'])
+            # Ẩn cột chi_phi_khac khỏi bảng giao diện
+            df_edit = df_sp.drop(columns=['ds_nguyen_lieu', 'chi_phi_khac'])
 
             edited_sp = st.data_editor(
                 df_edit, key="bang_sua_gia",
@@ -183,19 +183,17 @@ with tab2:
                     "gia_dai_ly": st.column_config.NumberColumn("Giá Đại lý", format="%d"),
                     "gia_khach_le": st.column_config.NumberColumn("Giá Công ty", disabled=True, format="%d"),
                     "gia_von": st.column_config.NumberColumn("Giá Vốn", format="%d"),
-                    "chi_phi_khac": st.column_config.NumberColumn("Chi phí khác", format="%d"),
                 },
                 use_container_width=True, hide_index=True
             )
 
             if st.button("💾 Lưu Bảng Thay Đổi", type="primary"):
                 for index, row in edited_sp.iterrows():
-                    # LÀM TRÒN KHI SỬA
                     gia_kl = int(round(float(row['gia_dai_ly']) / 0.6, -1))
                     c.execute("""UPDATE public.dm_san_pham 
-                                 SET gia_dai_ly=%s, gia_khach_le=%s, gia_von=%s, chi_phi_khac=%s 
+                                 SET gia_dai_ly=%s, gia_khach_le=%s, gia_von=%s 
                                  WHERE id=%s""",
-                              (float(row['gia_dai_ly']), gia_kl, float(row['gia_von']), float(row['chi_phi_khac']), int(row['id'])))
+                              (float(row['gia_dai_ly']), gia_kl, float(row['gia_von']), int(row['id'])))
                 st.success("✅ Đã cập nhật thành công!")
                 time.sleep(1)
                 st.rerun()
@@ -227,7 +225,7 @@ with tab3:
             gia_ome = st.number_input("Giá bán OME (VNĐ)", min_value=0.0, step=1000.0)
         with col_o2:
             gia_von_ome = st.number_input("Giá Vốn / Giá thành (VNĐ)", min_value=0.0, step=1000.0)
-            chi_phi_khac_ome = st.number_input("Chi phí khác (Tem, bao bì...) (VNĐ)", min_value=0.0, step=1000.0)
+            # ĐÃ XÓA MỤC CHI PHÍ KHÁC Ở ĐÂY
 
         st.markdown("---")
         st.markdown("### 🧬 Thành Phần Nguyên Liệu (Trừ Kho Wanchi)")
@@ -256,7 +254,7 @@ with tab3:
                     c.execute("""INSERT INTO public.dm_san_pham_ome 
                                  (ten_sp, gia_ome, gia_von, chi_phi_khac, ds_nguyen_lieu) 
                                  VALUES (%s, %s, %s, %s, %s)""", 
-                              (ten_sp_ome.strip(), gia_ome, gia_von_ome, chi_phi_khac_ome, json_ds_nguyen_lieu_ome))
+                              (ten_sp_ome.strip(), gia_ome, gia_von_ome, 0, json_ds_nguyen_lieu_ome))
                     st.success(f"✅ Đã thêm OME: {ten_sp_ome}!")
                     time.sleep(1)
                     st.rerun()
@@ -278,7 +276,8 @@ with tab4:
                 except: return "Lỗi hiển thị"
 
             df_ome['thanh_phan_hien_thi'] = df_ome['ds_nguyen_lieu'].apply(format_recipe)
-            df_edit_ome = df_ome.drop(columns=['ds_nguyen_lieu'])
+            # Ẩn cột chi_phi_khac khỏi bảng giao diện
+            df_edit_ome = df_ome.drop(columns=['ds_nguyen_lieu', 'chi_phi_khac'])
 
             edited_ome = st.data_editor(
                 df_edit_ome, key="bang_sua_ome",
@@ -288,16 +287,15 @@ with tab4:
                     "thanh_phan_hien_thi": st.column_config.TextColumn("Thành Phần Vật Tư", disabled=True),
                     "gia_ome": st.column_config.NumberColumn("Giá bán OME", format="%d"),
                     "gia_von": st.column_config.NumberColumn("Giá Vốn", format="%d"),
-                    "chi_phi_khac": st.column_config.NumberColumn("Chi phí khác", format="%d"),
                 }, use_container_width=True, hide_index=True
             )
 
             if st.button("💾 Lưu Bảng OME", type="primary"):
                 for index, row in edited_ome.iterrows():
                     c.execute("""UPDATE public.dm_san_pham_ome 
-                                 SET gia_ome=%s, gia_von=%s, chi_phi_khac=%s 
+                                 SET gia_ome=%s, gia_von=%s 
                                  WHERE id=%s""",
-                              (float(row['gia_ome']), float(row['gia_von']), float(row['chi_phi_khac']), int(row['id'])))
+                              (float(row['gia_ome']), float(row['gia_von']), int(row['id'])))
                 st.success("✅ Cập nhật OME thành công!")
                 time.sleep(1)
                 st.rerun()
