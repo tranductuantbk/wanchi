@@ -191,6 +191,7 @@ with tab1:
         # ĐỒNG BỘ: Nhận diện "Công ty" thay vì "Khách lẻ"
         nhom_kh = thong_tin_kh.get('nhom_kh', 'Công ty')
         loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Công ty"
+        if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 10%)"
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
     
     with st.form("form_chuan", clear_on_submit=True):
@@ -203,7 +204,21 @@ with tab1:
                 st.error("⚠️ Vui lòng chọn Khách hàng ở trên để hệ thống biết áp dụng loại giá nào!")
             elif sp_chon != "-- Chọn Sản Phẩm --":
                 info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
-                don_gia = info['gia_dai_ly'] if loai_gia_chot == "Giá Đại Lý" else info['gia_khach_le']
+                
+                # =======================================================
+                # ĐÃ SỬA: TÍNH TOÁN GIÁ DỰA TRÊN "GIÁ CÔNG TY" LÀM GỐC
+                # =======================================================
+                gia_goc = info.get('gia_dai_ly', 0)
+                gia_cty_chuan = gia_goc / 0.6 if gia_goc > 0 else info.get('gia_khach_le', 0)
+                
+                if loai_gia_chot == "Giá Đại Lý":
+                    don_gia = int(gia_goc)
+                elif "Ưu Đãi" in loai_gia_chot:
+                    # Lấy Giá công ty * 0.9 và làm tròn chẵn chục
+                    don_gia = int(round(gia_cty_chuan * 0.90, -1))
+                else:
+                    # Lấy Giá công ty
+                    don_gia = int(round(gia_cty_chuan, -1))
                 
                 st.session_state.gio_chuan.append({
                     "Tên Sản Phẩm": sp_chon,
@@ -337,7 +352,6 @@ with tab3:
                 
                 # Tìm đúng dòng báo giá
                 if ma_bg_chon == "Mã Cũ":
-                    # Lấy tạm bằng tên khách và ngày nếu là mã cũ
                     ten_kh_split = chon_bg.split("Khách: ")[1].split(" (")[0]
                     bg_info = df_bg[df_bg['ten_kh'] == ten_kh_split].iloc[0]
                 else:
