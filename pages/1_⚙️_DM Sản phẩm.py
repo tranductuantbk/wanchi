@@ -132,7 +132,7 @@ with tab1:
             if not ma_sp.strip() or not ten_sp.strip():
                 st.warning("⚠️ Vui lòng nhập Mã và Tên sản phẩm!")
             else:
-                gia_khach_le_calc = int(round(gia_dai_ly / 0.6, -1))
+                gia_khach_le_calc = int(round(gia_dai_ly / 0.55, -1))
                 
                 valid_recipe = edited_recipe.dropna(subset=["vat_tu"])
                 valid_recipe = valid_recipe[(valid_recipe["vat_tu"] != "-- Kho đang trống --") & (valid_recipe["dinh_muc"] > 0)]
