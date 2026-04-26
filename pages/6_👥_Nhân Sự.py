@@ -20,6 +20,26 @@ if not role: st.stop()
 if role == "employee":
     st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: hồ sơ nhân sự là dữ liệu tuyệt mật của Quản lý.")
     st.stop()
+# ==========================================
+# Ổ KHÓA BẢO VỆ 3 (KÉT SẮT TÀI CHÍNH)
+# ==========================================
+if 'dashboard_unlocked' not in st.session_state:
+    st.session_state.dashboard_unlocked = False
+
+if not st.session_state.dashboard_unlocked:
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    col_khoa1, col_khoa2, col_khoa3 = st.columns([1, 2, 1])
+    with col_khoa2:
+        st.warning("🔒 **BẢO MẬT CẤP CAO:** Vui lòng nhập Mã PIN Giám Đốc để xem Báo cáo tài chính.")
+        with st.form("form_mat_khau"):
+            pin_input = st.text_input("Mã PIN / Mật khẩu:", type="password")
+            if st.form_submit_button("🔓 Mở Khóa Két Sắt", type="primary", use_container_width=True):
+                if pin_input == MAT_KHAU_GIAM_DOC:
+                    st.session_state.dashboard_unlocked = True
+                    st.rerun()
+                else:
+                    st.error("❌ Mã PIN không chính xác!")
+    st.stop() # Chặn đứng mọi đoạn code bên dưới nếu chưa mở khóa
 
 # ==========================================
 # CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7)
