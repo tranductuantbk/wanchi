@@ -101,7 +101,7 @@ with tab1:
         
         with col2:
             gia_dai_ly = st.number_input("Giá bán Đại lý (VNĐ)", min_value=0.0, step=1000.0, value=float(edit_data['gia_dai_ly']) if is_edit else 0.0)
-            st.markdown("*(Giá Công ty tự động = Giá Đại Lý / 0.6 - Làm tròn hàng chục)*")
+            st.markdown("*(Giá Công ty tự động = Giá Đại Lý / 0.55 - Làm tròn hàng chục)*")
             
         st.markdown("---")
         st.markdown("### 🧬 Thành Phần Nguyên Liệu Cấu Tạo (BOM)")
