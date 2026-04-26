@@ -10,7 +10,7 @@ st.set_page_config(page_title="Dashboard Quản Trị", page_icon="📊", layout
 # ==========================================
 # 🔑 CẤU HÌNH MẬT KHẨU GIÁM ĐỐC (ĐỔI TẠI ĐÂY)
 # ==========================================
-MAT_KHAU_GIAM_DOC = "572577" 
+MAT_KHAU_GIAM_DOC = "tuanquang" 
 
 # ==========================================
 # Ổ KHÓA BẢO VỆ 1 & 2 (Quyền truy cập chung)
