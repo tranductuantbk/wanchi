@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import date, datetime, timedelta, timezone
 from fpdf import FPDF
 import os
+import urllib.request
 import time
 import random
 from db_utils import get_connection, check_password
@@ -13,13 +14,87 @@ from db_utils import get_connection, check_password
 MAT_KHAU_GIAM_DOC = "tuanquang" 
 
 # ==========================================
-# CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7)
+# CẤU HÌNH MÚI GIỜ & FONT PDF
 # ==========================================
 VN_TZ = timezone(timedelta(hours=7))
 
 def lay_gio_vn():
-    """Hàm luôn trả về ngày giờ chính xác tại Việt Nam"""
     return datetime.now(VN_TZ)
+
+FONT_FILE = "Roboto-Regular.ttf"
+FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf"
+
+@st.cache_resource
+def download_font():
+    if not os.path.exists(FONT_FILE):
+        try: urllib.request.urlretrieve(FONT_URL, FONT_FILE)
+        except: return False
+    return True
+download_font()
+
+# --- HÀM TẠO PHIẾU LƯƠNG PDF ---
+def generate_payslip_pdf(nv_name, ky_luong, data_dict):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    has_font = os.path.exists(FONT_FILE)
+    if has_font:
+        pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+        pdf.add_font("Roboto", "B", FONT_FILE, uni=True) 
+        font_name = "Roboto"
+    else: font_name = "Helvetica"
+        
+    # Tiêu đề
+    pdf.set_font(font_name, 'B' if has_font else '', 18)
+    pdf.cell(0, 10, "PHIẾU LƯƠNG NHÂN VIÊN", align="C", ln=True)
+    pdf.set_font(font_name, "", 12)
+    pdf.cell(0, 8, f"Kỳ lương: {ky_luong}", align="C", ln=True)
+    pdf.ln(5)
+    
+    # Thông tin nhân viên
+    pdf.set_font(font_name, 'B' if has_font else '', 12)
+    pdf.cell(0, 8, f"Họ và tên: {nv_name}", ln=True)
+    pdf.ln(3)
+    
+    # Bảng lương
+    pdf.set_font(font_name, 'B' if has_font else '', 11)
+    pdf.set_fill_color(230, 230, 230)
+    
+    pdf.cell(120, 10, "DIỄN GIẢI CHI TIẾT", border=1, align="C", fill=True)
+    pdf.cell(70, 10, "SỐ TIỀN (VNĐ)", border=1, align="C", fill=True, ln=True)
+    
+    pdf.set_font(font_name, "", 11)
+    
+    def add_row(label, value):
+        pdf.cell(120, 10, f" {label}", border=1)
+        pdf.cell(70, 10, f"{value:,.0f} ", border=1, align="R", ln=True)
+        
+    add_row("1. Lương cơ bản", data_dict['tien_cb'])
+    add_row("2. Lương năng lực", data_dict['tien_nl'])
+    add_row("3. Tiền thâm niên", data_dict['tien_tn'])
+    add_row("4. Phụ cấp tiền cơm", data_dict['tien_com'])
+    add_row("5. Phụ cấp khác", data_dict['p_cap'])
+    add_row("6. Tăng ca ngày thường", data_dict['tien_tc_t'])
+    add_row("7. Tăng ca Chủ nhật", data_dict['tien_tc_c'])
+    add_row("8. Thưởng thêm", data_dict['thuong'])
+    add_row("9. Khấu trừ (Tạm ứng / Phạt)", -data_dict['tam_ung'])
+    
+    # Dòng Tổng Thực Lãnh
+    pdf.set_font(font_name, 'B' if has_font else '', 12)
+    pdf.set_fill_color(200, 255, 200)
+    pdf.cell(120, 12, " TỔNG THỰC LÃNH QUẢN LÝ CHUYỂN:", border=1, align="L", fill=True)
+    pdf.cell(70, 12, f"{data_dict['thuc_lanh']:,.0f} ", border=1, align="R", fill=True, ln=True)
+    
+    # Chữ ký
+    pdf.ln(15)
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(95, 6, "Quản Lý Xác Nhận", align='C')
+    pdf.cell(95, 6, "Nhân Viên Nhận", align='C')
+    
+    try: return bytes(pdf.output())
+    except: return pdf.output(dest='S').encode('latin-1')
+
+# ==========================================
 
 st.set_page_config(page_title="Hệ Thống Nhân Sự WANCHI", page_icon="👥", layout="wide")
 
@@ -61,7 +136,6 @@ def nut_khoa_lai(tab_key):
 conn = get_connection()
 c = conn.cursor()
 
-# Đảm bảo có bảng cấu hình để lưu mã ca
 try:
     c.execute('''CREATE TABLE IF NOT EXISTS public.cau_hinh (
                     id SERIAL PRIMARY KEY, ten_cau_hinh TEXT UNIQUE, gia_tri TEXT
@@ -69,7 +143,6 @@ try:
     conn.commit()
 except Exception as e: pass
 
-# --- HÀM TRUY XUẤT MÃ CA ---
 def lay_thong_tin_ma_ca():
     try:
         c.execute("SELECT gia_tri FROM public.cau_hinh WHERE ten_cau_hinh='MA_CA_HIEN_TAI'")
@@ -92,7 +165,7 @@ if role == "admin":
     tab1, tab3, tab2 = st.tabs(["📁 Hồ Sơ Nhân Sự", "📱 Chấm Công", "💸 Tính Lương & Xuất Phiếu"])
     container_cham_cong = tab3
     
-    # --- TAB 1: HỒ SƠ NHÂN SỰ (KHÓA KÉT SẮT) ---
+    # --- TAB 1: HỒ SƠ NHÂN SỰ ---
     with tab1:
         if not st.session_state.dashboard_unlocked:
             yeu_cau_pin_giam_doc("t1")
@@ -149,7 +222,7 @@ if role == "admin":
                     time.sleep(1)
                     st.rerun()
 
-    # --- TAB 2: TÍNH LƯƠNG & XUẤT PHIẾU (KHÓA KÉT SẮT) ---
+    # --- TAB 2: TÍNH LƯƠNG & XUẤT PHIẾU ---
     with tab2:
         if not st.session_state.dashboard_unlocked:
             yeu_cau_pin_giam_doc("t2")
@@ -195,7 +268,7 @@ if role == "admin":
                             auto_tc_thuong += ot_hrs      
                     except: pass
 
-                st.info(f"📅 Hệ thống quét được **{len(bang_cong)}** ngày chấm công.")
+                st.info(f"📅 Hệ thống quét được **{len(bang_cong)}** ngày chấm công trong kỳ.")
                 st.markdown("---")
                 def s_int(val): return int(val) if pd.notna(val) else 0
 
@@ -224,6 +297,41 @@ if role == "admin":
                 thuc_lanh = gross - tam_ung
 
                 st.markdown(f"### 💰 THỰC LÃNH: **{thuc_lanh:,.0f} VNĐ**")
+                
+                # ==========================================
+                # NÚT XUẤT PHIẾU LƯƠNG PDF
+                # ==========================================
+                st.markdown("---")
+                col_btn_pdf1, col_btn_pdf2 = st.columns([1, 1])
+                with col_btn_pdf1:
+                    if st.button("🖨️ TẠO FILE PHIẾU LƯƠNG (PDF)", type="primary", use_container_width=True):
+                        data_dict = {
+                            'tien_cb': tien_cb,
+                            'tien_nl': tien_nl,
+                            'tien_tn': tien_tn,
+                            'tien_com': tien_com_th,
+                            'p_cap': p_cap,
+                            'tien_tc_t': tien_tc_t,
+                            'tien_tc_c': tien_tc_c,
+                            'thuong': thuong,
+                            'tam_ung': tam_ung,
+                            'thuc_lanh': thuc_lanh
+                        }
+                        
+                        pdf_bytes = generate_payslip_pdf(chon_nv_luong, ky_luong_str, data_dict)
+                        st.session_state['pdf_luong'] = pdf_bytes
+                        st.session_state['pdf_luong_name'] = f"Phieu_Luong_{chon_nv_luong.replace(' ', '_')}_{ky_luong_str.replace('/', '_')}.pdf"
+                
+                with col_btn_pdf2:
+                    if 'pdf_luong' in st.session_state:
+                        st.download_button(
+                            label="📥 TẢI XUỐNG PHIẾU LƯƠNG", 
+                            data=st.session_state['pdf_luong'], 
+                            file_name=st.session_state['pdf_luong_name'], 
+                            mime="application/pdf", 
+                            type="primary", 
+                            use_container_width=True
+                        )
 
 else:
     # NẾU LÀ NHÂN VIÊN ĐĂNG NHẬP
@@ -232,7 +340,6 @@ else:
 
 # ==========================================
 # KHU VỰC CHẤM CÔNG (MÃ CA LÀM VIỆC)
-# Dùng chung cho cả Admin (Tab Chấm Công) và Employee (Trang chính)
 # ==========================================
 with container_cham_cong:
     ma_ca, thoi_gian_tao = lay_thong_tin_ma_ca()
