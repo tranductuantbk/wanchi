@@ -32,8 +32,8 @@ def download_font():
     return True
 download_font()
 
-# --- HÀM TẠO PHIẾU LƯƠNG PDF ---
-def generate_payslip_pdf(nv_name, ky_luong, data_dict):
+# --- HÀM TẠO PHIẾU LƯƠNG PDF (CHUẨN FORM MỚI) ---
+def generate_payslip_pdf(nv_name, ky_luong, data):
     pdf = FPDF()
     pdf.add_page()
     
@@ -43,53 +43,92 @@ def generate_payslip_pdf(nv_name, ky_luong, data_dict):
         pdf.add_font("Roboto", "B", FONT_FILE, uni=True) 
         font_name = "Roboto"
     else: font_name = "Helvetica"
+
+    # Hàm định dạng số chuẩn Việt Nam
+    def f_vn(val): 
+        return f"{val:,.0f}".replace(",", ".")
+    def f_num(val):
+        if val == int(val): return str(int(val))
+        return str(val).replace(".", ",")
         
-    # Tiêu đề
-    pdf.set_font(font_name, 'B' if has_font else '', 18)
-    pdf.cell(0, 10, "PHIẾU LƯƠNG NHÂN VIÊN", align="C", ln=True)
-    pdf.set_font(font_name, "", 12)
-    pdf.cell(0, 8, f"Kỳ lương: {ky_luong}", align="C", ln=True)
-    pdf.ln(5)
-    
-    # Thông tin nhân viên
+    # Tiêu đề Header
+    pdf.set_font(font_name, 'B' if has_font else '', 14)
+    pdf.cell(100, 8, "PHIẾU LƯƠNG NHÂN VIÊN", ln=0, align='L')
+    pdf.set_font(font_name, '', 12)
+    pdf.cell(40, 8, "Tháng:", ln=0, align='R')
     pdf.set_font(font_name, 'B' if has_font else '', 12)
-    pdf.cell(0, 8, f"Họ và tên: {nv_name}", ln=True)
+    pdf.cell(50, 8, ky_luong.split('/')[0] + "." + ky_luong.split('/')[1][-2:] if '/' in ky_luong else ky_luong, ln=1, align='C')
+    
+    pdf.set_font(font_name, '', 12)
+    pdf.cell(35, 8, "Nhân viên:", ln=0, align='R')
+    pdf.set_font(font_name, 'B' if has_font else '', 12)
+    pdf.cell(65, 8, nv_name.upper(), ln=0, align='L')
+    pdf.set_font(font_name, '', 12)
+    pdf.cell(40, 8, "Bộ phận:", ln=0, align='R')
+    pdf.cell(50, 8, data['bo_phan'], ln=1, align='C')
+    
+    pdf.ln(2)
+    
+    # Kẻ vạch đôi (Double line)
+    y = pdf.get_y()
+    pdf.set_draw_color(50, 50, 50)
+    pdf.line(10, y, 200, y)
+    pdf.line(10, y+0.8, 200, y+0.8)
+    pdf.ln(4)
+    
+    # --- VẼ BẢNG LƯƠNG ---
+    pdf.set_draw_color(180, 180, 180) # Vạch mờ ngang
+    
+    def pdf_row(label, col2="", col3="", col4="", col5="", col6="", bold_label=False, bold_total=False):
+        pdf.set_font(font_name, 'B' if bold_label and has_font else '', 11)
+        pdf.cell(65, 8, label, border='B', align='L')
+        pdf.set_font(font_name, '', 11)
+        pdf.cell(30, 8, col2, border='B', align='R')
+        pdf.cell(15, 8, col3, border='B', align='C')
+        pdf.set_font(font_name, 'B' if has_font else '', 11)
+        pdf.cell(20, 8, col4, border='B', align='C')
+        pdf.set_font(font_name, '', 11)
+        pdf.cell(10, 8, col5, border='B', align='C')
+        pdf.set_font(font_name, 'B' if bold_total and has_font else '', 11)
+        pdf.cell(50, 8, col6, border='B', align='R', ln=1)
+
+    l_cb = data['l_cb']
+    l_nl = data['l_nl']
+    t_nien = data['t_nien']
+    t_com = data['t_com']
+
+    # Bóc tách từng dòng
+    pdf_row("Lương cơ bản:", f_vn(l_cb), "ngày")
+    if l_nl > 0:
+        pdf_row("  + Năng lực:", f_vn(l_nl), "ngày")
+    pdf_row("  + Thâm niên:", f_vn(t_nien), "ngày")
+    
+    l_chinh_thuc = l_cb + l_nl + t_nien
+    pdf_row("Lương chính thức:", f_vn(l_chinh_thuc), "ngày")
+    
+    pdf_row("  + Tiền cơm:", f_vn(t_com), "ngày")
+    
+    # Tính thực lãnh theo ngày và tổng ngày công
+    l_thuc_lanh_ngay = l_chinh_thuc + t_com
+    tong_luong_ngay = l_thuc_lanh_ngay * data['ngay_cong']
+    pdf_row("Lương thực lãnh:", f_vn(l_thuc_lanh_ngay), "x", f"{f_num(data['ngay_cong'])} ngày", "=", f"{f_vn(tong_luong_ngay)} đ", bold_label=True)
+    
+    pdf_row("Tiền tăng ca ngày thường:", f_vn(data['tc_thuong_gia']), "x", f"{f_num(data['tc_thuong_gio'])} tiếng", "=", f"{f_vn(data['tien_tc_t'])} đ")
+    pdf_row("Tiền tăng ca chủ nhật:", f_vn(data['tc_cn_gia']), "x", f"{f_num(data['tc_cn_gio'])} tiếng", "=", f"{f_vn(data['tien_tc_c'])} đ")
+    
+    pdf_row("Phụ cấp khác:", "", "", "", "", f"{f_vn(data['p_cap'])} đ")
+    pdf_row("Thưởng:", "", "", "", "", f"{f_vn(data['thuong'])} đ")
+    
+    pdf_row("Tổng lương:", "", "", "", "", f"{f_vn(data['gross'])} đ", bold_label=True, bold_total=True)
+    pdf_row("TT lương đợt 1:", "", "", "", "", f"{f_vn(data['tam_ung'])} đ")
+    
+    pdf_row("Thực lãnh:", "", "", "", "", f"{f_vn(data['thuc_lanh'])} đ", bold_label=True, bold_total=True)
+    
+    # Nhận xét
     pdf.ln(3)
-    
-    # Bảng lương
-    pdf.set_font(font_name, 'B' if has_font else '', 11)
-    pdf.set_fill_color(230, 230, 230)
-    
-    pdf.cell(120, 10, "DIỄN GIẢI CHI TIẾT", border=1, align="C", fill=True)
-    pdf.cell(70, 10, "SỐ TIỀN (VNĐ)", border=1, align="C", fill=True, ln=True)
-    
-    pdf.set_font(font_name, "", 11)
-    
-    def add_row(label, value):
-        pdf.cell(120, 10, f" {label}", border=1)
-        pdf.cell(70, 10, f"{value:,.0f} ", border=1, align="R", ln=True)
-        
-    add_row("1. Lương cơ bản", data_dict['tien_cb'])
-    add_row("2. Lương năng lực", data_dict['tien_nl'])
-    add_row("3. Tiền thâm niên", data_dict['tien_tn'])
-    add_row("4. Phụ cấp tiền cơm", data_dict['tien_com'])
-    add_row("5. Phụ cấp khác", data_dict['p_cap'])
-    add_row("6. Tăng ca ngày thường", data_dict['tien_tc_t'])
-    add_row("7. Tăng ca Chủ nhật", data_dict['tien_tc_c'])
-    add_row("8. Thưởng thêm", data_dict['thuong'])
-    add_row("9. Khấu trừ (Tạm ứng / Phạt)", -data_dict['tam_ung'])
-    
-    # Dòng Tổng Thực Lãnh
-    pdf.set_font(font_name, 'B' if has_font else '', 12)
-    pdf.set_fill_color(200, 255, 200)
-    pdf.cell(120, 12, " TỔNG THỰC LÃNH QUẢN LÝ CHUYỂN:", border=1, align="L", fill=True)
-    pdf.cell(70, 12, f"{data_dict['thuc_lanh']:,.0f} ", border=1, align="R", fill=True, ln=True)
-    
-    # Chữ ký
-    pdf.ln(15)
-    pdf.set_font(font_name, "", 11)
-    pdf.cell(95, 6, "Quản Lý Xác Nhận", align='C')
-    pdf.cell(95, 6, "Nhân Viên Nhận", align='C')
+    pdf.set_font(font_name, '', 11)
+    pdf.cell(22, 6, "Nhận xét:", ln=0)
+    pdf.multi_cell(0, 6, data['ghi_chu'])
     
     try: return bytes(pdf.output())
     except: return pdf.output(dest='S').encode('latin-1')
@@ -305,17 +344,26 @@ if role == "admin":
                 col_btn_pdf1, col_btn_pdf2 = st.columns([1, 1])
                 with col_btn_pdf1:
                     if st.button("🖨️ TẠO FILE PHIẾU LƯƠNG (PDF)", type="primary", use_container_width=True):
+                        # Gói gọn dữ liệu gửi sang hàm vẽ PDF
                         data_dict = {
-                            'tien_cb': tien_cb,
-                            'tien_nl': tien_nl,
-                            'tien_tn': tien_tn,
-                            'tien_com': tien_com_th,
-                            'p_cap': p_cap,
+                            'bo_phan': nv_data.get('bo_phan', ''),
+                            'l_cb': l_cb,
+                            'l_nl': l_nl,
+                            't_nien': t_nien,
+                            't_com': t_com,
+                            'ngay_cong': ngay_cong,
+                            'tc_thuong_gia': float(nv_data.get('tc_ngay_thuong_gia', 0)),
+                            'tc_thuong_gio': tc_thuong_gio,
                             'tien_tc_t': tien_tc_t,
+                            'tc_cn_gia': float(nv_data.get('tc_chu_nhat_gia', 0)),
+                            'tc_cn_gio': tc_cn_gio,
                             'tien_tc_c': tien_tc_c,
+                            'p_cap': p_cap,
                             'thuong': thuong,
+                            'gross': gross,
                             'tam_ung': tam_ung,
-                            'thuc_lanh': thuc_lanh
+                            'thuc_lanh': thuc_lanh,
+                            'ghi_chu': ghi_chu
                         }
                         
                         pdf_bytes = generate_payslip_pdf(chon_nv_luong, ky_luong_str, data_dict)
