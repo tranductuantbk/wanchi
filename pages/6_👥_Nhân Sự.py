@@ -8,6 +8,20 @@ import random
 from db_utils import get_connection, check_password
 
 # ==========================================
+# 🔑 CẤU HÌNH MẬT KHẨU GIÁM ĐỐC (ĐỔI TẠI ĐÂY)
+# ==========================================
+MAT_KHAU_GIAM_DOC = "tuanquang" 
+
+# ==========================================
+# Ổ KHÓA BẢO VỆ 1 & 2 (Quyền truy cập chung)
+# ==========================================
+role = check_password()
+if not role: st.stop()
+if role == "employee":
+    st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: hồ sơ nhân sự là dữ liệu tuyệt mật của Quản lý.")
+    st.stop()
+
+# ==========================================
 # CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7)
 # ==========================================
 VN_TZ = timezone(timedelta(hours=7))
