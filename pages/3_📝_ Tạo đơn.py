@@ -188,7 +188,6 @@ with tab1:
     if kh_chuan != "-- Chọn Khách Hàng --":
         thong_tin_kh = df_kh[df_kh['ten_kh'] == kh_chuan].iloc[0]
         sdt_kh_chot = thong_tin_kh.get('so_dien_thoai', '')
-        # ĐỒNG BỘ: Nhận diện "Công ty" thay vì "Khách lẻ"
         nhom_kh = thong_tin_kh.get('nhom_kh', 'Công ty')
         loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Công ty"
         if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 10%)"
@@ -206,10 +205,10 @@ with tab1:
                 info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
                 
                 # =======================================================
-                # ĐÃ SỬA: TÍNH TOÁN GIÁ DỰA TRÊN "GIÁ CÔNG TY" LÀM GỐC
+                # ĐÃ SỬA CÔNG THỨC: GIÁ CÔNG TY = GIÁ ĐẠI LÝ / 0.55
                 # =======================================================
                 gia_goc = info.get('gia_dai_ly', 0)
-                gia_cty_chuan = gia_goc / 0.6 if gia_goc > 0 else info.get('gia_khach_le', 0)
+                gia_cty_chuan = gia_goc / 0.55 if gia_goc > 0 else info.get('gia_khach_le', 0)
                 
                 if loai_gia_chot == "Giá Đại Lý":
                     don_gia = int(gia_goc)
