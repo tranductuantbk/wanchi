@@ -173,10 +173,10 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
 # ==========================================
 # GIAO DIỆN TẠO ĐƠN (4 TABS)
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["🛒 Lên Đơn Hàng WanChi", "🛠️ Lên Đơn Hàng OME", "📑 Lên Đơn Hàng Báo Giá", "📂 Lịch Sử Đơn Hàng"])
+tab1, tab2, tab3, tab4 = st.tabs(["🛒 Lên Đơn Hàng Wanchi", "🛠️ Lên Đơn Hàng OME", "📑 Lên Đơn Hàng Báo Giá", "📂 Lịch Sử Đơn Hàng"])
 
 # ------------------------------------------
-# TAB 1: ĐƠN HÀNG ĐẠI LÝ / CÔNG TY
+# TAB 1: ĐƠN HÀNG WANCHI (CHUẨN)
 # ------------------------------------------
 with tab1:
     st.subheader(f"Mã Đơn Tiếp Theo: {ma_don_hien_tai}")
@@ -190,7 +190,10 @@ with tab1:
         sdt_kh_chot = thong_tin_kh.get('so_dien_thoai', '')
         nhom_kh = thong_tin_kh.get('nhom_kh', 'Công ty')
         loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Công ty"
+        
+        # ĐÃ SỬA: Nhóm khách Ưu đãi = Giảm 15%
         if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 15%)"
+        
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
     
     with st.form("form_chuan", clear_on_submit=True):
@@ -204,19 +207,15 @@ with tab1:
             elif sp_chon != "-- Chọn Sản Phẩm --":
                 info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
                 
-                # =======================================================
-                # ĐÃ SỬA CÔNG THỨC: GIÁ CÔNG TY = GIÁ ĐẠI LÝ / 0.55
-                # =======================================================
                 gia_goc = info.get('gia_dai_ly', 0)
                 gia_cty_chuan = gia_goc / 0.55 if gia_goc > 0 else info.get('gia_khach_le', 0)
                 
                 if loai_gia_chot == "Giá Đại Lý":
                     don_gia = int(gia_goc)
                 elif "Ưu Đãi" in loai_gia_chot:
-                    # Lấy Giá công ty * 0.85 và làm tròn chẵn chục
+                    # ĐÃ SỬA: Giá công ty * 0.85 (Giảm 15%)
                     don_gia = int(round(gia_cty_chuan * 0.85, -1))
                 else:
-                    # Lấy Giá công ty
                     don_gia = int(round(gia_cty_chuan, -1))
                 
                 st.session_state.gio_chuan.append({
@@ -231,19 +230,39 @@ with tab1:
     if st.session_state.gio_chuan:
         st.markdown("---")
         df_gio_chuan = pd.DataFrame(st.session_state.gio_chuan)
-        st.dataframe(df_gio_chuan, use_container_width=True, hide_index=True)
+        st.info("💡 **Mẹo Pro:** Bạn có thể **nhấp đúp chuột** vào cột **Số Lượng** bên dưới để sửa nhanh số lượng!")
         
-        tong_tien_chuan = float(df_gio_chuan['Thành Tiền'].sum())
+        # ĐÃ SỬA: Biến bảng thành có thể sửa Số lượng trực tiếp
+        edited_df_chuan = st.data_editor(
+            df_gio_chuan,
+            column_config={
+                "Tên Sản Phẩm": st.column_config.TextColumn(disabled=True),
+                "Loại Giá": st.column_config.TextColumn(disabled=True),
+                "Số Lượng": st.column_config.NumberColumn("Số Lượng", min_value=1, step=1),
+                "Đơn Giá": st.column_config.NumberColumn(disabled=True),
+                "Thành Tiền": st.column_config.NumberColumn(disabled=True)
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="editor_don_chuan"
+        )
+        
+        # Tự động tính lại thành tiền khi sửa số lượng
+        edited_df_chuan['Thành Tiền'] = edited_df_chuan['Số Lượng'] * edited_df_chuan['Đơn Giá']
+        st.session_state.gio_chuan = edited_df_chuan.to_dict('records')
+        
+        tong_tien_chuan = float(edited_df_chuan['Thành Tiền'].sum())
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien_chuan)} VNĐ")
         
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
-            if st.button("💾 CHỐT ĐƠN & TẠO PDF (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True):
-                st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_gio_chuan, tong_tien_chuan, "Hàng Chuẩn")
+            if st.button("💾 CHỐT ĐƠN & TẠO PDF", type="primary", use_container_width=True):
+                # Dùng edited_df_chuan để xuất PDF
+                st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, edited_df_chuan, tong_tien_chuan, "Hàng Chuẩn")
                 st.session_state['pdf_ten_chuan'] = f"{ma_don_hien_tai}_{kh_chuan}.pdf"
                 
                 try:
-                    chi_tiet_json = df_gio_chuan.to_json(orient='records')
+                    chi_tiet_json = edited_df_chuan.to_json(orient='records')
                     ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                     c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ma_don_hien_tai, ngay_gio, kh_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
@@ -295,9 +314,28 @@ with tab2:
     if st.session_state.gio_ome:
         st.markdown("---")
         df_gio_ome = pd.DataFrame(st.session_state.gio_ome)
-        st.dataframe(df_gio_ome, use_container_width=True, hide_index=True)
+        st.info("💡 **Mẹo Pro:** Bạn có thể **nhấp đúp chuột** vào cột **Số Lượng** bên dưới để sửa nhanh số lượng!")
         
-        tong_tien_ome = float(df_gio_ome['Thành Tiền'].sum())
+        # ĐÃ SỬA: Biến bảng thành có thể sửa Số lượng trực tiếp
+        edited_df_ome = st.data_editor(
+            df_gio_ome,
+            column_config={
+                "Tên Sản Phẩm OME": st.column_config.TextColumn(disabled=True),
+                "Loại Giá": st.column_config.TextColumn(disabled=True),
+                "Số Lượng": st.column_config.NumberColumn("Số Lượng", min_value=1, step=1),
+                "Đơn Giá OME": st.column_config.NumberColumn(disabled=True),
+                "Thành Tiền": st.column_config.NumberColumn(disabled=True)
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="editor_don_ome"
+        )
+        
+        # Tự động tính lại thành tiền khi sửa số lượng
+        edited_df_ome['Thành Tiền'] = edited_df_ome['Số Lượng'] * edited_df_ome['Đơn Giá OME']
+        st.session_state.gio_ome = edited_df_ome.to_dict('records')
+        
+        tong_tien_ome = float(edited_df_ome['Thành Tiền'].sum())
         st.write(f"### 💰 TỔNG CỘNG OME: {format_vn(tong_tien_ome)} VNĐ")
         
         col_btn_o1, col_btn_o2 = st.columns([1, 1])
@@ -306,11 +344,11 @@ with tab2:
                 if khach_hang_ome == "-- Chọn Khách Hàng --":
                     st.error("⚠️ Vui lòng chọn Khách Hàng!")
                 else:
-                    st.session_state['pdf_don_ome'] = generate_order_pdf(ma_don_hien_tai, khach_hang_ome, sdt_ome_chot, df_gio_ome, tong_tien_ome, "Hàng OME")
+                    st.session_state['pdf_don_ome'] = generate_order_pdf(ma_don_hien_tai, khach_hang_ome, sdt_ome_chot, edited_df_ome, tong_tien_ome, "Hàng OME")
                     st.session_state['pdf_ten_ome'] = f"{ma_don_hien_tai}_OME_{khach_hang_ome}.pdf"
                     
                     try:
-                        chi_tiet_json_ome = df_gio_ome.to_json(orient='records')
+                        chi_tiet_json_ome = edited_df_ome.to_json(orient='records')
                         ngay_gio_ome = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                         c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                                   (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
@@ -330,7 +368,7 @@ with tab2:
                 st.rerun()
 
 # ------------------------------------------
-# TAB 3: LÊN ĐƠN HÀNG BÁO GIÁ (MỚI)
+# TAB 3: LÊN ĐƠN HÀNG BÁO GIÁ
 # ------------------------------------------
 with tab3:
     st.subheader("📑 Chuyển đổi Báo Giá thành Đơn Hàng")
