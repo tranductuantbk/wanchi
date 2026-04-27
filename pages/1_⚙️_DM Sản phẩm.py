@@ -60,6 +60,15 @@ try:
         except: pass
 
     conn.commit()
+
+    # ===============================================================
+    # LỆNH QUÉT TỰ ĐỘNG ĐỒNG BỘ TOÀN BỘ GIÁ CÔNG TY CŨ THÀNH CHIA 0.55
+    # ===============================================================
+    try:
+        c.execute("UPDATE public.dm_san_pham SET gia_khach_le = ROUND(gia_dai_ly / 0.55, -1) WHERE gia_dai_ly > 0")
+        conn.commit()
+    except Exception as e: pass
+
 except Exception as e: 
     conn.rollback()
 
