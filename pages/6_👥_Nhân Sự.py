@@ -244,22 +244,70 @@ if role == "admin":
                         st.error("Lỗi: Tên nhân viên này đã tồn tại!")
 
             st.markdown("---")
-            st.subheader("2. Danh Sách Nhân Sự")
+            st.subheader("2. Danh Sách Nhân Sự (Nhấp đúp để sửa trực tiếp)")
             if not df_nv.empty:
-                disabled_cols = df_nv.columns.tolist()
                 df_nv.insert(0, "Xóa", False)
                 edited_nv = st.data_editor(
-                    df_nv, hide_index=True, use_container_width=True, disabled=disabled_cols,
-                    column_config={"Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False), "id": None, "ma_pin": st.column_config.TextColumn("Mã PIN", max_chars=4)}
+                    df_nv, 
+                    hide_index=True, 
+                    use_container_width=True,
+                    column_config={
+                        "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False), 
+                        "id": None, 
+                        "ten_nv": st.column_config.TextColumn("Tên NV"),
+                        "bo_phan": st.column_config.TextColumn("Bộ phận"),
+                        "ngay_vao_lam": st.column_config.TextColumn("Ngày vào"),
+                        "luong_cb": st.column_config.NumberColumn("Lương CB", format="%d"),
+                        "luong_nang_luc": st.column_config.NumberColumn("Lương NL", format="%d"),
+                        "tham_nien": st.column_config.NumberColumn("Thâm niên", format="%d"),
+                        "tien_com": st.column_config.NumberColumn("Tiền cơm", format="%d"),
+                        "tc_ngay_thuong_gia": st.column_config.NumberColumn("TC Ngày", format="%d"),
+                        "tc_chu_nhat_gia": st.column_config.NumberColumn("TC CN", format="%d"),
+                        "phu_cap_khac": st.column_config.NumberColumn("Phụ cấp", format="%d"),
+                        "ma_pin": st.column_config.TextColumn("Mã PIN", max_chars=4)
+                    }
                 )
-                if st.button("🚨 Xóa Nhân Sự Đã Chọn", type="primary"):
-                    for index, row in edited_nv.iterrows():
-                        if row['Xóa']:
-                            c.execute("DELETE FROM public.nhan_vien WHERE id=%s", (int(row['id']),))
-                    conn.commit()
-                    st.success("✅ Đã cập nhật danh sách.")
-                    time.sleep(1)
-                    st.rerun()
+                
+                col_btn_1, col_btn_2 = st.columns(2)
+                with col_btn_1:
+                    if st.button("🔄 LƯU CẬP NHẬT THÔNG TIN", type="primary", use_container_width=True):
+                        try:
+                            count = 0
+                            for index, row in edited_nv.iterrows():
+                                if not row['Xóa']:
+                                    c.execute("""UPDATE public.nhan_vien 
+                                                 SET ten_nv=%s, bo_phan=%s, ngay_vao_lam=%s, luong_cb=%s, 
+                                                     luong_nang_luc=%s, tham_nien=%s, tien_com=%s, 
+                                                     tc_ngay_thuong_gia=%s, tc_chu_nhat_gia=%s, phu_cap_khac=%s, ma_pin=%s
+                                                 WHERE id=%s""", 
+                                              (str(row['ten_nv']).strip(), str(row['bo_phan']), str(row['ngay_vao_lam']), 
+                                               float(row['luong_cb']), float(row['luong_nang_luc']), float(row['tham_nien']), 
+                                               float(row['tien_com']), float(row['tc_ngay_thuong_gia']), float(row['tc_chu_nhat_gia']), 
+                                               float(row['phu_cap_khac']), str(row['ma_pin']), int(row['id'])))
+                                    count += 1
+                            conn.commit()
+                            st.success(f"✅ Đã cập nhật thành công thông tin cho {count} nhân sự!")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"⚠️ Lỗi cập nhật: {e}")
+                
+                with col_btn_2:
+                    if st.button("🚨 Xóa Nhân Sự Đã Chọn", type="secondary", use_container_width=True):
+                        try:
+                            for index, row in edited_nv.iterrows():
+                                if row['Xóa']:
+                                    c.execute("DELETE FROM public.nhan_vien WHERE id=%s", (int(row['id']),))
+                            conn.commit()
+                            st.success("✅ Đã xóa nhân sự thành công.")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"Lỗi: {e}")
+            else:
+                st.info("Chưa có nhân sự nào trong hệ thống.")
 
     # --- TAB 2: TÍNH LƯƠNG & XUẤT PHIẾU ---
     with tab2:
