@@ -230,9 +230,7 @@ with tab1:
             if sp_chon != "-- Chọn --":
                 info = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
                 
-                # ===============================================
-                # ĐÃ SỬA CÔNG THỨC: GIÁ CÔNG TY = GIÁ ĐẠI LÝ / 0.55
-                # ===============================================
+                # Tính Giá Công Ty = Giá Đại Lý / 0.55
                 gia_goc = info.get('gia_dai_ly', 0)
                 gia_cty_chuan = gia_goc / 0.55 if gia_goc > 0 else info.get('gia_khach_le', 0)
                 
@@ -245,10 +243,10 @@ with tab1:
                     "Đơn Giá": 0 
                 })
                 
-                # TÍNH LẠI TOÀN BỘ THEO 7 MỐC MỚI NHẤT
+                # TÍNH LẠI TOÀN BỘ THEO 7 MỐC (TỐI ĐA 0.80)
                 tong_goc = sum([(item.get('Giá Gốc', 0) / 0.55) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
                 
-               if tong_goc < 3000000: ck = 1.0          # Mốc 1: Dưới 3tr (Không giảm)
+                if tong_goc < 3000000: ck = 1.0          # Mốc 1: Dưới 3tr (Không giảm)
                 elif tong_goc < 5000000: ck = 0.97       # Mốc 2: Từ 3tr đến <5tr (Giảm 3%)
                 elif tong_goc < 8000000: ck = 0.94       # Mốc 3: Từ 5tr đến <8tr (Giảm 6%)
                 elif tong_goc < 12000000: ck = 0.90      # Mốc 4: Từ 8tr đến <12tr (Giảm 10%)
@@ -268,14 +266,14 @@ with tab1:
         if st.button("🔄 TỰ ĐỘNG TÍNH LẠI CHIẾT KHẤU THEO TỔNG ĐƠN MỚI NHẤT", type="secondary"):
             tong_goc = sum([(item.get('Giá Gốc', 0) / 0.55) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
             
-            # Cập nhật thuật toán tính lại cho Nút (7 mốc)
+            # Cập nhật thuật toán tính lại cho Nút (7 mốc, tối đa 0.80)
             if tong_goc < 3000000: ck = 1.0
-            elif tong_goc < 5000000: ck = 0.98
-            elif tong_goc < 8000000: ck = 0.95
-            elif tong_goc < 12000000: ck = 0.92
-            elif tong_goc < 16000000: ck = 0.90
-            elif tong_goc < 20000000: ck = 0.88
-            else: ck = 0.85
+            elif tong_goc < 5000000: ck = 0.97
+            elif tong_goc < 8000000: ck = 0.94
+            elif tong_goc < 12000000: ck = 0.90
+            elif tong_goc < 16000000: ck = 0.87
+            elif tong_goc < 20000000: ck = 0.84
+            else: ck = 0.80
             
             for item in st.session_state.gio_bao_gia:
                 g_cty = item.get('Giá Gốc', 0) / 0.55 if item.get('Giá Gốc', 0) > 0 else item.get('Giá công ty', 0)
@@ -430,7 +428,7 @@ with tab2:
         col_btn_c1, col_btn_c2 = st.columns([2, 2])
         with col_btn_c1:
             if ten_kh_c.strip():
-                btn_label_c = "🔄 CẬP NHẬT BÁO GIÁ & TẠO LẠI PDF" if is_edit_c else "💾 CHỐT ĐƠN & TẠO FILE PDF"
+                btn_label_c = "🔄 CẬPিন্ত CẬP NHẬT BÁO GIÁ & TẠO LẠI PDF" if is_edit_c else "💾 CHỐT ĐƠN & TẠO FILE PDF"
                 if st.button(btn_label_c, type="primary", use_container_width=True, key="luu_t2"):
                     if is_edit_c:
                         ma_bg_c = edit_bg_c['ma_bao_gia']
