@@ -173,7 +173,7 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
 # ==========================================
 # GIAO DIỆN TẠO ĐƠN (4 TABS)
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["🛒 Lên Đơn Hàng Đại lý", "🛠️ Lên Đơn Hàng OME", "📑 Lên Đơn Hàng Báo Giá", "📂 Lịch Sử Đơn Hàng"])
+tab1, tab2, tab3, tab4 = st.tabs(["🛒 Lên Đơn Hàng WanChi", "🛠️ Lên Đơn Hàng OME", "📑 Lên Đơn Hàng Báo Giá", "📂 Lịch Sử Đơn Hàng"])
 
 # ------------------------------------------
 # TAB 1: ĐƠN HÀNG ĐẠI LÝ / CÔNG TY
