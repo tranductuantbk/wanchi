@@ -61,14 +61,6 @@ try:
 
     conn.commit()
 
-    # ===============================================================
-    # LỆNH QUÉT TỰ ĐỘNG ĐỒNG BỘ TOÀN BỘ GIÁ CÔNG TY CŨ THÀNH CHIA 0.55
-    # ===============================================================
-    try:
-        c.execute("UPDATE public.dm_san_pham SET gia_khach_le = ROUND(gia_dai_ly / 0.55, -1) WHERE gia_dai_ly > 0")
-        conn.commit()
-    except Exception as e: pass
-
 except Exception as e: 
     conn.rollback()
 
@@ -179,6 +171,27 @@ with tab1:
 # TAB 2: QUẢN LÝ DANH SÁCH SP
 # ------------------------------------------
 with tab2:
+    # NÚT ĐỒNG BỘ DỮ LIỆU CŨ TỰ ĐỘNG
+    st.info("💡 **Bảo trì dữ liệu:** Nếu thấy các sản phẩm cũ chia sai giá, hãy bấm nút màu đỏ bên dưới để máy tính quét lại toàn bộ.")
+    if st.button("🔄 ĐỒNG BỘ LẠI TOÀN BỘ GIÁ CÔNG TY (Chia 0.55)", type="primary"):
+        try:
+            c.execute("SELECT id, gia_dai_ly FROM public.dm_san_pham WHERE gia_dai_ly > 0")
+            rows = c.fetchall()
+            count = 0
+            for r in rows:
+                sp_id = r[0]
+                g_dl = r[1]
+                g_cty_moi = int(round(g_dl / 0.55, -1))
+                c.execute("UPDATE public.dm_san_pham SET gia_khach_le = %s WHERE id = %s", (g_cty_moi, sp_id))
+                count += 1
+            conn.commit()
+            st.success(f"🎉 Đã tính toán và sửa lỗi thành công cho {count} sản phẩm!")
+            time.sleep(2)
+            st.rerun()
+        except Exception as e:
+            conn.rollback()
+            st.error(f"Lỗi: {e}")
+
     try:
         df_sp = pd.read_sql("SELECT id, ma_sp, ten_sp, gia_dai_ly, gia_khach_le, gia_von, chi_phi_khac, ds_nguyen_lieu FROM public.dm_san_pham ORDER BY id DESC", conn)
         
@@ -189,7 +202,7 @@ with tab2:
                 sp_sua_chon = st.selectbox("Chọn Sản phẩm để nạp vào Form chỉnh sửa:", ["-- Chọn --"] + df_sp['ten_sp'].tolist(), key="chon_sp_sua")
             with col_s2:
                 st.write(""); st.write("")
-                if st.button("🛠️ Nạp dữ liệu qua Tab Thêm SP", type="primary", use_container_width=True):
+                if st.button("🛠️ Nạp dữ liệu qua Tab Thêm SP", use_container_width=True):
                     if sp_sua_chon != "-- Chọn --":
                         st.session_state['edit_sp_data'] = df_sp[df_sp['ten_sp'] == sp_sua_chon].iloc[0].to_dict()
                         st.success("✅ Đã nạp thành công! Hãy bấm sang Tab '➕ Thêm SP' để sửa nhé.")
@@ -209,7 +222,6 @@ with tab2:
             df_sp['thanh_phan_hien_thi'] = df_sp['ds_nguyen_lieu'].apply(format_recipe)
             df_hien_thi = df_sp.drop(columns=['ds_nguyen_lieu', 'chi_phi_khac'])
 
-            # ĐÃ ĐỔI: Sử dụng dataframe chỉ xem thay vì data_editor
             st.dataframe(
                 df_hien_thi,
                 column_config={
@@ -337,7 +349,7 @@ with tab4:
                 ome_sua_chon = st.selectbox("Chọn SP OME cần sửa toàn diện:", ["-- Chọn --"] + df_ome['ten_sp'].tolist(), key="chon_sua_ome")
             with col_so2:
                 st.write(""); st.write("")
-                if st.button("🛠️ Nạp dữ liệu qua Tab Thêm OME", type="primary", use_container_width=True):
+                if st.button("🛠️ Nạp dữ liệu qua Tab Thêm OME", use_container_width=True):
                     if ome_sua_chon != "-- Chọn --":
                         st.session_state['edit_ome_data'] = df_ome[df_ome['ten_sp'] == ome_sua_chon].iloc[0].to_dict()
                         st.success("✅ Đã nạp thành công! Hãy bấm sang Tab '➕ Thêm SP OME' để sửa nhé.")
@@ -357,7 +369,6 @@ with tab4:
             df_ome['thanh_phan_hien_thi'] = df_ome['ds_nguyen_lieu'].apply(format_recipe)
             df_hien_thi_ome = df_ome.drop(columns=['ds_nguyen_lieu', 'chi_phi_khac'])
 
-            # ĐÃ ĐỔI: Sử dụng dataframe chỉ xem thay vì data_editor
             st.dataframe(
                 df_hien_thi_ome,
                 column_config={
