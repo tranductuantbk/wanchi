@@ -191,7 +191,6 @@ with tab1:
         nhom_kh = thong_tin_kh.get('nhom_kh', 'Công ty')
         loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Công ty"
         
-        # ĐÃ SỬA: Nhóm khách Ưu đãi = Giảm 15%
         if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 15%)"
         
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
@@ -213,7 +212,6 @@ with tab1:
                 if loai_gia_chot == "Giá Đại Lý":
                     don_gia = int(gia_goc)
                 elif "Ưu Đãi" in loai_gia_chot:
-                    # ĐÃ SỬA: Giá công ty * 0.85 (Giảm 15%)
                     don_gia = int(round(gia_cty_chuan * 0.85, -1))
                 else:
                     don_gia = int(round(gia_cty_chuan, -1))
@@ -230,12 +228,16 @@ with tab1:
     if st.session_state.gio_chuan:
         st.markdown("---")
         df_gio_chuan = pd.DataFrame(st.session_state.gio_chuan)
-        st.info("💡 **Mẹo Pro:** Bạn có thể **nhấp đúp chuột** vào cột **Số Lượng** bên dưới để sửa nhanh số lượng!")
         
-        # ĐÃ SỬA: Biến bảng thành có thể sửa Số lượng trực tiếp
+        # Bổ sung cột "Xóa" cho phép chọn sản phẩm để loại bỏ
+        df_gio_chuan.insert(0, "Xóa", False)
+        
+        st.info("💡 **Mẹo Pro:** Nhấp đúp vào **Số Lượng** để sửa. Hoặc tích chọn ô **Xóa** để lập tức loại bỏ sản phẩm khỏi đơn!")
+        
         edited_df_chuan = st.data_editor(
             df_gio_chuan,
             column_config={
+                "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                 "Tên Sản Phẩm": st.column_config.TextColumn(disabled=True),
                 "Loại Giá": st.column_config.TextColumn(disabled=True),
                 "Số Lượng": st.column_config.NumberColumn("Số Lượng", min_value=1, step=1),
@@ -247,22 +249,30 @@ with tab1:
             key="editor_don_chuan"
         )
         
-        # Tự động tính lại thành tiền khi sửa số lượng
+        # XỬ LÝ LỆNH TỰ ĐỘNG XÓA
+        if edited_df_chuan['Xóa'].any():
+            df_valid = edited_df_chuan[edited_df_chuan['Xóa'] == False].drop(columns=['Xóa'])
+            df_valid['Thành Tiền'] = df_valid['Số Lượng'] * df_valid['Đơn Giá']
+            st.session_state.gio_chuan = df_valid.to_dict('records')
+            st.rerun() # Tải lại trang ngay lập tức để mất dòng vừa xóa
+            
+        # XỬ LÝ LỆNH SỬA SỐ LƯỢNG
         edited_df_chuan['Thành Tiền'] = edited_df_chuan['Số Lượng'] * edited_df_chuan['Đơn Giá']
-        st.session_state.gio_chuan = edited_df_chuan.to_dict('records')
+        st.session_state.gio_chuan = edited_df_chuan.drop(columns=['Xóa']).to_dict('records')
         
         tong_tien_chuan = float(edited_df_chuan['Thành Tiền'].sum())
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien_chuan)} VNĐ")
         
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
-            if st.button("💾 CHỐT ĐƠN & TẠO PDF", type="primary", use_container_width=True):
-                # Dùng edited_df_chuan để xuất PDF
-                st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, edited_df_chuan, tong_tien_chuan, "Hàng Chuẩn")
+            if st.button("💾 CHỐT ĐƠN & TẠO PDF (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True):
+                # Chuẩn bị dữ liệu in (bỏ cột Xóa)
+                df_print = pd.DataFrame(st.session_state.gio_chuan)
+                st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_print, tong_tien_chuan, "Hàng Chuẩn")
                 st.session_state['pdf_ten_chuan'] = f"{ma_don_hien_tai}_{kh_chuan}.pdf"
                 
                 try:
-                    chi_tiet_json = edited_df_chuan.to_json(orient='records')
+                    chi_tiet_json = df_print.to_json(orient='records')
                     ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                     c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ma_don_hien_tai, ngay_gio, kh_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
@@ -314,12 +324,14 @@ with tab2:
     if st.session_state.gio_ome:
         st.markdown("---")
         df_gio_ome = pd.DataFrame(st.session_state.gio_ome)
-        st.info("💡 **Mẹo Pro:** Bạn có thể **nhấp đúp chuột** vào cột **Số Lượng** bên dưới để sửa nhanh số lượng!")
+        df_gio_ome.insert(0, "Xóa", False)
         
-        # ĐÃ SỬA: Biến bảng thành có thể sửa Số lượng trực tiếp
+        st.info("💡 **Mẹo Pro:** Nhấp đúp vào **Số Lượng** để sửa. Hoặc tích chọn ô **Xóa** để lập tức loại bỏ sản phẩm khỏi đơn!")
+        
         edited_df_ome = st.data_editor(
             df_gio_ome,
             column_config={
+                "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                 "Tên Sản Phẩm OME": st.column_config.TextColumn(disabled=True),
                 "Loại Giá": st.column_config.TextColumn(disabled=True),
                 "Số Lượng": st.column_config.NumberColumn("Số Lượng", min_value=1, step=1),
@@ -331,9 +343,14 @@ with tab2:
             key="editor_don_ome"
         )
         
-        # Tự động tính lại thành tiền khi sửa số lượng
+        if edited_df_ome['Xóa'].any():
+            df_valid_ome = edited_df_ome[edited_df_ome['Xóa'] == False].drop(columns=['Xóa'])
+            df_valid_ome['Thành Tiền'] = df_valid_ome['Số Lượng'] * df_valid_ome['Đơn Giá OME']
+            st.session_state.gio_ome = df_valid_ome.to_dict('records')
+            st.rerun()
+            
         edited_df_ome['Thành Tiền'] = edited_df_ome['Số Lượng'] * edited_df_ome['Đơn Giá OME']
-        st.session_state.gio_ome = edited_df_ome.to_dict('records')
+        st.session_state.gio_ome = edited_df_ome.drop(columns=['Xóa']).to_dict('records')
         
         tong_tien_ome = float(edited_df_ome['Thành Tiền'].sum())
         st.write(f"### 💰 TỔNG CỘNG OME: {format_vn(tong_tien_ome)} VNĐ")
@@ -344,11 +361,12 @@ with tab2:
                 if khach_hang_ome == "-- Chọn Khách Hàng --":
                     st.error("⚠️ Vui lòng chọn Khách Hàng!")
                 else:
-                    st.session_state['pdf_don_ome'] = generate_order_pdf(ma_don_hien_tai, khach_hang_ome, sdt_ome_chot, edited_df_ome, tong_tien_ome, "Hàng OME")
+                    df_print_ome = pd.DataFrame(st.session_state.gio_ome)
+                    st.session_state['pdf_don_ome'] = generate_order_pdf(ma_don_hien_tai, khach_hang_ome, sdt_ome_chot, df_print_ome, tong_tien_ome, "Hàng OME")
                     st.session_state['pdf_ten_ome'] = f"{ma_don_hien_tai}_OME_{khach_hang_ome}.pdf"
                     
                     try:
-                        chi_tiet_json_ome = edited_df_ome.to_json(orient='records')
+                        chi_tiet_json_ome = df_print_ome.to_json(orient='records')
                         ngay_gio_ome = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                         c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                                   (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
