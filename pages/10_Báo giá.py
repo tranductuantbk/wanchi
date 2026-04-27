@@ -248,13 +248,13 @@ with tab1:
                 # TÍNH LẠI TOÀN BỘ THEO 7 MỐC MỚI NHẤT
                 tong_goc = sum([(item.get('Giá Gốc', 0) / 0.55) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
                 
-                if tong_goc < 3000000: ck = 1.0          # Mốc 1: Dưới 3tr (Không giảm)
-                elif tong_goc < 5000000: ck = 0.98       # Mốc 2: Từ 3tr đến <5tr (Giảm 2%)
-                elif tong_goc < 8000000: ck = 0.95       # Mốc 3: Từ 5tr đến <8tr (Giảm 5%)
-                elif tong_goc < 12000000: ck = 0.92      # Mốc 4: Từ 8tr đến <12tr (Giảm 8%)
-                elif tong_goc < 16000000: ck = 0.90      # Mốc 5: Từ 12tr đến <16tr (Giảm 10%)
-                elif tong_goc < 20000000: ck = 0.88      # Mốc 6: Từ 16tr đến <20tr (Giảm 12%)
-                else: ck = 0.85                          # Mốc 7: Từ 20tr trở lên (Giảm 15%)
+               if tong_goc < 3000000: ck = 1.0          # Mốc 1: Dưới 3tr (Không giảm)
+                elif tong_goc < 5000000: ck = 0.97       # Mốc 2: Từ 3tr đến <5tr (Giảm 3%)
+                elif tong_goc < 8000000: ck = 0.94       # Mốc 3: Từ 5tr đến <8tr (Giảm 6%)
+                elif tong_goc < 12000000: ck = 0.90      # Mốc 4: Từ 8tr đến <12tr (Giảm 10%)
+                elif tong_goc < 16000000: ck = 0.87      # Mốc 5: Từ 12tr đến <16tr (Giảm 13%)
+                elif tong_goc < 20000000: ck = 0.84      # Mốc 6: Từ 16tr đến <20tr (Giảm 16%)
+                else: ck = 0.80                          # Mốc 7: Từ 20tr trở lên (Giảm 20%)
                 
                 for item in st.session_state.gio_bao_gia:
                     g_cty = item.get('Giá Gốc', 0) / 0.55 if item.get('Giá Gốc', 0) > 0 else item.get('Giá công ty', 0)
