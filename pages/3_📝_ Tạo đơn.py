@@ -197,7 +197,8 @@ with tab1:
         nhom_kh = thong_tin_kh.get('nhom_kh', 'Công ty')
         loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Công ty"
         
-        if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 15%)"
+        # ĐÃ SỬA: Nâng chiết khấu Ưu đãi lên 20%
+        if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 20%)"
         
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
     
@@ -212,18 +213,19 @@ with tab1:
             elif sp_chon != "-- Chọn Sản Phẩm --":
                 info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
                 
-                # Giá gốc đại lý và giá công ty khách lẻ
+                # Giá gốc đại lý và giá công ty khách lẻ (Do đã xóa công thức chia tự động)
                 gia_goc = info.get('gia_dai_ly', 0)
                 gia_cty_chuan = info.get('gia_khach_le', 0)
                 
                 if loai_gia_chot == "Giá Đại Lý":
                     don_gia = int(gia_goc)
                 elif "Ưu Đãi" in loai_gia_chot:
-                    don_gia = int(round(gia_cty_chuan * 0.85, -1))
+                    # ĐÃ SỬA: Tính Giá công ty * 0.80 (Giảm 20%)
+                    don_gia = int(round(gia_cty_chuan * 0.80, -1))
                 else:
                     don_gia = int(gia_cty_chuan)
                 
-                # ĐÃ ĐỔI THỨ TỰ: Để Giá Công ty nằm kế bên Đơn Giá
+                # Để Giá Công ty nằm kế bên Đơn Giá (tham khảo)
                 st.session_state.gio_chuan.append({
                     "Tên Sản Phẩm": sp_chon,
                     "Loại Giá": loai_gia_chot,
@@ -275,7 +277,7 @@ with tab1:
         
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
-            if st.button("💾 CHỐT ĐƠN & TẠO PDF", type="primary", use_container_width=True):
+            if st.button("💾 CHỐT ĐƠN & TẠO PDF (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True):
                 
                 # BƯỚC 1: Xóa hoàn toàn cột "Giá Công ty" trước khi lưu và xuất in
                 df_print = pd.DataFrame(st.session_state.gio_chuan)
