@@ -102,7 +102,8 @@ with tab1:
         
         with col2:
             gia_dai_ly = st.number_input("Giá bán Đại lý (VNĐ)", min_value=0.0, step=1000.0, value=float(edit_data['gia_dai_ly']) if is_edit else 0.0)
-            st.markdown("*(Giá Công ty tự động = Giá Đại Lý / 0.55 - Làm tròn hàng chục)*")
+            gia_cong_ty = st.number_input("Giá Công ty / Khách lẻ (VNĐ)", min_value=0.0, step=1000.0, value=float(edit_data['gia_khach_le']) if is_edit else 0.0)
+            st.markdown("*(Hệ thống sẽ lưu đúng số bạn nhập)*")
             
         st.markdown("---")
         st.markdown("### 🧬 Thành Phần Nguyên Liệu Cấu Tạo (BOM)")
@@ -133,8 +134,6 @@ with tab1:
             if not ma_sp.strip() or not ten_sp.strip():
                 st.warning("⚠️ Vui lòng nhập Mã và Tên sản phẩm!")
             else:
-                gia_khach_le_calc = int(round(gia_dai_ly / 0.55, -1))
-                
                 valid_recipe = edited_recipe.dropna(subset=["vat_tu"])
                 valid_recipe = valid_recipe[(valid_recipe["vat_tu"] != "-- Kho đang trống --") & (valid_recipe["dinh_muc"] > 0)]
                 json_ds_nguyen_lieu = valid_recipe.to_json(orient="records") if not valid_recipe.empty else ""
@@ -144,7 +143,7 @@ with tab1:
                         c.execute("""UPDATE public.dm_san_pham 
                                      SET ma_sp=%s, ten_sp=%s, gia_dai_ly=%s, gia_khach_le=%s, gia_von=%s, ds_nguyen_lieu=%s 
                                      WHERE id=%s""", 
-                                  (ma_sp.strip(), ten_sp.strip(), gia_dai_ly, gia_khach_le_calc, gia_von, json_ds_nguyen_lieu, edit_data['id']))
+                                  (ma_sp.strip(), ten_sp.strip(), gia_dai_ly, gia_cong_ty, gia_von, json_ds_nguyen_lieu, edit_data['id']))
                         conn.commit()
                         st.success(f"✅ Đã CẬP NHẬT '{ten_sp}' thành công!")
                         st.session_state['edit_sp_data'] = None 
@@ -158,7 +157,7 @@ with tab1:
                         c.execute("""INSERT INTO public.dm_san_pham 
                                      (ma_sp, ten_sp, gia_dai_ly, gia_khach_le, gia_von, chi_phi_khac, ds_nguyen_lieu) 
                                      VALUES (%s, %s, %s, %s, %s, %s, %s)""", 
-                                  (ma_sp.strip(), ten_sp.strip(), gia_dai_ly, gia_khach_le_calc, gia_von, 0, json_ds_nguyen_lieu))
+                                  (ma_sp.strip(), ten_sp.strip(), gia_dai_ly, gia_cong_ty, gia_von, 0, json_ds_nguyen_lieu))
                         conn.commit()
                         st.success(f"✅ Đã thêm {ten_sp} cùng bộ định mức thành công!")
                         time.sleep(1.5)
@@ -171,31 +170,10 @@ with tab1:
 # TAB 2: QUẢN LÝ DANH SÁCH SP
 # ------------------------------------------
 with tab2:
-    # NÚT ĐỒNG BỘ DỮ LIỆU CŨ TỰ ĐỘNG
-    st.info("💡 **Bảo trì dữ liệu:** Nếu thấy các sản phẩm cũ chia sai giá, hãy bấm nút màu đỏ bên dưới để máy tính quét lại toàn bộ.")
-    if st.button("🔄 ĐỒNG BỘ LẠI TOÀN BỘ GIÁ CÔNG TY (Chia 0.55)", type="primary"):
-        try:
-            c.execute("SELECT id, gia_dai_ly FROM public.dm_san_pham WHERE gia_dai_ly > 0")
-            rows = c.fetchall()
-            count = 0
-            for r in rows:
-                sp_id = r[0]
-                g_dl = r[1]
-                g_cty_moi = int(round(g_dl / 0.55, -1))
-                c.execute("UPDATE public.dm_san_pham SET gia_khach_le = %s WHERE id = %s", (g_cty_moi, sp_id))
-                count += 1
-            conn.commit()
-            st.success(f"🎉 Đã tính toán và sửa lỗi thành công cho {count} sản phẩm!")
-            time.sleep(2)
-            st.rerun()
-        except Exception as e:
-            conn.rollback()
-            st.error(f"Lỗi: {e}")
-
     try:
         df_sp = pd.read_sql("SELECT id, ma_sp, ten_sp, gia_dai_ly, gia_khach_le, gia_von, chi_phi_khac, ds_nguyen_lieu FROM public.dm_san_pham ORDER BY id DESC", conn)
         
-        st.subheader("✏️ Chọn Sản Phẩm Để Sửa Chữa")
+        st.subheader("✏️ Chọn Sản Phẩm Để Sửa Chữa Toàn Diện")
         if not df_sp.empty:
             col_s1, col_s2 = st.columns([3, 1])
             with col_s1:
@@ -211,6 +189,8 @@ with tab2:
         
         st.markdown("---")
         st.subheader("📄 Danh Sách Sản Phẩm")
+        st.write("*(Nhấp đúp chuột vào các cột **Giá Đại Lý**, **Giá Công Ty**, **Giá Vốn** để sửa trực tiếp!)*")
+        
         if not df_sp.empty:
             def format_recipe(json_str):
                 if not json_str or pd.isna(json_str) or json_str == "": return "Không có"
@@ -222,19 +202,52 @@ with tab2:
             df_sp['thanh_phan_hien_thi'] = df_sp['ds_nguyen_lieu'].apply(format_recipe)
             df_hien_thi = df_sp.drop(columns=['ds_nguyen_lieu', 'chi_phi_khac'])
 
-            st.dataframe(
+            # BẢNG CHO PHÉP CHỈNH SỬA TRỰC TIẾP
+            edited_df = st.data_editor(
                 df_hien_thi,
                 column_config={
                     "id": None, 
-                    "ma_sp": st.column_config.TextColumn("Mã SP"),
-                    "ten_sp": st.column_config.TextColumn("Tên Sản Phẩm"),
-                    "thanh_phan_hien_thi": st.column_config.TextColumn("Định mức Vật Tư"),
-                    "gia_dai_ly": st.column_config.NumberColumn("Giá Đại lý", format="%d"),
-                    "gia_khach_le": st.column_config.NumberColumn("Giá Công ty", format="%d"),
-                    "gia_von": st.column_config.NumberColumn("Giá Vốn", format="%d"),
+                    "ma_sp": st.column_config.TextColumn("Mã SP", disabled=True),
+                    "ten_sp": st.column_config.TextColumn("Tên Sản Phẩm", disabled=True),
+                    "thanh_phan_hien_thi": st.column_config.TextColumn("Định mức Vật Tư (Sửa qua Tab 1)", disabled=True),
+                    "gia_dai_ly": st.column_config.NumberColumn("Giá Đại lý (Sửa)", format="%d"),
+                    "gia_khach_le": st.column_config.NumberColumn("Giá Công ty (Sửa)", format="%d"),
+                    "gia_von": st.column_config.NumberColumn("Giá Vốn (Sửa)", format="%d"),
                 },
-                use_container_width=True, hide_index=True
+                use_container_width=True, hide_index=True, key="bang_gia_sp"
             )
+
+            # KIỂM TRA SỰ THAY ĐỔI
+            diff_mask = (edited_df['gia_khach_le'] != df_hien_thi['gia_khach_le']) | \
+                        (edited_df['gia_dai_ly'] != df_hien_thi['gia_dai_ly']) | \
+                        (edited_df['gia_von'] != df_hien_thi['gia_von'])
+            
+            if diff_mask.any():
+                st.warning("⚠️ CHÚ Ý: Bạn vừa chỉnh sửa giá trên bảng. Bạn có muốn lưu lại những thay đổi này không?")
+                col_luu1, col_luu2 = st.columns(2)
+                with col_luu1:
+                    if st.button("💾 ĐỒNG Ý LƯU GIÁ MỚI", type="primary", use_container_width=True):
+                        changed_rows = edited_df[diff_mask]
+                        count_sp = 0
+                        try:
+                            for _, row in changed_rows.iterrows():
+                                g_dl_new = int(row['gia_dai_ly'])
+                                g_cty_new = int(row['gia_khach_le'])
+                                g_von_new = float(row['gia_von'])
+                                
+                                c.execute("UPDATE public.dm_san_pham SET gia_khach_le=%s, gia_dai_ly=%s, gia_von=%s WHERE id=%s", 
+                                          (g_cty_new, g_dl_new, g_von_new, int(row['id'])))
+                                count_sp += 1
+                            conn.commit()
+                            st.success(f"✅ Đã cập nhật thành công {count_sp} sản phẩm!")
+                            time.sleep(1.5)
+                            st.rerun()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"Lỗi: {e}")
+                with col_luu2:
+                    if st.button("❌ HỦY BỎ THAY ĐỔI", use_container_width=True):
+                        st.rerun()
 
             st.markdown("---")
             st.subheader("🗑️ Xóa Sản Phẩm")
@@ -358,6 +371,8 @@ with tab4:
 
         st.markdown("---")
         st.subheader("📄 Danh Sách Sản Phẩm OME")
+        st.write("*(Nhấp đúp chuột vào cột **Giá Bán**, **Giá Vốn** để sửa trực tiếp!)*")
+        
         if not df_ome.empty:
             def format_recipe(json_str):
                 if not json_str or pd.isna(json_str) or json_str == "": return "Không có"
@@ -369,16 +384,42 @@ with tab4:
             df_ome['thanh_phan_hien_thi'] = df_ome['ds_nguyen_lieu'].apply(format_recipe)
             df_hien_thi_ome = df_ome.drop(columns=['ds_nguyen_lieu', 'chi_phi_khac'])
 
-            st.dataframe(
+            edited_df_ome = st.data_editor(
                 df_hien_thi_ome,
                 column_config={
                     "id": None, 
-                    "ten_sp": st.column_config.TextColumn("Tên SP OME"),
-                    "thanh_phan_hien_thi": st.column_config.TextColumn("Định mức Vật Tư"),
-                    "gia_ome": st.column_config.NumberColumn("Giá bán OME", format="%d"),
-                    "gia_von": st.column_config.NumberColumn("Giá Vốn", format="%d"),
-                }, use_container_width=True, hide_index=True
+                    "ten_sp": st.column_config.TextColumn("Tên SP OME", disabled=True),
+                    "thanh_phan_hien_thi": st.column_config.TextColumn("Định mức Vật Tư (Sửa qua Tab 3)", disabled=True),
+                    "gia_ome": st.column_config.NumberColumn("Giá bán OME (Sửa)", format="%d"),
+                    "gia_von": st.column_config.NumberColumn("Giá Vốn (Sửa)", format="%d"),
+                }, use_container_width=True, hide_index=True, key="bang_gia_ome"
             )
+            
+            diff_mask_ome = (edited_df_ome['gia_ome'] != df_hien_thi_ome['gia_ome']) | \
+                            (edited_df_ome['gia_von'] != df_hien_thi_ome['gia_von'])
+            
+            if diff_mask_ome.any():
+                st.warning("⚠️ CHÚ Ý: Bạn vừa chỉnh sửa giá OME trên bảng. Bạn có muốn lưu lại không?")
+                col_oluu1, col_oluu2 = st.columns(2)
+                with col_oluu1:
+                    if st.button("💾 ĐỒNG Ý LƯU GIÁ MỚI", type="primary", use_container_width=True):
+                        changed_rows_ome = edited_df_ome[diff_mask_ome]
+                        count_sp_ome = 0
+                        try:
+                            for _, row in changed_rows_ome.iterrows():
+                                c.execute("UPDATE public.dm_san_pham_ome SET gia_ome=%s, gia_von=%s WHERE id=%s", 
+                                          (int(row['gia_ome']), float(row['gia_von']), int(row['id'])))
+                                count_sp_ome += 1
+                            conn.commit()
+                            st.success(f"✅ Đã cập nhật thành công {count_sp_ome} sản phẩm OME!")
+                            time.sleep(1.5)
+                            st.rerun()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"Lỗi: {e}")
+                with col_oluu2:
+                    if st.button("❌ HỦY BỎ THAY ĐỔI", use_container_width=True, key="huy_ome"):
+                        st.rerun()
                 
             st.markdown("---")
             st.subheader("🗑️ Xóa Sản Phẩm OME")
