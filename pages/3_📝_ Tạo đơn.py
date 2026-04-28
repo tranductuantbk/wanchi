@@ -191,7 +191,7 @@ with tab1:
         nhom_kh = thong_tin_kh.get('nhom_kh', 'Công ty')
         loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Công ty"
         
-        if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 15%)"
+        if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 20%)"
         
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
     
@@ -212,7 +212,7 @@ with tab1:
                 if loai_gia_chot == "Giá Đại Lý":
                     don_gia = int(gia_goc)
                 elif "Ưu Đãi" in loai_gia_chot:
-                    don_gia = int(round(gia_cty_chuan * 0.85, -1))
+                    don_gia = int(round(gia_cty_chuan * 0.80, -1))
                 else:
                     don_gia = int(round(gia_cty_chuan, -1))
                 
