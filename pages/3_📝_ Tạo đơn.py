@@ -147,7 +147,7 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
 
     pdf.set_font(font_name, size=10)
     stt = 1
-    # ĐÃ SỬA: Lấy dữ liệu bằng Tên Cột để không bị lệch khi thêm cột "Giá Công Ty"
+    # Lấy dữ liệu bằng Tên Cột để tự do mở rộng cột trên web mà không lỗi PDF
     for _, row in df_items.iterrows():
         ten_sp = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
         so_luong = row.get('Số Lượng', 0)
@@ -212,22 +212,23 @@ with tab1:
             elif sp_chon != "-- Chọn Sản Phẩm --":
                 info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
                 
+                # Giá gốc đại lý và giá công ty khách lẻ
                 gia_goc = info.get('gia_dai_ly', 0)
-                gia_cty_chuan = gia_goc / 0.55 if gia_goc > 0 else info.get('gia_khach_le', 0)
+                gia_cty_chuan = info.get('gia_khach_le', 0)
                 
                 if loai_gia_chot == "Giá Đại Lý":
                     don_gia = int(gia_goc)
                 elif "Ưu Đãi" in loai_gia_chot:
                     don_gia = int(round(gia_cty_chuan * 0.85, -1))
                 else:
-                    don_gia = int(round(gia_cty_chuan, -1))
+                    don_gia = int(gia_cty_chuan)
                 
-                # ĐÃ THÊM: Cột Giá Công Ty (Tham khảo)
+                # ĐÃ ĐỔI THỨ TỰ: Để Giá Công ty nằm kế bên Đơn Giá
                 st.session_state.gio_chuan.append({
                     "Tên Sản Phẩm": sp_chon,
                     "Loại Giá": loai_gia_chot,
-                    "Giá Công Ty (Tham khảo)": int(round(gia_cty_chuan, -1)),
                     "Số Lượng": sl_chon,
+                    "Giá Công ty": int(gia_cty_chuan),
                     "Đơn Giá": don_gia,
                     "Thành Tiền": sl_chon * don_gia
                 })
@@ -237,9 +238,10 @@ with tab1:
         st.markdown("---")
         df_gio_chuan = pd.DataFrame(st.session_state.gio_chuan)
         
+        # Bổ sung cột "Xóa"
         df_gio_chuan.insert(0, "Xóa", False)
         
-        st.info("💡 **Mẹo Pro:** Nhấp đúp vào **Số Lượng** để sửa. Hoặc tích chọn ô **Xóa** để lập tức loại bỏ sản phẩm khỏi đơn!")
+        st.info("💡 **Mẹo Pro:** Nhấp đúp vào **Số Lượng** để sửa. Cột Giá Công Ty chỉ hiện ở đây để đối chiếu, sẽ không xuất hiện trong PDF và Lịch sử đơn!")
         
         edited_df_chuan = st.data_editor(
             df_gio_chuan,
@@ -247,8 +249,8 @@ with tab1:
                 "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                 "Tên Sản Phẩm": st.column_config.TextColumn(disabled=True),
                 "Loại Giá": st.column_config.TextColumn(disabled=True),
-                "Giá Công Ty (Tham khảo)": st.column_config.NumberColumn(disabled=True),
                 "Số Lượng": st.column_config.NumberColumn("Số Lượng", min_value=1, step=1),
+                "Giá Công ty": st.column_config.NumberColumn(disabled=True),
                 "Đơn Giá": st.column_config.NumberColumn(disabled=True),
                 "Thành Tiền": st.column_config.NumberColumn(disabled=True)
             },
@@ -257,12 +259,14 @@ with tab1:
             key="editor_don_chuan"
         )
         
+        # XỬ LÝ LỆNH TỰ ĐỘNG XÓA
         if edited_df_chuan['Xóa'].any():
             df_valid = edited_df_chuan[edited_df_chuan['Xóa'] == False].drop(columns=['Xóa'])
             df_valid['Thành Tiền'] = df_valid['Số Lượng'] * df_valid['Đơn Giá']
             st.session_state.gio_chuan = df_valid.to_dict('records')
             st.rerun() 
             
+        # XỬ LÝ LỆNH SỬA SỐ LƯỢNG
         edited_df_chuan['Thành Tiền'] = edited_df_chuan['Số Lượng'] * edited_df_chuan['Đơn Giá']
         st.session_state.gio_chuan = edited_df_chuan.drop(columns=['Xóa']).to_dict('records')
         
@@ -271,18 +275,25 @@ with tab1:
         
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
-            if st.button("💾 CHỐT ĐƠN & TẠO PDF (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True):
+            if st.button("💾 CHỐT ĐƠN & TẠO PDF", type="primary", use_container_width=True):
+                
+                # BƯỚC 1: Xóa hoàn toàn cột "Giá Công ty" trước khi lưu và xuất in
                 df_print = pd.DataFrame(st.session_state.gio_chuan)
+                if 'Giá Công ty' in df_print.columns:
+                    df_print = df_print.drop(columns=['Giá Công ty'])
+                
+                # BƯỚC 2: Xuất PDF (chỉ chứa các cột sạch)
                 st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_print, tong_tien_chuan, "Hàng Chuẩn")
                 st.session_state['pdf_ten_chuan'] = f"{ma_don_hien_tai}_{kh_chuan}.pdf"
                 
+                # BƯỚC 3: Lưu vào DB
                 try:
                     chi_tiet_json = df_print.to_json(orient='records')
                     ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                     c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ma_don_hien_tai, ngay_gio, kh_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
                     conn.commit()
-                    st.success("✅ Chốt đơn thành công! Dữ liệu đã lưu vào lịch sử. Vui lòng tải file in bên dưới.")
+                    st.success("✅ Chốt đơn thành công! Dữ liệu đã lưu vào lịch sử (không chứa Giá Công Ty). Vui lòng tải file in bên dưới.")
                 except Exception as e:
                     conn.rollback()
                     st.error(f"⚠️ Lỗi Database: {e}")
