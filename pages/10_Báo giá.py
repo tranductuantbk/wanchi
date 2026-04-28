@@ -123,6 +123,10 @@ def don_dep_lich_su():
 try: df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly, gia_khach_le FROM public.dm_san_pham", conn)
 except: df_sp = pd.DataFrame(columns=['ma_sp', 'ten_sp', 'gia_dai_ly', 'gia_khach_le'])
 
+# LẤY DANH BẠ KHÁCH HÀNG TỪ KHO
+try: df_kh = pd.read_sql("SELECT ten_kh, so_dien_thoai FROM public.dm_khach_hang", conn)
+except: df_kh = pd.DataFrame(columns=['ten_kh', 'so_dien_thoai'])
+
 def format_vn(value):
     try: return "{:,.0f}".format(value).replace(",", ".")
     except: return str(value)
@@ -213,12 +217,24 @@ with tab1:
     if is_edit:
         st.warning(f"🛠️ **CHẾ ĐỘ SỬA CHỮA BÁO GIÁ:** Đang chỉnh sửa phiếu **{edit_bg['ma_bao_gia']}**.")
         st.button("❌ Hủy chỉnh sửa (Quay về Tạo mới)", key="cancel_t1", on_click=clear_t1)
+        c1, c2 = st.columns(2)
+        ten_kh = c1.text_input("Tên khách hàng:", value=st.session_state.get('t1_kh', ''), key="t1_kh_edit")
+        sdt_kh = c2.text_input("Số điện thoại:", value=st.session_state.get('t1_sdt', ''), key="t1_sdt_edit")
     else:
         st.subheader("Tạo báo giá từ danh mục có sẵn")
         
-    c1, c2 = st.columns(2)
-    ten_kh = c1.text_input("Tên khách hàng:", key="t1_kh")
-    sdt_kh = c2.text_input("Số điện thoại:", key="t1_sdt")
+        # BỔ SUNG CHỌN KHÁCH HÀNG TỪ DANH BẠ
+        kh_list = ["-- Khách mới (Tự nhập) --"] + df_kh['ten_kh'].tolist() if not df_kh.empty else ["-- Khách mới (Tự nhập) --"]
+        chon_kh = st.selectbox("🙋‍♂️ Chọn khách hàng từ danh bạ:", kh_list, key="t1_chon_kh")
+        
+        c1, c2 = st.columns(2)
+        if chon_kh == "-- Khách mới (Tự nhập) --":
+            ten_kh = c1.text_input("Tên khách hàng:", key="t1_kh")
+            sdt_kh = c2.text_input("Số điện thoại:", key="t1_sdt")
+        else:
+            sdt_cu = df_kh[df_kh['ten_kh'] == chon_kh].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == chon_kh].empty else ""
+            ten_kh = c1.text_input("Tên khách hàng:", value=chon_kh, key="t1_kh_old")
+            sdt_kh = c2.text_input("Số điện thoại:", value=sdt_cu, key="t1_sdt_old")
 
     with st.form("add_sp_t1", clear_on_submit=True):
         col_s1, col_s2 = st.columns([3, 1])
@@ -230,21 +246,21 @@ with tab1:
             if sp_chon != "-- Chọn --":
                 info = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
                 
-                # Tính Giá Công Ty = Giá Đại Lý / 0.55
+                # Giá Công Ty & Giá Đại Lý
                 gia_goc = info.get('gia_dai_ly', 0)
-                gia_cty_chuan = gia_goc / 0.55 if gia_goc > 0 else info.get('gia_khach_le', 0)
+                gia_cty_chuan = info.get('gia_khach_le', 0)
                 
                 st.session_state.gio_bao_gia.append({
                     "Mã SP": info['ma_sp'], 
                     "Tên SP": sp_chon, 
                     "Số Lượng": sl_chon, 
                     "Giá Gốc": gia_goc,
-                    "Giá công ty": int(round(gia_cty_chuan, -1)),
+                    "Giá công ty": int(gia_cty_chuan),
                     "Đơn Giá": 0 
                 })
                 
-                # TÍNH LẠI TOÀN BỘ THEO 7 MỐC (TỐI ĐA 0.80)
-                tong_goc = sum([(item.get('Giá Gốc', 0) / 0.55) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
+                # TÍNH LẠI TOÀN BỘ THEO 7 MỐC CHIẾT KHẤU TỪ GIÁ CÔNG TY
+                tong_goc = sum([(item.get('Giá công ty', 0)) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
                 
                 if tong_goc < 3000000: ck = 1.0          # Mốc 1: Dưới 3tr (Không giảm)
                 elif tong_goc < 5000000: ck = 0.97       # Mốc 2: Từ 3tr đến <5tr (Giảm 3%)
@@ -255,18 +271,16 @@ with tab1:
                 else: ck = 0.80                          # Mốc 7: Từ 20tr trở lên (Giảm 20%)
                 
                 for item in st.session_state.gio_bao_gia:
-                    g_cty = item.get('Giá Gốc', 0) / 0.55 if item.get('Giá Gốc', 0) > 0 else item.get('Giá công ty', 0)
+                    g_cty = item.get('Giá công ty', 0)
                     item['Đơn Giá'] = int(round(g_cty * ck, -1)) 
-                    item['Giá công ty'] = int(round(g_cty, -1))
                     
                 st.rerun()
 
     if st.session_state.gio_bao_gia:
         st.markdown("---")
         if st.button("🔄 TỰ ĐỘNG TÍNH LẠI CHIẾT KHẤU THEO TỔNG ĐƠN MỚI NHẤT", type="secondary"):
-            tong_goc = sum([(item.get('Giá Gốc', 0) / 0.55) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
+            tong_goc = sum([(item.get('Giá công ty', 0)) * item.get('Số Lượng', 1) for item in st.session_state.gio_bao_gia])
             
-            # Cập nhật thuật toán tính lại cho Nút (7 mốc, tối đa 0.80)
             if tong_goc < 3000000: ck = 1.0
             elif tong_goc < 5000000: ck = 0.97
             elif tong_goc < 8000000: ck = 0.94
@@ -276,9 +290,8 @@ with tab1:
             else: ck = 0.80
             
             for item in st.session_state.gio_bao_gia:
-                g_cty = item.get('Giá Gốc', 0) / 0.55 if item.get('Giá Gốc', 0) > 0 else item.get('Giá công ty', 0)
+                g_cty = item.get('Giá công ty', 0)
                 item['Đơn Giá'] = int(round(g_cty * ck, -1))
-                item['Giá công ty'] = int(round(g_cty, -1))
             st.success(f"✅ Đã quét lại toàn bộ giỏ hàng và áp dụng mức chiết khấu: Giảm {round((1-ck)*100, 1)}%")
             time.sleep(1.5)
             st.rerun()
@@ -374,12 +387,24 @@ with tab2:
     if is_edit_c:
         st.warning(f"🛠️ **CHẾ ĐỘ SỬA CHỮA TÙY CHỈNH:** Đang chỉnh sửa phiếu **{edit_bg_c['ma_bao_gia']}**.")
         st.button("❌ Hủy chỉnh sửa (Quay về Tạo mới)", key="cancel_t2", on_click=clear_t2)
+        c_t2_1, c_t2_2 = st.columns(2)
+        ten_kh_c = c_t2_1.text_input("Tên khách hàng:", value=st.session_state.get('t2_kh', ''), key="t2_kh_edit")
+        sdt_kh_c = c_t2_2.text_input("Số điện thoại:", value=st.session_state.get('t2_sdt', ''), key="t2_sdt_edit")
     else:
         st.subheader("🛠️ Tạo Báo Giá Dịch Vụ / Sản Phẩm Tự Nhập")
         
-    c_t2_1, c_t2_2 = st.columns(2)
-    ten_kh_c = c_t2_1.text_input("Tên khách hàng:", key="t2_kh")
-    sdt_kh_c = c_t2_2.text_input("Số điện thoại:", key="t2_sdt")
+        # BỔ SUNG CHỌN KHÁCH HÀNG TỪ DANH BẠ
+        kh_list_c = ["-- Khách mới (Tự nhập) --"] + df_kh['ten_kh'].tolist() if not df_kh.empty else ["-- Khách mới (Tự nhập) --"]
+        chon_kh_c = st.selectbox("🙋‍♂️ Chọn khách hàng từ danh bạ:", kh_list_c, key="t2_chon_kh")
+        
+        c_t2_1, c_t2_2 = st.columns(2)
+        if chon_kh_c == "-- Khách mới (Tự nhập) --":
+            ten_kh_c = c_t2_1.text_input("Tên khách hàng:", key="t2_kh")
+            sdt_kh_c = c_t2_2.text_input("Số điện thoại:", key="t2_sdt")
+        else:
+            sdt_cu_c = df_kh[df_kh['ten_kh'] == chon_kh_c].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == chon_kh_c].empty else ""
+            ten_kh_c = c_t2_1.text_input("Tên khách hàng:", value=chon_kh_c, key="t2_kh_old")
+            sdt_kh_c = c_t2_2.text_input("Số điện thoại:", value=sdt_cu_c, key="t2_sdt_old")
 
     with st.form("add_sp_t2", clear_on_submit=True):
         col_s1, col_s2, col_s3 = st.columns([2, 1, 1])
@@ -428,7 +453,7 @@ with tab2:
         col_btn_c1, col_btn_c2 = st.columns([2, 2])
         with col_btn_c1:
             if ten_kh_c.strip():
-                btn_label_c = "🔄 CẬPিন্ত CẬP NHẬT BÁO GIÁ & TẠO LẠI PDF" if is_edit_c else "💾 CHỐT ĐƠN & TẠO FILE PDF"
+                btn_label_c = "🔄 CẬP NHẬT BÁO GIÁ & TẠO LẠI PDF" if is_edit_c else "💾 CHỐT ĐƠN & TẠO FILE PDF"
                 if st.button(btn_label_c, type="primary", use_container_width=True, key="luu_t2"):
                     if is_edit_c:
                         ma_bg_c = edit_bg_c['ma_bao_gia']
