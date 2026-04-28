@@ -147,12 +147,18 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
 
     pdf.set_font(font_name, size=10)
     stt = 1
+    # ĐÃ SỬA: Lấy dữ liệu bằng Tên Cột để không bị lệch khi thêm cột "Giá Công Ty"
     for _, row in df_items.iterrows():
+        ten_sp = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
+        so_luong = row.get('Số Lượng', 0)
+        don_gia = row.get('Đơn Giá', row.get('Đơn Giá OME', 0))
+        thanh_tien = row.get('Thành Tiền', 0)
+        
         pdf.cell(col_widths[0], 8, str(stt), border=1, align='C')
-        pdf.cell(col_widths[1], 8, str(row.iloc[0]), border=1) 
-        pdf.cell(col_widths[2], 8, str(row.iloc[2]), border=1, align='C') 
-        pdf.cell(col_widths[3], 8, format_vn(row.iloc[3]), border=1, align='R') 
-        pdf.cell(col_widths[4], 8, format_vn(row.iloc[4]), border=1, align='R') 
+        pdf.cell(col_widths[1], 8, ten_sp, border=1) 
+        pdf.cell(col_widths[2], 8, format_vn(so_luong), border=1, align='C') 
+        pdf.cell(col_widths[3], 8, format_vn(don_gia), border=1, align='R') 
+        pdf.cell(col_widths[4], 8, format_vn(thanh_tien), border=1, align='R') 
         pdf.ln()
         stt += 1
 
@@ -191,7 +197,7 @@ with tab1:
         nhom_kh = thong_tin_kh.get('nhom_kh', 'Công ty')
         loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Công ty"
         
-        if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 20%)"
+        if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 15%)"
         
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
     
@@ -212,13 +218,15 @@ with tab1:
                 if loai_gia_chot == "Giá Đại Lý":
                     don_gia = int(gia_goc)
                 elif "Ưu Đãi" in loai_gia_chot:
-                    don_gia = int(round(gia_cty_chuan * 0.80, -1))
+                    don_gia = int(round(gia_cty_chuan * 0.85, -1))
                 else:
                     don_gia = int(round(gia_cty_chuan, -1))
                 
+                # ĐÃ THÊM: Cột Giá Công Ty (Tham khảo)
                 st.session_state.gio_chuan.append({
                     "Tên Sản Phẩm": sp_chon,
                     "Loại Giá": loai_gia_chot,
+                    "Giá Công Ty (Tham khảo)": int(round(gia_cty_chuan, -1)),
                     "Số Lượng": sl_chon,
                     "Đơn Giá": don_gia,
                     "Thành Tiền": sl_chon * don_gia
@@ -229,7 +237,6 @@ with tab1:
         st.markdown("---")
         df_gio_chuan = pd.DataFrame(st.session_state.gio_chuan)
         
-        # Bổ sung cột "Xóa" cho phép chọn sản phẩm để loại bỏ
         df_gio_chuan.insert(0, "Xóa", False)
         
         st.info("💡 **Mẹo Pro:** Nhấp đúp vào **Số Lượng** để sửa. Hoặc tích chọn ô **Xóa** để lập tức loại bỏ sản phẩm khỏi đơn!")
@@ -240,6 +247,7 @@ with tab1:
                 "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                 "Tên Sản Phẩm": st.column_config.TextColumn(disabled=True),
                 "Loại Giá": st.column_config.TextColumn(disabled=True),
+                "Giá Công Ty (Tham khảo)": st.column_config.NumberColumn(disabled=True),
                 "Số Lượng": st.column_config.NumberColumn("Số Lượng", min_value=1, step=1),
                 "Đơn Giá": st.column_config.NumberColumn(disabled=True),
                 "Thành Tiền": st.column_config.NumberColumn(disabled=True)
@@ -249,14 +257,12 @@ with tab1:
             key="editor_don_chuan"
         )
         
-        # XỬ LÝ LỆNH TỰ ĐỘNG XÓA
         if edited_df_chuan['Xóa'].any():
             df_valid = edited_df_chuan[edited_df_chuan['Xóa'] == False].drop(columns=['Xóa'])
             df_valid['Thành Tiền'] = df_valid['Số Lượng'] * df_valid['Đơn Giá']
             st.session_state.gio_chuan = df_valid.to_dict('records')
-            st.rerun() # Tải lại trang ngay lập tức để mất dòng vừa xóa
+            st.rerun() 
             
-        # XỬ LÝ LỆNH SỬA SỐ LƯỢNG
         edited_df_chuan['Thành Tiền'] = edited_df_chuan['Số Lượng'] * edited_df_chuan['Đơn Giá']
         st.session_state.gio_chuan = edited_df_chuan.drop(columns=['Xóa']).to_dict('records')
         
@@ -266,7 +272,6 @@ with tab1:
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
             if st.button("💾 CHỐT ĐƠN & TẠO PDF (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True):
-                # Chuẩn bị dữ liệu in (bỏ cột Xóa)
                 df_print = pd.DataFrame(st.session_state.gio_chuan)
                 st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_print, tong_tien_chuan, "Hàng Chuẩn")
                 st.session_state['pdf_ten_chuan'] = f"{ma_don_hien_tai}_{kh_chuan}.pdf"
