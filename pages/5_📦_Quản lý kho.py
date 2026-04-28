@@ -110,17 +110,89 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
 tab1, tab2, tab3 = st.tabs(["📋 Danh Mục NVL", "📥 Nhập / Xuất Kho (Thông Minh)", "📊 Báo Cáo Tồn Kho"])
 
 with tab1:
+    st.subheader("➕ Thêm Nguyên Vật Liệu Mới")
     with st.form("form_them_nl", clear_on_submit=True):
         c1, c2, c3 = st.columns([1, 2, 1])
         with c1: ma_nl = st.text_input("Mã Vật Tư")
         with c2: ten_nl = st.text_input("Tên Vật Tư (*)")
-        with c3: don_vi = st.selectbox("Đơn vị", ["Kg", "Gram", "Cái", "Thùng", "Cuộn", "Mét"])
-        if st.form_submit_button("💾 Lưu"):
+        with c3: don_vi = st.selectbox("Đơn vị", ["Kg", "Gram", "Cái", "Thùng", "Cuộn", "Mét", "Lít", "Bộ"])
+        if st.form_submit_button("💾 Lưu NVL Mới"):
             if ten_nl:
                 try:
-                    c.execute("INSERT INTO public.dm_nguyen_lieu (ma_nl, ten_nl, don_vi, ton_kho) VALUES (%s, %s, %s, 0)", (ma_nl or f"VT{int(time.time())}", ten_nl, don_vi))
-                    conn.commit(); st.success("Đã thêm!"); time.sleep(1); st.rerun()
-                except: st.error("Lỗi: Trùng tên hoặc mã!")
+                    c.execute("INSERT INTO public.dm_nguyen_lieu (ma_nl, ten_nl, don_vi, ton_kho) VALUES (%s, %s, %s, 0)", (ma_nl or f"VT{int(time.time())}", ten_nl.strip(), don_vi))
+                    conn.commit(); st.success("✅ Đã thêm!"); time.sleep(1); st.rerun()
+                except: st.error("⚠️ Lỗi: Trùng tên hoặc mã vật tư!")
+            else: st.warning("Vui lòng nhập Tên Vật Tư!")
+
+    st.markdown("---")
+    st.subheader("📄 Danh Sách Nguyên Vật Liệu")
+    st.info("💡 **Mẹo:** Nhấp đúp chuột vào các cột **Mã NVL**, **Tên Nguyên Vật Liệu**, **Đơn Vị** để sửa trực tiếp. (Cột Tồn Kho hệ thống tự tính).")
+    st.warning("⚠️ **Lưu ý quan trọng:** Nếu bạn ĐỔI TÊN hoặc XÓA một vật tư đã được thiết lập trong 'Định mức cấu tạo' (ở trang Sản phẩm), bạn phải sang đó cập nhật lại công thức để kho trừ đúng tên nhé!")
+
+    try:
+        df_nl = pd.read_sql("SELECT id, ma_nl, ten_nl, don_vi, ton_kho FROM public.dm_nguyen_lieu ORDER BY id DESC", conn)
+        if not df_nl.empty:
+            edited_nl = st.data_editor(
+                df_nl,
+                column_config={
+                    "id": None,
+                    "ma_nl": st.column_config.TextColumn("Mã NVL"),
+                    "ten_nl": st.column_config.TextColumn("Tên Nguyên Vật Liệu"),
+                    "don_vi": st.column_config.TextColumn("Đơn Vị"),
+                    "ton_kho": st.column_config.NumberColumn("Tồn Kho Hiện Tại", disabled=True),
+                },
+                hide_index=True, use_container_width=True, key="editor_nl"
+            )
+
+            diff_mask = (edited_nl['ma_nl'] != df_nl['ma_nl']) | \
+                        (edited_nl['ten_nl'] != df_nl['ten_nl']) | \
+                        (edited_nl['don_vi'] != df_nl['don_vi'])
+
+            if diff_mask.any():
+                st.warning("⚠️ CHÚ Ý: Bạn vừa chỉnh sửa thông tin vật tư trên bảng. Bạn có muốn lưu lại những thay đổi này không?")
+                col_luu1, col_luu2 = st.columns(2)
+                with col_luu1:
+                    if st.button("💾 ĐỒNG Ý LƯU THAY ĐỔI", type="primary", use_container_width=True):
+                        changed_rows = edited_nl[diff_mask]
+                        try:
+                            count = 0
+                            for _, row in changed_rows.iterrows():
+                                c.execute("UPDATE public.dm_nguyen_lieu SET ma_nl=%s, ten_nl=%s, don_vi=%s WHERE id=%s",
+                                          (str(row['ma_nl']).strip(), str(row['ten_nl']).strip(), str(row['don_vi']).strip(), int(row['id'])))
+                                count += 1
+                            conn.commit()
+                            st.success(f"✅ Đã cập nhật thành công {count} vật tư!")
+                            time.sleep(1.5)
+                            st.rerun()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"Lỗi cập nhật (có thể trùng tên NVL): {e}")
+                with col_luu2:
+                    if st.button("❌ HỦY BỎ", use_container_width=True):
+                        st.rerun()
+
+            st.markdown("---")
+            st.subheader("🗑️ Xóa Nguyên Vật Liệu")
+            col_xoa1, col_xoa2 = st.columns([3, 1])
+            with col_xoa1: nl_can_xoa = st.selectbox("Chọn NVL cần xóa:", ["-- Chọn --"] + df_nl['ten_nl'].tolist())
+            with col_xoa2:
+                st.write(""); st.write("")
+                if st.button("🚨 Xóa Vĩnh Viễn", type="primary", use_container_width=True):
+                    if nl_can_xoa != "-- Chọn --":
+                        try:
+                            c.execute("DELETE FROM public.dm_nguyen_lieu WHERE ten_nl=%s", (nl_can_xoa,))
+                            conn.commit()
+                            st.success(f"✅ Đã xóa: {nl_can_xoa}")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"Lỗi: {e}")
+
+        else:
+            st.info("Kho NVL đang trống.")
+    except Exception as e:
+        st.error(f"Lỗi truy xuất dữ liệu: {e}")
 
 with tab2:
     chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📥 1. Nhập NVL", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)"], horizontal=True)
@@ -144,7 +216,6 @@ with tab2:
                 
                 c_btn1, c_btn2, c_btn3 = st.columns([2, 2, 2])
                 
-                # --- ĐÃ SỬA CHỖ NÀY: CHẤP NHẬN CẢ "MỚI TẠO" VÀ "CHỜ XUẤT KHO" ---
                 if don_info['trang_thai'] in ['Chờ xuất kho', 'Mới tạo']:
                     with c_btn1:
                         if st.button("📦 XÁC NHẬN XUẤT KHO", type="primary", use_container_width=True):
