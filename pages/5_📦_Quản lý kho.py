@@ -262,20 +262,19 @@ with tab2:
             if not df_nl_ton.empty:
                 with st.form("form_nhap_nvl"):
                     nl_chon = st.selectbox("Chọn Vật Tư", df_nl_ton['ten_nl'].tolist())
-                    c_sl, c_gia = st.columns(2)
-                    sl_tt = c_sl.number_input("Số lượng nhập", min_value=1.0, step=1.0)
-                    don_gia = c_gia.number_input("Đơn giá nhập (VNĐ)", min_value=0.0, step=1000.0)
-                    ghi_chu = st.text_input("Ghi chú (Nhà cung cấp)")
+                    sl_tt = st.number_input("Số lượng nhập", min_value=1.0, step=1.0)
+                    ghi_chu = st.text_input("Ghi chú (Nhà cung cấp / Điều chỉnh)")
 
                     if st.form_submit_button("💾 Xác nhận Nhập NVL", type="primary"):
                         ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                         c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_tt, nl_chon))
+                        # Mặc định đơn giá và thành tiền là 0
                         c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu) 
-                                     VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s)""", (ngay_tt, nl_chon, sl_tt, don_gia, sl_tt*don_gia, ghi_chu))
+                                     VALUES (%s, 'Nhập NVL', %s, %s, 0, 0, %s)""", (ngay_tt, nl_chon, sl_tt, ghi_chu))
                         conn.commit()
                         st.success(f"✅ Đã nhập {sl_tt} {nl_chon} vào kho!")
                         time.sleep(1); st.rerun()
-        except: pass
+        except Exception as e: st.error(str(e))
 
     elif "2. Nhập Thành Phẩm" in chuyem_muc:
         st.markdown("#### 📦 Nhập Thành Phẩm Vừa Sản Xuất (Tự động trừ NVL cấu thành)")
@@ -320,13 +319,56 @@ with tab2:
         except Exception as e: st.error(str(e))
 
 with tab3:
+    st.info("💡 **Mẹo:** Bạn có thể chỉnh sửa trực tiếp số liệu ở cột **Tồn Kho (Sửa được)**. Sau khi sửa, hãy bấm nút Lưu xuất hiện bên dưới bảng để cập nhật.")
     c_tk1, c_tk2 = st.columns(2)
+    
     with c_tk1:
         st.subheader("🧊 Tồn Kho Nguyên Vật Liệu")
-        df_ton_nl = pd.read_sql("SELECT ten_nl as \"Vật Tư\", ton_kho as \"Tồn\", don_vi as \"ĐV\" FROM public.dm_nguyen_lieu", conn)
-        st.dataframe(df_ton_nl, use_container_width=True, hide_index=True)
+        df_ton_nl = pd.read_sql("SELECT id, ten_nl, ton_kho, don_vi FROM public.dm_nguyen_lieu ORDER BY ten_nl", conn)
+        
+        edited_nl_ton = st.data_editor(
+            df_ton_nl,
+            column_config={
+                "id": None, # Ẩn cột ID
+                "ten_nl": st.column_config.TextColumn("Vật Tư", disabled=True),
+                "ton_kho": st.column_config.NumberColumn("Tồn Kho (Sửa được)"),
+                "don_vi": st.column_config.TextColumn("Đơn Vị", disabled=True)
+            },
+            hide_index=True, use_container_width=True, key="edit_ton_nl"
+        )
+        
+        diff_nl = (edited_nl_ton['ton_kho'] != df_ton_nl['ton_kho'])
+        if diff_nl.any():
+            if st.button("💾 LƯU TỒN KHO NVL", type="primary", use_container_width=True):
+                changed_nl = edited_nl_ton[diff_nl]
+                for _, row in changed_nl.iterrows():
+                    c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho=%s WHERE id=%s", (float(row['ton_kho']), int(row['id'])))
+                conn.commit()
+                st.success("✅ Đã cập nhật tồn kho Nguyên vật liệu!"); time.sleep(1); st.rerun()
+
     with c_tk2:
         st.subheader("📦 Tồn Kho Thành Phẩm")
-        df_tc = pd.read_sql("SELECT ten_sp, ton_kho FROM public.dm_san_pham", conn)
-        df_to = pd.read_sql("SELECT ten_sp, ton_kho FROM public.dm_san_pham_ome", conn)
-        st.dataframe(pd.concat([df_tc, df_to]).dropna(), use_container_width=True, hide_index=True)
+        df_tc = pd.read_sql("SELECT id, ten_sp, ton_kho, 'chuẩn' as loai FROM public.dm_san_pham", conn)
+        df_to = pd.read_sql("SELECT id, ten_sp, ton_kho, 'ome' as loai FROM public.dm_san_pham_ome", conn)
+        df_tp = pd.concat([df_tc, df_to]).dropna().reset_index(drop=True)
+        
+        edited_tp = st.data_editor(
+            df_tp,
+            column_config={
+                "id": None, # Ẩn cột ID
+                "loai": None, # Ẩn cột phân loại bảng
+                "ten_sp": st.column_config.TextColumn("Tên Sản Phẩm", disabled=True),
+                "ton_kho": st.column_config.NumberColumn("Tồn Kho (Sửa được)")
+            },
+            hide_index=True, use_container_width=True, key="edit_ton_sp"
+        )
+        
+        diff_tp = (edited_tp['ton_kho'] != df_tp['ton_kho'])
+        if diff_tp.any():
+            if st.button("💾 LƯU TỒN KHO THÀNH PHẨM", type="primary", use_container_width=True):
+                changed_tp = edited_tp[diff_tp]
+                for _, row in changed_tp.iterrows():
+                    bang_update = "public.dm_san_pham" if row['loai'] == 'chuẩn' else "public.dm_san_pham_ome"
+                    c.execute(f"UPDATE {bang_update} SET ton_kho=%s WHERE id=%s", (float(row['ton_kho']), int(row['id'])))
+                conn.commit()
+                st.success("✅ Đã cập nhật tồn kho Thành phẩm!"); time.sleep(1); st.rerun()
