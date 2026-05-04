@@ -15,7 +15,7 @@ if role == "employee":
     st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: Trang này chứa dữ liệu mật, chỉ dành cho Quản lý WANCHI.")
     st.stop()
 
-st.header("📦 Quản Lý Danh Mục Sản Phẩm (BOM Đa Vật Tư)")
+st.header("📦 Quản Lý Danh Mục Sản Phẩm ")
 
 conn = get_connection()
 c = conn.cursor()
