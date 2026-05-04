@@ -9,3 +9,7 @@ st.set_page_config(page_title="WANCHI Management", page_icon="🏭", layout="wid
 if not check_password():
     st.stop() # Nếu mật khẩu sai, dừng luôn không chạy phần code bên dưới nữa
 
+# 3. Phần code giao diện của bạn tiếp tục ở bên dưới như bình thường
+st.title("🏭 Hệ Thống Quản Lý Sản Xuất & Bán Hàng WANCHI")
+st.markdown("""
+""")
