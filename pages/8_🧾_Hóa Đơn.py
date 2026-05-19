@@ -182,7 +182,7 @@ with tab2:
             col_tk2.success("✅ Không có công nợ.")
 
 # ==========================================
-# TAB 3: IMPORT THUẾ CHUẨN FORM KẾ TOÁN
+# TAB 3: IMPORT THUẾ CHUẨN FORM KẾ TOÁN (+5% THUẾ)
 # ==========================================
 with tab3:
     st.subheader("Trích Xuất Dữ Liệu Khai Báo Thuế")
@@ -215,19 +215,23 @@ with tab3:
                 if 'Đơn Giá OME' in df_items.columns:
                     df_items['don_gia'] = df_items['Đơn Giá OME']
 
-                tong_tien_import = df_items['doanh_thu'].sum()
+                # TỰ ĐỘNG CỘNG THÊM 5% THUẾ VÀO ĐƠN GIÁ VÀ THÀNH TIỀN
+                df_items['don_gia_thue'] = df_items['don_gia'].astype(float) * 1.05
+                df_items['tien_thue'] = df_items['so_luong'].astype(float) * df_items['don_gia_thue']
+
+                tong_tien_import = df_items['tien_thue'].sum()
 
                 with col_p2:
-                    st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền: {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
+                    st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền (Đã +5% Thuế): {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
 
-                # Bỏ hoàn toàn Mã SP
+                # Bỏ hoàn toàn Mã SP, thay bằng Giá mới
                 df_import_thue = pd.DataFrame({
                     "Mã vt": "",
                     "Tên vt": df_items.get('ten_sp', ""),
                     "Đvt": "Cái",
                     "Số lượng": df_items.get('so_luong', 0),
-                    "Giá": df_items.get('don_gia', 0),
-                    "Tiền": df_items.get('doanh_thu', 0),
+                    "Giá": df_items.get('don_gia_thue', 0),
+                    "Tiền": df_items.get('tien_thue', 0),
                     "Giá ngoại tệ": "",
                     "Tiền ngoại tệ": "",
                     "%CK": "",
