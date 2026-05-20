@@ -182,10 +182,10 @@ with tab2:
             col_tk2.success("✅ Không có công nợ.")
 
 # ==========================================
-# TAB 3: IMPORT THUẾ CHUẨN FORM KẾ TOÁN (+5% THUẾ)
+# TAB 3: IMPORT THUẾ CHUẨN FORM KẾ TOÁN (ĐƠN GIÁ / 0.95)
 # ==========================================
 with tab3:
-    st.subheader("Trích Xuất Dữ Liệu Khai Báo Thuế")
+    st.subheader("Trích Xuất Dữ Luệu Khai Báo Thuế")
     st.markdown("💡 *Nhập Mã Đơn đã tạo để trích xuất file Excel tự động chuẩn xác theo phần mềm kế toán (MISA, FAST...)*")
     
     col_p1, col_p2 = st.columns([1, 2])
@@ -215,14 +215,16 @@ with tab3:
                 if 'Đơn Giá OME' in df_items.columns:
                     df_items['don_gia'] = df_items['Đơn Giá OME']
 
-                # TỰ ĐỘNG CỘNG THÊM 5% THUẾ VÀO ĐƠN GIÁ VÀ THÀNH TIỀN
-                df_items['don_gia_thue'] = df_items['don_gia'].astype(float) * 1.05
+                # ==============================================================
+                # ĐÃ SỬA CÔNG THỨC: LẤY ĐƠN GIÁ GỐC CHIA 0.95 CHO CỘT GIÁ
+                # ==============================================================
+                df_items['don_gia_thue'] = df_items['don_gia'].astype(float) / 0.95
                 df_items['tien_thue'] = df_items['so_luong'].astype(float) * df_items['don_gia_thue']
 
                 tong_tien_import = df_items['tien_thue'].sum()
 
                 with col_p2:
-                    st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền (Đã +5% Thuế): {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
+                    st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền (Đã chia 0.95 Thuế): {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
 
                 # Bỏ hoàn toàn Mã SP, thay bằng Giá mới
                 df_import_thue = pd.DataFrame({
