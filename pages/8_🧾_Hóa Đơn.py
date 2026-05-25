@@ -191,8 +191,8 @@ with tab3:
     col_p1, col_p2 = st.columns([1, 2])
     with col_p1:
         ma_don_import = st.text_input("📝 Mã Đơn (VD: DH-0001):", key="import_thue_phieu").strip()
-        # THÊM NÚT CHỌN PHƯƠNG THỨC GIÁ
-        chon_che_do = st.radio("Chọn phương thức tính giá:", ["Giữ nguyên giá", "Chia 0.95"], horizontal=True)
+        # THÊM NÚT CHỌN PHƯƠNG THỨC GIÁ VÀ ĐẶT MẶC ĐỊNH LÀ "Chia 0.95" (index = 1)
+        chon_che_do = st.radio("Chọn phương thức tính giá:", ["Giữ nguyên giá", "Chia 0.95"], index=1, horizontal=True)
 
     if ma_don_import:
         # Query lấy chi tiết từ JSON
