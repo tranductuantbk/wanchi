@@ -182,7 +182,7 @@ with tab2:
             col_tk2.success("✅ Không có công nợ.")
 
 # ==========================================
-# TAB 3: IMPORT THUẾ CHUẨN FORM KẾ TOÁN (ĐƠN GIÁ / 0.95)
+# TAB 3: IMPORT THUẾ CHUẨN FORM KẾ TOÁN
 # ==========================================
 with tab3:
     st.subheader("Trích Xuất Dữ Luệu Khai Báo Thuế")
@@ -191,6 +191,8 @@ with tab3:
     col_p1, col_p2 = st.columns([1, 2])
     with col_p1:
         ma_don_import = st.text_input("📝 Mã Đơn (VD: DH-0001):", key="import_thue_phieu").strip()
+        # THÊM NÚT CHỌN PHƯƠNG THỨC GIÁ
+        chon_che_do = st.radio("Chọn phương thức tính giá:", ["Giữ nguyên giá", "Chia 0.95"], horizontal=True)
 
     if ma_don_import:
         # Query lấy chi tiết từ JSON
@@ -203,7 +205,7 @@ with tab3:
                 items_import = json.loads(df_dh_import.iloc[0]['chi_tiet'])
                 df_items = pd.DataFrame(items_import)
 
-                # Chuẩn hóa tên cột để xuất Excel do có 2 loại đơn (Chuẩn và OME)
+                # Chuẩn hóa tên cột để xuất Excel
                 if 'Tên Sản Phẩm' in df_items.columns:
                     sp_col = 'Tên Sản Phẩm'
                 elif 'Tên Sản Phẩm OME' in df_items.columns:
@@ -216,15 +218,18 @@ with tab3:
                     df_items['don_gia'] = df_items['Đơn Giá OME']
 
                 # ==============================================================
-                # ĐÃ SỬA CÔNG THỨC: LẤY ĐƠN GIÁ GỐC CHIA 0.95 CHO CỘT GIÁ
+                # LOGIC CHỌN PHƯƠNG THỨC GIÁ
                 # ==============================================================
-                df_items['don_gia_thue'] = df_items['don_gia'].astype(float) / 0.95
+                if chon_che_do == "Chia 0.95":
+                    df_items['don_gia_thue'] = df_items['don_gia'].astype(float) / 0.95
+                else:
+                    df_items['don_gia_thue'] = df_items['don_gia'].astype(float)
+                
                 df_items['tien_thue'] = df_items['so_luong'].astype(float) * df_items['don_gia_thue']
-
                 tong_tien_import = df_items['tien_thue'].sum()
 
                 with col_p2:
-                    st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền (Đã chia 0.95 Thuế): {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
+                    st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền: {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
 
                 # Bỏ hoàn toàn Mã SP, thay bằng Giá mới
                 df_import_thue = pd.DataFrame({
@@ -253,7 +258,7 @@ with tab3:
 
                 st.markdown("---")
                 
-                # CHỐNG LỖI KHI THIẾU THƯ VIỆN OPENPYXL
+                # XUẤT EXCEL
                 try:
                     import openpyxl
                     output = io.BytesIO()
@@ -269,17 +274,9 @@ with tab3:
                         type="primary"
                     )
                 except ImportError:
-                    st.error("⚠️ Đám mây đang thiếu thư viện `openpyxl` để tạo file Excel. Hãy làm theo Hướng dẫn Bước 1 để cài đặt nhé!")
-                    
-                    # Cho xuất tạm file CSV trong lúc chờ bạn thêm vào requirements.txt
+                    st.error("⚠️ Đám mây đang thiếu thư viện `openpyxl`. Vui lòng cài đặt!")
                     csv_data = df_import_thue.to_csv(index=False).encode('utf-8-sig') 
-                    st.download_button(
-                        label="📥 Tải Tạm File CSV (Chống cháy)",
-                        data=csv_data,
-                        file_name=f"Import_Thue_{ma_don_import}.csv",
-                        mime="text/csv",
-                        type="secondary"
-                    )
+                    st.download_button("📥 Tải Tạm File CSV", data=csv_data, file_name=f"Import_Thue_{ma_don_import}.csv", mime="text/csv", type="secondary")
 
             except Exception as e:
                 st.error(f"Lỗi xử lý dữ liệu: {e}")
