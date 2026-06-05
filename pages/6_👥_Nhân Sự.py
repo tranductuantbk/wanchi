@@ -11,7 +11,7 @@ from db_utils import get_connection, check_password
 # ==========================================
 # 🔑 CẤU HÌNH MẬT KHẨU GIÁM ĐỐC (ĐỔI TẠI ĐÂY)
 # ==========================================
-MAT_KHAU_GIAM_DOC = "tuanquang" 
+MAT_KHAU_GIAM_DOC = "tbk1102" 
 
 # ==========================================
 # CẤU HÌNH MÚI GIỜ & FONT PDF
