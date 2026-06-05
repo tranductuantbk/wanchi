@@ -227,7 +227,8 @@ with tab2:
                 col_luu1, col_luu2 = st.columns(2)
                 with col_luu1:
                     if st.button("💾 ĐỒNG Ý LƯU GIÁ MỚI", type="primary", use_container_width=True):
-                        changed_rows = edited_df[diff_mask]
+                        # FIX LỖI NaN KHI Ô BỊ BỎ TRỐNG
+                        changed_rows = edited_df[diff_mask].fillna(0)
                         count_sp = 0
                         try:
                             for _, row in changed_rows.iterrows():
@@ -403,7 +404,8 @@ with tab4:
                 col_oluu1, col_oluu2 = st.columns(2)
                 with col_oluu1:
                     if st.button("💾 ĐỒNG Ý LƯU GIÁ MỚI", type="primary", use_container_width=True):
-                        changed_rows_ome = edited_df_ome[diff_mask_ome]
+                        # FIX LỖI NaN KHI Ô BỊ BỎ TRỐNG
+                        changed_rows_ome = edited_df_ome[diff_mask_ome].fillna(0)
                         count_sp_ome = 0
                         try:
                             for _, row in changed_rows_ome.iterrows():
