@@ -268,7 +268,6 @@ with tab2:
                     if st.form_submit_button("💾 Xác nhận Nhập NVL", type="primary"):
                         ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                         c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_tt, nl_chon))
-                        # Mặc định đơn giá và thành tiền là 0
                         c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu) 
                                      VALUES (%s, 'Nhập NVL', %s, %s, 0, 0, %s)""", (ngay_tt, nl_chon, sl_tt, ghi_chu))
                         conn.commit()
@@ -286,8 +285,17 @@ with tab2:
             if not df_all_sp.empty:
                 with st.form("form_nhap_sp"):
                     sp_chon = st.selectbox("Chọn Thành Phẩm đã làm xong", df_all_sp['ten_sp'].tolist())
-                    sl_nhap = st.number_input("Số lượng thành phẩm nhập kho (Cái/Bộ)", min_value=1.0, step=1.0)
                     
+                    # Cải tiến: Chia 2 cột cho Số lượng và Đơn vị
+                    col_sl1, col_sl2 = st.columns([2, 1])
+                    with col_sl1:
+                        sl_nhap = st.number_input("Số lượng thành phẩm nhập kho", min_value=1.0, step=1.0)
+                    with col_sl2:
+                        don_vi_nhap = st.selectbox("Đơn vị", ["bộ", "lẻ", "kg"], index=0)
+                    
+                    # Giải pháp thông minh: Thêm hệ số quy đổi tránh trừ sai hao phí NVL
+                    he_so_quy_doi = st.number_input("Hệ số quy đổi ra 'Bộ' chuẩn (Mặc định = 1 nếu là 1 bộ)", min_value=0.01, value=1.00, step=0.1)
+
                     if st.form_submit_button("🔄 Lưu & Tự Động Cấn Trừ BOM", type="primary"):
                         sp_info = df_all_sp[df_all_sp['ten_sp'] == sp_chon].iloc[0]
                         loai_sp = sp_info['loai']
@@ -296,24 +304,28 @@ with tab2:
 
                         bang_update = "public.dm_san_pham" if loai_sp == 'chuẩn' else "public.dm_san_pham_ome"
                         c.execute(f"UPDATE {bang_update} SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl_nhap, sp_chon))
+                        
+                        ghi_chu_sp = f"Sản xuất hoàn thành ({don_vi_nhap})"
                         c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
-                                     VALUES (%s, 'Nhập Thành Phẩm', %s, %s, 'Sản xuất hoàn thành')""", (ngay_tt, sp_chon, sl_nhap))
+                                     VALUES (%s, 'Nhập Thành Phẩm', %s, %s, %s)""", (ngay_tt, sp_chon, sl_nhap, ghi_chu_sp))
                         
                         try:
                             ds_vat_tu = json.loads(ds_nl_json) if ds_nl_json else []
                             for vt in ds_vat_tu:
                                 ten_vt = vt.get('vat_tu')
                                 dinh_muc = float(vt.get('dinh_muc', 0))
-                                tong_hao_phi = dinh_muc * sl_nhap
+                                
+                                # Tính hao phí theo số lượng đã quy đổi ra đơn vị chuẩn
+                                tong_hao_phi = dinh_muc * (sl_nhap * he_so_quy_doi)
                                 
                                 c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho - %s WHERE ten_nl = %s", (tong_hao_phi, ten_vt))
                                 c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
                                              VALUES (%s, 'Xuất cấn trừ BOM', %s, %s, %s)""", 
-                                          (ngay_tt, ten_vt, -tong_hao_phi, f"Làm {sl_nhap} {sp_chon}"))
+                                          (ngay_tt, ten_vt, -tong_hao_phi, f"Làm {sl_nhap} {don_vi_nhap} {sp_chon}"))
                         except: pass
                         
                         conn.commit()
-                        st.success(f"✅ Đã nhập {sl_nhap} {sp_chon}. Kho NVL đã được tự động trừ hao phí tương ứng!")
+                        st.success(f"✅ Đã nhập {sl_nhap} {don_vi_nhap} {sp_chon}. Kho NVL đã được tự động trừ hao phí tương ứng!")
                         time.sleep(2); st.rerun()
             else: st.info("Chưa có danh mục sản phẩm.")
         except Exception as e: st.error(str(e))
