@@ -272,8 +272,6 @@ if role == "admin":
                         t_in = datetime.strptime(g_vao, "%H:%M")
                         t_out = datetime.strptime(g_ra, "%H:%M")
                         
-                        m_start = datetime.strptime(cf['gio_vao'], "%H:%M")
-                        a_end = datetime.strptime(cf['gio_ra'], "%H:%M")
                         ot_start = datetime.strptime(cf['gio_ot'], "%H:%M")
                         t_tre_muc = datetime.strptime(cf['gio_tre'], "%H:%M")
                         
@@ -282,18 +280,15 @@ if role == "admin":
                             so_lan_tre += 1
                             tien_phat_tre_tong += cf['tien_phat']
 
-                        # Tính số giờ làm chuẩn trong mốc quy định (Tối đa 1 công = 8 tiếng)
-                        s, e = max(t_in, m_start), min(t_out, a_end)
-                        std_hrs = max(0, (e - s).total_seconds() / 3600)
-                        
-                        # Trừ 1.5 tiếng nghỉ trưa nếu làm full qua trưa (Giả định để hệ thống tự cân bằng 8 tiếng)
-                        if std_hrs > 5: std_hrs -= 1.5 
-                        
+                        # Tính số giờ OT (nếu quẹt thẻ sau giờ OT quy định)
                         ot_hrs = max(0, (t_out - ot_start).total_seconds() / 3600) if t_out > ot_start else 0
                         
-                        if is_sunday: auto_tc_cn += std_hrs + ot_hrs
+                        if is_sunday: 
+                            # Chủ nhật tính bằng 8h chuẩn + số giờ OT
+                            auto_tc_cn += 8.0 + ot_hrs
                         else:
-                            auto_ngay_cong += std_hrs / 8.0 
+                            # TÍNH CÔNG MỚI: Chỉ cần có giờ vào - giờ ra là tính tròn 1 CÔNG
+                            auto_ngay_cong += 1.0 
                             auto_tc_thuong += ot_hrs      
                     except: pass
 
@@ -343,21 +338,21 @@ if role == "admin":
                     if 'pdf_luong' in st.session_state:
                         st.download_button("📥 TẢI XUỐNG PHIẾU LƯƠNG", data=st.session_state['pdf_luong'], file_name=st.session_state['pdf_luong_name'], mime="application/pdf", type="primary", use_container_width=True)
 
-    # --- TAB 4: CẤU HÌNH CHẤM CÔNG (TAB MỚI) ---
+    # --- TAB 4: CẤU HÌNH CHẤM CÔNG ---
     with tab4:
         if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t4")
         else:
             nut_khoa_lai("t4")
             st.subheader("⚙️ Cài Đặt Quy Tắc Chấm Công & Phạt Đi Trễ")
-            st.info("💡 Mọi thay đổi ở đây sẽ tự động áp dụng khi phần mềm tính công, quét phạt đi trễ hoặc xử lý trường hợp quên quẹt thẻ tan ca.")
+            st.info("💡 Ngày công đã được cập nhật logic: Nhân viên cứ có điểm danh Vào - Ra là tính tròn 1 ngày công. Tăng ca vẫn tính theo giờ bình thường.")
             cf = lay_cau_hinh_gio()
             
             with st.form("form_cau_hinh_cc"):
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.markdown("**1. Thời gian Ngày công & Tăng ca**")
-                    gio_vao_moi = st.time_input("Giờ bắt đầu làm việc (Check-in chuẩn)", datetime.strptime(cf['gio_vao'], "%H:%M").time())
-                    gio_ra_moi = st.time_input("Giờ kết thúc ca làm (Check-out chuẩn)", datetime.strptime(cf['gio_ra'], "%H:%M").time())
+                    st.markdown("**1. Thời gian Tăng ca**")
+                    gio_vao_moi = st.time_input("Giờ bắt đầu làm việc (Ghi chú)", datetime.strptime(cf['gio_vao'], "%H:%M").time())
+                    gio_ra_moi = st.time_input("Giờ kết thúc ca làm (Mặc định nếu quên quẹt thẻ)", datetime.strptime(cf['gio_ra'], "%H:%M").time())
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
                 with c2:
                     st.markdown("**2. Quy tắc Phạt đi trễ**")
@@ -365,7 +360,6 @@ if role == "admin":
                     tien_phat_moi = st.number_input("Số tiền phạt đi trễ (VNĐ/lần)", value=int(cf['tien_phat']), step=10000)
                 
                 if st.form_submit_button("💾 LƯU CẤU HÌNH", type="primary", use_container_width=True):
-                    # Lưu các cài đặt mới vào Database
                     queries = [
                         ("GIO_VAO_CA", gio_vao_moi.strftime("%H:%M")),
                         ("GIO_TAN_CA", gio_ra_moi.strftime("%H:%M")),
