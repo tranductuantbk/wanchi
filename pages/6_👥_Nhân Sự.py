@@ -379,7 +379,7 @@ else:
     container_cham_cong = st.container()
 
 # ==========================================
-# KHU VỰC CHẤM CÔNG (MÃ CA LÀM VIỆC)
+# KHU VỰC CHẤM CÔNG (MÃ CA LÀM VIỆC & CÔNG CỤ SỬA)
 # ==========================================
 with container_cham_cong:
     ma_ca, thoi_gian_tao = lay_thong_tin_ma_ca()
@@ -403,6 +403,52 @@ with container_cham_cong:
                 c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('MA_CA_HIEN_TAI', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (moi_ma,))
                 c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('THOI_GIAN_TAO_MA', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (bay_gio,))
                 conn.commit(); st.rerun()
+
+        # THÊM MỚI: CÔNG CỤ SỬA GIỜ CHẤM CÔNG CÓ BẢO MẬT
+        with st.expander("🛠️ CÔNG CỤ SỬA GIỜ CHẤM CÔNG (Cần Mật Khẩu Giám Đốc)"):
+            mk_nhap = st.text_input("Nhập Mật Khẩu Giám Đốc để mở khóa công cụ:", type="password", key="mk_sua_cc")
+            if mk_nhap == MAT_KHAU_GIAM_DOC:
+                st.success("🔓 Đã xác thực thành công! Anh/chị có thể sửa giờ bên dưới.")
+                
+                c1, c2 = st.columns(2)
+                with c1: 
+                    ngay_sua = st.date_input("Chọn ngày cần sửa:", lay_gio_vn().date())
+                    ngay_sua_str = ngay_sua.strftime("%d/%m/%Y")
+                with c2:
+                    nv_sua = st.selectbox("Chọn nhân viên cần sửa:", ["-- Chọn --"] + df_nv['ten_nv'].tolist(), key="nv_sua_cc")
+                
+                if nv_sua != "-- Chọn --":
+                    c.execute("SELECT gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_sua, ngay_sua_str))
+                    du_lieu_cu = c.fetchone()
+                    
+                    if du_lieu_cu:
+                        st.info(f"👉 Dữ liệu hiện tại của {nv_sua}: Giờ Vào **{du_lieu_cu[0]}** - Giờ Ra **{du_lieu_cu[1] or 'Chưa tan ca'}**")
+                        with st.form("form_sua_cc"):
+                            col_sv, col_sr = st.columns(2)
+                            
+                            # Tính giờ mặc định điền sẵn vào ô để dễ sửa
+                            try: gv_def = datetime.strptime(du_lieu_cu[0], "%H:%M").time() if du_lieu_cu[0] else datetime.strptime("07:30", "%H:%M").time()
+                            except: gv_def = datetime.strptime("07:30", "%H:%M").time()
+                            
+                            try: gr_def = datetime.strptime(du_lieu_cu[1], "%H:%M").time() if du_lieu_cu[1] else datetime.strptime("17:00", "%H:%M").time()
+                            except: gr_def = datetime.strptime("17:00", "%H:%M").time()
+
+                            with col_sv: gio_vao_moi = st.time_input("Nhập Giờ VÀO mới:", gv_def)
+                            with col_sr: gio_ra_moi = st.time_input("Nhập Giờ RA mới:", gr_def)
+                            
+                            if st.form_submit_button("💾 LƯU THAY ĐỔI VÀO HỆ THỐNG", type="primary", use_container_width=True):
+                                c.execute("UPDATE public.cham_cong SET gio_vao=%s, gio_ra=%s WHERE ten_nv=%s AND ngay=%s", (gio_vao_moi.strftime("%H:%M"), gio_ra_moi.strftime("%H:%M"), nv_sua, ngay_sua_str))
+                                conn.commit()
+                                st.success(f"✅ Đã cập nhật thành công giờ chấm công cho {nv_sua}!")
+                                time.sleep(1.5); st.rerun()
+                    else:
+                        st.warning(f"⚠️ Nhân viên {nv_sua} chưa có dữ liệu chấm công nào trong ngày {ngay_sua_str}.")
+                        if st.button("➕ Bổ sung dữ liệu (Tạo mới)"):
+                            c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao) VALUES (%s, %s, %s)", (nv_sua, ngay_sua_str, "07:30"))
+                            conn.commit()
+                            st.rerun()
+            elif mk_nhap != "":
+                st.error("❌ Mật khẩu không chính xác! Không thể sử dụng công cụ.")
 
     st.markdown("---")
 
