@@ -132,6 +132,9 @@ with tab1:
     try:
         df_nl = pd.read_sql("SELECT id, ma_nl, ten_nl, don_vi, ton_kho FROM public.dm_nguyen_lieu ORDER BY id DESC", conn)
         if not df_nl.empty:
+            # Xử lý NaN để tránh lỗi Streamlit khi so sánh
+            df_nl = df_nl.fillna({"ma_nl": "", "ten_nl": "", "don_vi": "", "ton_kho": 0.0})
+            
             edited_nl = st.data_editor(
                 df_nl,
                 column_config={
@@ -268,7 +271,6 @@ with tab2:
                     if st.form_submit_button("💾 Xác nhận Nhập NVL", type="primary"):
                         ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                         c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_tt, nl_chon))
-                        # Mặc định đơn giá và thành tiền là 0
                         c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu) 
                                      VALUES (%s, 'Nhập NVL', %s, %s, 0, 0, %s)""", (ngay_tt, nl_chon, sl_tt, ghi_chu))
                         conn.commit()
@@ -281,13 +283,14 @@ with tab2:
         try:
             df_sp_chuan = pd.read_sql("SELECT ten_sp, ds_nguyen_lieu, ton_kho, 'chuẩn' as loai FROM public.dm_san_pham", conn)
             df_sp_ome = pd.read_sql("SELECT ten_sp, ds_nguyen_lieu, ton_kho, 'ome' as loai FROM public.dm_san_pham_ome", conn)
-            df_all_sp = pd.concat([df_sp_chuan, df_sp_ome])
+            # Khắc phục lỗi gộp bảng nếu 1 trong 2 bảng trống
+            df_all_sp = pd.concat([df_sp_chuan, df_sp_ome]).dropna(subset=['ten_sp']).reset_index(drop=True)
             
             if not df_all_sp.empty:
                 with st.form("form_nhap_sp"):
-                    sp_chon = st.selectbox("Chọn Thành Phẩm đã làm xong", df_all_sp['ten_sp'].tolist())
+                    sp_chon = st.selectbox("Chọn Thành Phẩm đã làm xong", df_all_sp['ten_sp'].unique().tolist())
                     
-                    # Cải tiến: Chia 2 cột cho Số lượng và Đơn vị
+                    # Bố trí số lượng và đơn vị ngang hàng
                     col_sl1, col_sl2 = st.columns([2, 1])
                     with col_sl1:
                         sl_nhap = st.number_input("Số lượng thành phẩm nhập kho", min_value=1.0, step=1.0)
@@ -309,18 +312,21 @@ with tab2:
                         
                         try:
                             ds_vat_tu = json.loads(ds_nl_json) if ds_nl_json else []
+                            if isinstance(ds_vat_tu, str): ds_vat_tu = json.loads(ds_vat_tu)
+                            
                             for vt in ds_vat_tu:
                                 ten_vt = vt.get('vat_tu')
                                 dinh_muc = float(vt.get('dinh_muc', 0))
                                 
-                                # Tính toán hao phí trực tiếp (đã bỏ hệ số quy đổi)
+                                # Tính toán hao phí trực tiếp: định mức * số lượng nhập
                                 tong_hao_phi = dinh_muc * sl_nhap
                                 
                                 c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho - %s WHERE ten_nl = %s", (tong_hao_phi, ten_vt))
                                 c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
                                              VALUES (%s, 'Xuất cấn trừ BOM', %s, %s, %s)""", 
                                           (ngay_tt, ten_vt, -tong_hao_phi, f"Làm {sl_nhap} {don_vi_nhap} {sp_chon}"))
-                        except: pass
+                        except Exception as e:
+                            st.warning(f"Lỗi cập nhật BOM (Cấn trừ vật tư): {e}")
                         
                         conn.commit()
                         st.success(f"✅ Đã nhập {sl_nhap} {don_vi_nhap} {sp_chon}. Kho NVL đã được tự động trừ hao phí tương ứng!")
@@ -335,11 +341,12 @@ with tab3:
     with c_tk1:
         st.subheader("🧊 Tồn Kho Nguyên Vật Liệu")
         df_ton_nl = pd.read_sql("SELECT id, ten_nl, ton_kho, don_vi FROM public.dm_nguyen_lieu ORDER BY ten_nl", conn)
+        df_ton_nl['ton_kho'] = df_ton_nl['ton_kho'].fillna(0.0) # Vá lỗi NA
         
         edited_nl_ton = st.data_editor(
             df_ton_nl,
             column_config={
-                "id": None, # Ẩn cột ID
+                "id": None,
                 "ten_nl": st.column_config.TextColumn("Vật Tư", disabled=True),
                 "ton_kho": st.column_config.NumberColumn("Tồn Kho (Sửa được)"),
                 "don_vi": st.column_config.TextColumn("Đơn Vị", disabled=True)
@@ -360,13 +367,14 @@ with tab3:
         st.subheader("📦 Tồn Kho Thành Phẩm")
         df_tc = pd.read_sql("SELECT id, ten_sp, ton_kho, 'chuẩn' as loai FROM public.dm_san_pham", conn)
         df_to = pd.read_sql("SELECT id, ten_sp, ton_kho, 'ome' as loai FROM public.dm_san_pham_ome", conn)
-        df_tp = pd.concat([df_tc, df_to]).dropna().reset_index(drop=True)
+        df_tp = pd.concat([df_tc, df_to]).dropna(subset=['id']).reset_index(drop=True)
+        df_tp['ton_kho'] = df_tp['ton_kho'].fillna(0.0) # Vá lỗi NA
         
         edited_tp = st.data_editor(
             df_tp,
             column_config={
-                "id": None, # Ẩn cột ID
-                "loai": None, # Ẩn cột phân loại bảng
+                "id": None,
+                "loai": None,
                 "ten_sp": st.column_config.TextColumn("Tên Sản Phẩm", disabled=True),
                 "ton_kho": st.column_config.NumberColumn("Tồn Kho (Sửa được)")
             },
