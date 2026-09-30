@@ -184,7 +184,7 @@ except: df_nv = pd.DataFrame()
 # ==========================================
 if role == "admin":
     st.header("👥 Quản Lý Nhân Sự & Lương WANCHI")
-    tab1, tab3, tab2, tab4 = st.tabs(["📁 Hồ Sơ Nhân Sự", "📱 Chấm Công", "💸 Tính Lương", "⚙️️ Cấu Hình Chấm Công"])
+    tab1, tab3, tab2, tab4 = st.tabs(["📁 Hồ Sơ Nhân Sự", "📱 Chấm Công", "💸 Tính Lương", "⚙ Cấu Hình Chấm Công"])
     container_cham_cong = tab3
     
     # --- TAB 1: HỒ SƠ NHÂN SỰ ---
@@ -211,9 +211,9 @@ if role == "admin":
                     ma_pin_moi = st.text_input("Mã PIN (4 số)", value="0000", max_chars=4)
 
                 if st.form_submit_button("💾 Lưu Hồ Sơ", type="primary") and ten_nv:
-                    # Tự động tính giá tăng ca theo công thức mới (chia 9)
-                    tc_thuong_calc = (luong_cb + luong_nl + t_nien_fixed) / 9 * 1.5
-                    tc_cn_calc = (luong_cb + luong_nl + t_nien_fixed) / 9 * 2.0
+                    # Tự động tính giá tăng ca theo công thức mới (chia 9.5)
+                    tc_thuong_calc = (luong_cb + luong_nl + t_nien_fixed) / 9.5 * 1.5
+                    tc_cn_calc = (luong_cb + luong_nl + t_nien_fixed) / 9.5 * 2.0
                     try:
                         c.execute("""INSERT INTO public.nhan_vien 
                                      (ten_nv, bo_phan, ngay_vao_lam, luong_cb, luong_nang_luc, tham_nien, tien_com, tc_ngay_thuong_gia, tc_chu_nhat_gia, phu_cap_khac, ma_pin) 
@@ -237,21 +237,26 @@ if role == "admin":
                                     l_nl = float(row['luong_nang_luc'])
                                     t_nien = float(row['tham_nien'])
                                     
-                                    # Tự động tính lại giá OT theo công thức chia 9 khi cập nhật
-                                    tc_thuong_calc = (l_cb + l_nl + t_nien) / 9 * 1.5
-                                    tc_cn_calc = (l_cb + l_nl + t_nien) / 9 * 2.0
+                                    # Tự động tính lại giá OT theo công thức chia 9.5 khi cập nhật
+                                    tc_thuong_calc = (l_cb + l_nl + t_nien) / 9.5 * 1.5
+                                    tc_cn_calc = (l_cb + l_nl + t_nien) / 9.5 * 2.0
                                     
                                     c.execute("""UPDATE public.nhan_vien SET ten_nv=%s, bo_phan=%s, luong_cb=%s, luong_nang_luc=%s, tham_nien=%s, tien_com=%s, tc_ngay_thuong_gia=%s, tc_chu_nhat_gia=%s, phu_cap_khac=%s, ma_pin=%s WHERE id=%s""", 
                                               (str(row['ten_nv']).strip(), str(row['bo_phan']), l_cb, l_nl, t_nien, float(row['tien_com']), tc_thuong_calc, tc_cn_calc, float(row['phu_cap_khac']), str(row['ma_pin']), int(row['id'])))
                             conn.commit(); st.success("✅ Đã cập nhật!"); time.sleep(1); st.rerun()
                         except Exception as e: st.error(f"⚠️ Lỗi: {e}")
+                
                 with col_btn_2:
-                    if st.button("🚨 Xóa Nhân Sự", type="secondary", use_container_width=True):
-                        try:
-                            for index, row in edited_nv.iterrows():
-                                if row['Xóa']: c.execute("DELETE FROM public.nhan_vien WHERE id=%s", (int(row['id']),))
-                            conn.commit(); st.success("✅ Đã xóa."); time.sleep(1); st.rerun()
-                        except: pass
+                    # Tích hợp bảng thông báo xác nhận trước khi xóa
+                    with st.expander("🚨 Bấm vào đây để Xóa Nhân Sự", expanded=False):
+                        st.warning("⚠️ Hành động này sẽ xóa vĩnh viễn nhân sự đã chọn. Bạn có chắc chắn muốn xóa?")
+                        if st.button("✔️ Xác nhận Xóa", type="primary", use_container_width=True):
+                            try:
+                                for index, row in edited_nv.iterrows():
+                                    if row['Xóa']: 
+                                        c.execute("DELETE FROM public.nhan_vien WHERE id=%s", (int(row['id']),))
+                                conn.commit(); st.success("✅ Đã xóa thành công."); time.sleep(1); st.rerun()
+                            except: pass
 
     # --- TAB 2: TÍNH LƯƠNG & XUẤT PHIẾU ---
     with tab2:
@@ -370,7 +375,7 @@ if role == "admin":
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
                     
                     st.markdown("**3. Cách tính tăng ca (Tự động)**")
-                    st.info("- Ngày thường = (CB + Thâm niên + Năng lực) / 9 * 150%\n- Chủ nhật = (CB + Thâm niên + Năng lực) / 9 * 200%\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
+                    st.info("- Ngày thường = (CB + Thâm niên + Năng lực) / 9.5 * 150%\n- Chủ nhật = (CB + Thâm niên + Năng lực) / 9.5 * 200%\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                 with c2:
                     st.markdown("**2. Quy tắc Đi trễ**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
@@ -477,7 +482,7 @@ with container_cham_cong:
             st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
         else:
             col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
-            with col_c1: nv_cham_cong = st.selectbox("🙋‍♂️️ Chọn tên của bạn:", ["-- Chọn Tên --"] + df_nv['ten_nv'].tolist())
+            with col_c1: nv_cham_cong = st.selectbox("🙋‍♂ Chọn tên của bạn:", ["-- Chọn Tên --"] + df_nv['ten_nv'].tolist())
             with col_c2: pin_nhap = st.text_input("Mã PIN cá nhân:", type="password", max_chars=4)
             with col_c3: ma_ca_nhap = st.text_input("Mã CA tại xưởng:", type="password", max_chars=4)
 
