@@ -243,7 +243,7 @@ if role == "admin":
                             conn.commit(); st.success("✅ Đã xóa."); time.sleep(1); st.rerun()
                         except: pass
 
-    # --- TAB 2: TÍNH LƯƠNG & XUẤT PHIẾU ---
+    # --- TAB 2 (Tab hiển thị Tính lương): TÍNH LƯƠNG & XUẤT PHIẾU ---
     with tab2:
         if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t2")
         else:
@@ -315,7 +315,7 @@ if role == "admin":
 
                 with col_l3:
                     thuong = st.number_input("Thưởng thêm", min_value=0, value=0, step=100000)
-                    tam_ung = st.number_input("Tạm ứng (VNĐ)", value=0, step=50000)
+                    tam_ung = st.number_input("Tiền tạm ứng tự nhập nếu có", value=0, step=50000)
                     ghi_chu = st.text_area("Ghi chú", value=f"Đi trễ {so_lan_tre} lần." if so_lan_tre > 0 else "")
 
                 tien_cb, tien_nl, tien_tn, tien_com_th = l_cb * ngay_cong, l_nl * ngay_cong, t_nien * ngay_cong, t_com * ngay_cong
@@ -347,7 +347,7 @@ if role == "admin":
         if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t4")
         else:
             nut_khoa_lai("t4")
-            st.subheader("⚙️️ Cài Đặt Quy Tắc Chấm Công & Phạt Đi Trễ")
+            st.subheader("⚙ Cài Đặt Quy Tắc Chấm Công & Phạt Đi Trễ")
             st.info("💡 Hệ thống hiện chỉ đếm số lần đi trễ và hiển thị cảnh báo đỏ nếu vượt mức cho phép, không tự động cấn trừ tiền.")
             cf = lay_cau_hinh_gio()
             
