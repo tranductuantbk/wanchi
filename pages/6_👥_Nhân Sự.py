@@ -293,7 +293,12 @@ if role == "admin":
                 auto_ngay_cong, auto_tc_thuong, auto_tc_cn, so_lan_tre, so_lan_ve_som = 0.0, 0.0, 0.0, 0, 0
                 for r in bang_cong:
                     ngay_str, g_vao, g_ra = r
-                    if not g_ra: g_ra = cf['gio_ra'] 
+                    quen_ra_ca = False
+                    
+                    if not g_ra: 
+                        g_ra = cf['gio_ra'] 
+                        quen_ra_ca = True
+                        
                     try:
                         d = datetime.strptime(ngay_str, "%d/%m/%Y")
                         is_sunday = (d.weekday() == 6)
@@ -309,11 +314,14 @@ if role == "admin":
                             so_lan_tre += 1
                         
                         # Nếu quẹt thẻ ra (check-out) trước mốc quy định thì tính là về sớm
-                        if t_out < t_ve_som_muc:
+                        if not quen_ra_ca and t_out < t_ve_som_muc:
                             so_lan_ve_som += 1
 
-                        # Tính số giờ OT (nếu quẹt thẻ sau giờ OT quy định)
-                        ot_hrs = max(0, (t_out - ot_start).total_seconds() / 3600) if t_out > ot_start else 0
+                        # Tính số giờ OT: Ép về 0 nếu quên quẹt thẻ ra ca
+                        if quen_ra_ca:
+                            ot_hrs = 0.0
+                        else:
+                            ot_hrs = max(0, (t_out - ot_start).total_seconds() / 3600) if t_out > ot_start else 0
                         
                         if is_sunday: 
                             # Chủ nhật tính bằng 8h chuẩn + số giờ OT
@@ -405,8 +413,8 @@ if role == "admin":
                     gio_ra_moi = st.time_input("Giờ kết thúc ca làm (Mặc định nếu quên quẹt thẻ)", datetime.strptime(cf['gio_ra'], "%H:%M").time())
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
                     
-                    st.markdown("**3. Cách tính tăng ca (Tự động)**")
-                    st.info("- Ngày thường = (CB + Năng lực) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực) / 9.5 * 200%\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
+                    st.markdown("**3. Cách tính tăng ca & Quên quẹt thẻ (Tự động)**")
+                    st.info("- Ngày thường = (CB + Năng lực) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực) / 9.5 * 200%\n- Quên ra ca = Tính 1 công chuẩn, KHÔNG tính tăng ca.\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                 with c2:
                     st.markdown("**2. Quy tắc Đi trễ & Về sớm**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
