@@ -174,7 +174,8 @@ def lay_cau_hinh_gio():
         'gio_ot': config.get('GIO_BAT_DAU_OT', '17:00'),
         'gio_tre': config.get('GIO_TINH_TRE', '07:45'),
         'gio_ve_som': config.get('GIO_VE_SOM', '16:45'),
-        'so_lan_tre_toida': int(config.get('SO_LAN_TRE_TOI_DA', 3))
+        'so_lan_tre_toida': int(config.get('SO_LAN_TRE_TOI_DA', 3)),
+        'tien_tham_nien': float(config.get('TIEN_THAM_NIEN_MOI_NAM', 10000))
     }
 
 try: df_nv = pd.read_sql("SELECT * FROM public.nhan_vien ORDER BY id DESC", conn)
@@ -193,6 +194,7 @@ if role == "admin":
         if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t1")
         else:
             nut_khoa_lai("t1")
+            cf = lay_cau_hinh_gio()
             st.subheader("1. Thêm Nhân Viên Mới")
             with st.form("form_them_nv", clear_on_submit=True):
                 col_n1, col_n2, col_n3, col_n4 = st.columns([2, 2, 2, 1])
@@ -200,12 +202,15 @@ if role == "admin":
                     ten_nv = st.text_input("Tên nhân viên (*)")
                     bo_phan = st.text_input("Bộ phận")
                     ngay_vao = st.date_input("Ngày vào làm", lay_gio_vn().date())
+                    # Tính tự động thâm niên hiển thị
+                    so_nam = (lay_gio_vn().date() - ngay_vao).days // 365
+                    t_nien_fixed = so_nam * cf['tien_tham_nien'] if so_nam > 0 else 0
+                    st.info(f"Thâm niên tự động: {so_nam} năm (+{t_nien_fixed:,.0f} đ/ngày)")
                 with col_n2:
                     luong_cb = st.number_input("Lương cơ bản (VNĐ/ngày)", min_value=0, value=0, step=10000)
                     luong_nl = st.number_input("Lương năng lực (VNĐ/ngày)", min_value=0, value=0, step=10000)
-                    t_nien_fixed = st.number_input("Tiền thâm niên (VNĐ/ngày)", min_value=0, value=0, step=5000)
-                with col_n3:
                     t_com_fixed = st.number_input("Tiền cơm (VNĐ/ngày)", min_value=0, value=0, step=5000)
+                with col_n3:
                     phu_cap_khac = st.number_input("Phụ cấp (VNĐ)", min_value=0, value=0, step=10000)
                     st.info("Giá TC được tự động tính khi Lưu.")
                 with col_n4:
@@ -236,7 +241,14 @@ if role == "admin":
                                 if not row['Xóa']:
                                     l_cb = float(row['luong_cb'])
                                     l_nl = float(row['luong_nang_luc'])
-                                    t_nien = float(row['tham_nien'])
+                                    
+                                    # Cập nhật lại số năm thâm niên
+                                    try:
+                                        nv_ngay_vao = datetime.strptime(str(row['ngay_vao_lam']), "%Y-%m-%d").date()
+                                        so_nam_db = (lay_gio_vn().date() - nv_ngay_vao).days // 365
+                                    except:
+                                        so_nam_db = 0
+                                    t_nien = so_nam_db * cf['tien_tham_nien'] if so_nam_db > 0 else 0
                                     
                                     # Tự động tính lại giá OT theo công thức bỏ thâm niên khi cập nhật
                                     tc_thuong_calc = (l_cb + l_nl) / 9.5 * 1.5
@@ -320,12 +332,20 @@ if role == "admin":
 
                 st.markdown("---")
                 def s_int(val): return int(val) if pd.notna(val) else 0
+                
+                # Tính thâm niên realtime dựa trên ngày vào làm
+                try:
+                    ngay_vao_luong = datetime.strptime(str(nv_data['ngay_vao_lam']), "%Y-%m-%d").date()
+                    so_nam_luong = (lay_gio_vn().date() - ngay_vao_luong).days // 365
+                except:
+                    so_nam_luong = 0
+                t_nien_auto = so_nam_luong * cf['tien_tham_nien'] if so_nam_luong > 0 else 0
 
                 col_l1, col_l2, col_l3 = st.columns(3)
                 with col_l1:
                     l_cb = st.number_input("Lương cơ bản", value=s_int(nv_data.get('luong_cb', 0)), step=10000)
                     l_nl = st.number_input("Lương năng lực", value=s_int(nv_data.get('luong_nang_luc', 0)), step=10000)
-                    t_nien = st.number_input("Tiền thâm niên", value=s_int(nv_data.get('tham_nien', 0)), step=5000)
+                    t_nien = st.number_input("Tiền thâm niên (Tự động)", value=int(t_nien_auto), step=5000)
                     t_com = st.number_input("Tiền cơm", value=s_int(nv_data.get('tien_com', 0)), step=5000)
                     p_cap = st.number_input("Phụ cấp cố định", value=s_int(nv_data.get('phu_cap_khac', 0)), step=10000)
 
@@ -391,9 +411,10 @@ if role == "admin":
                     st.markdown("**2. Quy tắc Đi trễ & Về sớm**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
                     tre_toida_moi = st.number_input("Số lần đi trễ tối đa (Trước khi báo đỏ)", value=cf['so_lan_tre_toida'], step=1)
-                    
-                    # THÊM MỚI: Thiết lập giờ tính về sớm
                     gio_ve_som_moi = st.time_input("Quẹt thẻ ra trước giờ này tính là về sớm", datetime.strptime(cf['gio_ve_som'], "%H:%M").time())
+                    
+                    st.markdown("**4. Cách tính thâm niên**")
+                    tien_tham_nien_moi = st.number_input("Số tiền cộng thêm cho 1 năm làm việc (VNĐ/ngày)", value=int(cf['tien_tham_nien']), step=5000)
                 
                 if st.form_submit_button("💾 LƯU CẤU HÌNH", type="primary", use_container_width=True):
                     queries = [
@@ -402,7 +423,8 @@ if role == "admin":
                         ("GIO_BAT_DAU_OT", gio_ot_moi.strftime("%H:%M")),
                         ("GIO_TINH_TRE", gio_tre_moi.strftime("%H:%M")),
                         ("GIO_VE_SOM", gio_ve_som_moi.strftime("%H:%M")),
-                        ("SO_LAN_TRE_TOI_DA", str(tre_toida_moi))
+                        ("SO_LAN_TRE_TOI_DA", str(tre_toida_moi)),
+                        ("TIEN_THAM_NIEN_MOI_NAM", str(tien_tham_nien_moi))
                     ]
                     for key, val in queries:
                         c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES (%s, %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (key, val))
@@ -479,7 +501,7 @@ with container_cham_cong:
                                 st.success(f"✅ Đã cập nhật thành công giờ chấm công cho {nv_sua}!")
                                 time.sleep(1.5); st.rerun()
                     else:
-                        st.warning(f"⚠️️ Nhân viên {nv_sua} chưa có dữ liệu chấm công nào trong ngày {ngay_sua_str}.")
+                        st.warning(f"⚠ Nhân viên {nv_sua} chưa có dữ liệu chấm công nào trong ngày {ngay_sua_str}.")
                         if st.button("➕ Bổ sung dữ liệu (Tạo mới)"):
                             c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao) VALUES (%s, %s, %s)", (nv_sua, ngay_sua_str, "07:30"))
                             conn.commit()
