@@ -201,7 +201,8 @@ if role == "admin":
                 with col_n1:
                     ten_nv = st.text_input("Tên nhân viên (*)")
                     bo_phan = st.text_input("Bộ phận")
-                    ngay_vao = st.date_input("Ngày vào làm", lay_gio_vn().date())
+                    # Cập nhật format ngày DD/MM/YYYY
+                    ngay_vao = st.date_input("Ngày vào làm", lay_gio_vn().date(), format="DD/MM/YYYY")
                     # Tính tự động thâm niên hiển thị
                     so_nam = (lay_gio_vn().date() - ngay_vao).days // 365
                     t_nien_fixed = so_nam * cf['tien_tham_nien'] if so_nam > 0 else 0
@@ -276,7 +277,7 @@ if role == "admin":
         if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t2")
         else:
             nut_khoa_lai("t2")
-            if df_nv.empty: st.warning("⚠️ Vui lòng khai báo nhân sự ở Tab 1 trước!")
+            if df_nv.empty: st.warning("⚠️️ Vui lòng khai báo nhân sự ở Tab 1 trước!")
             else:
                 cf = lay_cau_hinh_gio()
                 st.subheader("BƯỚC 1: Chọn Nhân Viên & Tự Động Tính Công")
@@ -479,7 +480,8 @@ with container_cham_cong:
                 
                 c1, c2 = st.columns(2)
                 with c1: 
-                    ngay_sua = st.date_input("Chọn ngày cần sửa:", lay_gio_vn().date())
+                    # Cập nhật format ngày DD/MM/YYYY cho công cụ sửa
+                    ngay_sua = st.date_input("Chọn ngày cần sửa:", lay_gio_vn().date(), format="DD/MM/YYYY")
                     ngay_sua_str = ngay_sua.strftime("%d/%m/%Y")
                 with c2:
                     nv_sua = st.selectbox("Chọn nhân viên cần sửa:", ["-- Chọn --"] + df_nv['ten_nv'].tolist(), key="nv_sua_cc")
