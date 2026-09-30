@@ -105,7 +105,7 @@ def generate_payslip_pdf(nv_name, ky_luong, data):
     pdf_row("Thưởng:", "", "", "", "", f"{f_vn(data['thuong'])} đ")
     
     pdf_row("Tổng lương:", "", "", "", "", f"{f_vn(data['gross'])} đ", bold_label=True, bold_total=True)
-    pdf_row("Tạm ứng / Phạt đi trễ:", "", "", "", "", f"{f_vn(data['tam_ung'])} đ")
+    pdf_row("Tạm ứng:", "", "", "", "", f"{f_vn(data['tam_ung'])} đ")
     
     pdf_row("Thực lãnh:", "", "", "", "", f"{f_vn(data['thuc_lanh'])} đ", bold_label=True, bold_total=True)
     
@@ -173,7 +173,7 @@ def lay_cau_hinh_gio():
         'gio_ra': config.get('GIO_TAN_CA', '17:00'),
         'gio_ot': config.get('GIO_BAT_DAU_OT', '17:00'),
         'gio_tre': config.get('GIO_TINH_TRE', '07:45'),
-        'tien_phat': float(config.get('TIEN_PHAT_TRE', 50000))
+        'so_lan_tre_toida': int(config.get('SO_LAN_TRE_TOI_DA', 3))
     }
 
 try: df_nv = pd.read_sql("SELECT * FROM public.nhan_vien ORDER BY id DESC", conn)
@@ -262,7 +262,7 @@ if role == "admin":
                 c.execute("SELECT ngay, gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay LIKE %s", (chon_nv_luong, f"%/{ky_luong_str}"))
                 bang_cong = c.fetchall()
 
-                auto_ngay_cong, auto_tc_thuong, auto_tc_cn, so_lan_tre, tien_phat_tre_tong = 0.0, 0.0, 0.0, 0, 0
+                auto_ngay_cong, auto_tc_thuong, auto_tc_cn, so_lan_tre = 0.0, 0.0, 0.0, 0
                 for r in bang_cong:
                     ngay_str, g_vao, g_ra = r
                     if not g_ra: g_ra = cf['gio_ra'] 
@@ -275,10 +275,9 @@ if role == "admin":
                         ot_start = datetime.strptime(cf['gio_ot'], "%H:%M")
                         t_tre_muc = datetime.strptime(cf['gio_tre'], "%H:%M")
                         
-                        # Kiểm tra phạt trễ
+                        # Đếm số lần đi trễ
                         if t_in > t_tre_muc:
                             so_lan_tre += 1
-                            tien_phat_tre_tong += cf['tien_phat']
 
                         # Tính số giờ OT (nếu quẹt thẻ sau giờ OT quy định)
                         ot_hrs = max(0, (t_out - ot_start).total_seconds() / 3600) if t_out > ot_start else 0
@@ -293,6 +292,11 @@ if role == "admin":
                     except: pass
 
                 st.info(f"📅 Quét được **{len(bang_cong)}** ngày chấm công. Phát hiện **{so_lan_tre}** lần đi trễ.")
+                
+                # Cảnh báo nếu số lần đi trễ vượt mức quy định
+                if so_lan_tre > cf['so_lan_tre_toida']:
+                    st.error(f"🚨 CẢNH BÁO ĐỎ: Nhân viên này đã đi trễ {so_lan_tre} lần trong tháng (Vượt mức cho phép {cf['so_lan_tre_toida']} lần)!")
+
                 st.markdown("---")
                 def s_int(val): return int(val) if pd.notna(val) else 0
 
@@ -311,7 +315,7 @@ if role == "admin":
 
                 with col_l3:
                     thuong = st.number_input("Thưởng thêm", min_value=0, value=0, step=100000)
-                    tam_ung = st.number_input("Tạm ứng / Phạt (Đã tự cộng phạt trễ)", value=int(tien_phat_tre_tong), step=50000)
+                    tam_ung = st.number_input("Tạm ứng (VNĐ)", value=0, step=50000)
                     ghi_chu = st.text_area("Ghi chú", value=f"Đi trễ {so_lan_tre} lần." if so_lan_tre > 0 else "")
 
                 tien_cb, tien_nl, tien_tn, tien_com_th = l_cb * ngay_cong, l_nl * ngay_cong, t_nien * ngay_cong, t_com * ngay_cong
@@ -343,8 +347,8 @@ if role == "admin":
         if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t4")
         else:
             nut_khoa_lai("t4")
-            st.subheader("⚙️ Cài Đặt Quy Tắc Chấm Công & Phạt Đi Trễ")
-            st.info("💡 Ngày công đã được cập nhật logic: Nhân viên cứ có điểm danh Vào - Ra là tính tròn 1 ngày công. Tăng ca vẫn tính theo giờ bình thường.")
+            st.subheader("⚙️️ Cài Đặt Quy Tắc Chấm Công & Phạt Đi Trễ")
+            st.info("💡 Hệ thống hiện chỉ đếm số lần đi trễ và hiển thị cảnh báo đỏ nếu vượt mức cho phép, không tự động cấn trừ tiền.")
             cf = lay_cau_hinh_gio()
             
             with st.form("form_cau_hinh_cc"):
@@ -355,9 +359,9 @@ if role == "admin":
                     gio_ra_moi = st.time_input("Giờ kết thúc ca làm (Mặc định nếu quên quẹt thẻ)", datetime.strptime(cf['gio_ra'], "%H:%M").time())
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
                 with c2:
-                    st.markdown("**2. Quy tắc Phạt đi trễ**")
+                    st.markdown("**2. Quy tắc Đi trễ**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
-                    tien_phat_moi = st.number_input("Số tiền phạt đi trễ (VNĐ/lần)", value=int(cf['tien_phat']), step=10000)
+                    tre_toida_moi = st.number_input("Số lần đi trễ tối đa (Trước khi báo đỏ)", value=cf['so_lan_tre_toida'], step=1)
                 
                 if st.form_submit_button("💾 LƯU CẤU HÌNH", type="primary", use_container_width=True):
                     queries = [
@@ -365,7 +369,7 @@ if role == "admin":
                         ("GIO_TAN_CA", gio_ra_moi.strftime("%H:%M")),
                         ("GIO_BAT_DAU_OT", gio_ot_moi.strftime("%H:%M")),
                         ("GIO_TINH_TRE", gio_tre_moi.strftime("%H:%M")),
-                        ("TIEN_PHAT_TRE", str(tien_phat_moi))
+                        ("SO_LAN_TRE_TOI_DA", str(tre_toida_moi))
                     ]
                     for key, val in queries:
                         c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES (%s, %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (key, val))
