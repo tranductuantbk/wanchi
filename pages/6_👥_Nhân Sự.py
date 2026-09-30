@@ -205,18 +205,20 @@ if role == "admin":
                     t_nien_fixed = st.number_input("Tiền thâm niên (VNĐ/ngày)", min_value=0, value=0, step=5000)
                 with col_n3:
                     t_com_fixed = st.number_input("Tiền cơm (VNĐ/ngày)", min_value=0, value=0, step=5000)
-                    tc_thuong = st.number_input("Giá TC ngày (VNĐ/giờ)", min_value=0, value=0, step=1000)
-                    tc_cn = st.number_input("Giá TC CN (VNĐ/giờ)", min_value=0, value=0, step=5000)
-                with col_n4:
                     phu_cap_khac = st.number_input("Phụ cấp (VNĐ)", min_value=0, value=0, step=10000)
+                    st.info("Giá TC được tự động tính khi Lưu.")
+                with col_n4:
                     ma_pin_moi = st.text_input("Mã PIN (4 số)", value="0000", max_chars=4)
 
                 if st.form_submit_button("💾 Lưu Hồ Sơ", type="primary") and ten_nv:
+                    # Tự động tính giá tăng ca
+                    tc_thuong_calc = (luong_cb + luong_nl + t_nien_fixed) / 10 * 1.5
+                    tc_cn_calc = (luong_cb + luong_nl + t_nien_fixed) / 10 * 2.0
                     try:
                         c.execute("""INSERT INTO public.nhan_vien 
                                      (ten_nv, bo_phan, ngay_vao_lam, luong_cb, luong_nang_luc, tham_nien, tien_com, tc_ngay_thuong_gia, tc_chu_nhat_gia, phu_cap_khac, ma_pin) 
                                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", 
-                                  (ten_nv.strip(), bo_phan, ngay_vao.strftime("%Y-%m-%d"), luong_cb, luong_nl, t_nien_fixed, t_com_fixed, tc_thuong, tc_cn, phu_cap_khac, ma_pin_moi))
+                                  (ten_nv.strip(), bo_phan, ngay_vao.strftime("%Y-%m-%d"), luong_cb, luong_nl, t_nien_fixed, t_com_fixed, tc_thuong_calc, tc_cn_calc, phu_cap_khac, ma_pin_moi))
                         conn.commit(); st.success(f"✅ Đã lưu!"); time.sleep(1); st.rerun()
                     except: st.error("Lỗi: Tên nhân viên này đã tồn tại!")
 
@@ -231,8 +233,16 @@ if role == "admin":
                         try:
                             for index, row in edited_nv.iterrows():
                                 if not row['Xóa']:
+                                    l_cb = float(row['luong_cb'])
+                                    l_nl = float(row['luong_nang_luc'])
+                                    t_nien = float(row['tham_nien'])
+                                    
+                                    # Tự động tính lại giá OT khi cập nhật
+                                    tc_thuong_calc = (l_cb + l_nl + t_nien) / 10 * 1.5
+                                    tc_cn_calc = (l_cb + l_nl + t_nien) / 10 * 2.0
+                                    
                                     c.execute("""UPDATE public.nhan_vien SET ten_nv=%s, bo_phan=%s, luong_cb=%s, luong_nang_luc=%s, tham_nien=%s, tien_com=%s, tc_ngay_thuong_gia=%s, tc_chu_nhat_gia=%s, phu_cap_khac=%s, ma_pin=%s WHERE id=%s""", 
-                                              (str(row['ten_nv']).strip(), str(row['bo_phan']), float(row['luong_cb']), float(row['luong_nang_luc']), float(row['tham_nien']), float(row['tien_com']), float(row['tc_ngay_thuong_gia']), float(row['tc_chu_nhat_gia']), float(row['phu_cap_khac']), str(row['ma_pin']), int(row['id'])))
+                                              (str(row['ten_nv']).strip(), str(row['bo_phan']), l_cb, l_nl, t_nien, float(row['tien_com']), tc_thuong_calc, tc_cn_calc, float(row['phu_cap_khac']), str(row['ma_pin']), int(row['id'])))
                             conn.commit(); st.success("✅ Đã cập nhật!"); time.sleep(1); st.rerun()
                         except Exception as e: st.error(f"⚠️ Lỗi: {e}")
                 with col_btn_2:
@@ -243,7 +253,7 @@ if role == "admin":
                             conn.commit(); st.success("✅ Đã xóa."); time.sleep(1); st.rerun()
                         except: pass
 
-    # --- TAB 2 (Tab hiển thị Tính lương): TÍNH LƯƠNG & XUẤT PHIẾU ---
+    # --- TAB 2: TÍNH LƯƠNG & XUẤT PHIẾU ---
     with tab2:
         if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t2")
         else:
@@ -354,10 +364,13 @@ if role == "admin":
             with st.form("form_cau_hinh_cc"):
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.markdown("**1. Thời gian Tăng ca**")
+                    st.markdown("**1. Thời gian làm việc**")
                     gio_vao_moi = st.time_input("Giờ bắt đầu làm việc (Ghi chú)", datetime.strptime(cf['gio_vao'], "%H:%M").time())
                     gio_ra_moi = st.time_input("Giờ kết thúc ca làm (Mặc định nếu quên quẹt thẻ)", datetime.strptime(cf['gio_ra'], "%H:%M").time())
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
+                    
+                    st.markdown("**3. Cách tính tăng ca (Tự động)**")
+                    st.info("- Ngày thường = (CB + Thâm niên + Năng lực) / 10 * 150%\n- Chủ nhật = (CB + Thâm niên + Năng lực) / 10 * 200%\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                 with c2:
                     st.markdown("**2. Quy tắc Đi trễ**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
