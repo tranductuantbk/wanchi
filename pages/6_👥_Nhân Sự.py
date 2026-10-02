@@ -257,8 +257,9 @@ if role == "admin":
                                     tc_thuong_calc = (l_cb + l_nl) / 9.5 * 1.5
                                     tc_cn_calc = (l_cb + l_nl) / 9.5 * 2.0
                                     
-                                    c.execute("""UPDATE public.nhan_vien SET ten_nv=%s, bo_phan=%s, luong_cb=%s, luong_nang_luc=%s, tham_nien=%s, tien_com=%s, tc_ngay_thuong_gia=%s, tc_chu_nhat_gia=%s, phu_cap_khac=%s, ma_pin=%s WHERE id=%s""", 
-                                              (str(row['ten_nv']).strip(), str(row['bo_phan']), l_cb, l_nl, t_nien, float(row['tien_com']), tc_thuong_calc, tc_cn_calc, float(row['phu_cap_khac']), str(row['ma_pin']), int(row['id'])))
+                                    # SỬA LỖI Ở ĐÂY: Thêm ngay_vao_lam=%s vào truy vấn UPDATE
+                                    c.execute("""UPDATE public.nhan_vien SET ten_nv=%s, bo_phan=%s, ngay_vao_lam=%s, luong_cb=%s, luong_nang_luc=%s, tham_nien=%s, tien_com=%s, tc_ngay_thuong_gia=%s, tc_chu_nhat_gia=%s, phu_cap_khac=%s, ma_pin=%s WHERE id=%s""", 
+                                              (str(row['ten_nv']).strip(), str(row['bo_phan']), str(row['ngay_vao_lam']), l_cb, l_nl, t_nien, float(row['tien_com']), tc_thuong_calc, tc_cn_calc, float(row['phu_cap_khac']), str(row['ma_pin']), int(row['id'])))
                             conn.commit(); st.success("✅ Đã cập nhật!"); time.sleep(1); st.rerun()
                         except Exception as e: st.error(f"⚠️ Lỗi: {e}")
                 
@@ -545,7 +546,7 @@ with container_cham_cong:
     st.markdown("---")
 
     if not ma_ca:
-        st.warning("⚠️️ Chủ xưởng chưa tạo mã ca làm việc. Vui lòng liên hệ Admin!")
+        st.warning("⚠ Chủ xưởng chưa tạo mã ca làm việc. Vui lòng liên hệ Admin!")
     else:
         tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
         if lay_gio_vn() > (tg_tao_dt + timedelta(hours=18)):
