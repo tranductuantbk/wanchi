@@ -202,7 +202,7 @@ if role == "admin":
                     ten_nv = st.text_input("Tên nhân viên (*)")
                     bo_phan = st.text_input("Bộ phận")
                     # Cập nhật format ngày DD/MM/YYYY
-                    ngay_vao = st.date_input("Ngày vào làm", lay_gio_vn().date(), format="MM/DD/YYYY")
+                    ngay_vao = st.date_input("Ngày vào làm", lay_gio_vn().date(), format="DD/MM/YYYY")
                     # Tính tự động thâm niên hiển thị
                     so_nam = (lay_gio_vn().date() - ngay_vao).days // 365
                     t_nien_fixed = so_nam * cf['tien_tham_nien'] if so_nam > 0 else 0
@@ -362,6 +362,9 @@ if role == "admin":
                     ngay_cong = st.number_input("Ngày công", min_value=0.0, value=float(round(auto_ngay_cong, 2)), step=0.5)
                     tc_thuong_gio = st.number_input("Giờ TC ngày", min_value=0.0, value=float(round(auto_tc_thuong, 2)), step=0.5)
                     tc_cn_gio = st.number_input("Giờ TC Chủ Nhật", min_value=0.0, value=float(round(auto_tc_cn, 2)), step=0.5)
+                    
+                    # THÊM MỚI: Ô nhập số lần về sớm có phép
+                    ve_som_co_phep = st.number_input("Số lần về sớm có phép", min_value=0, value=0, step=1)
 
                 with col_l3:
                     thuong_khac = st.number_input("Thưởng thêm (Nhập tay)", min_value=0, value=0, step=100000)
@@ -393,8 +396,11 @@ if role == "admin":
                     
                     thuong = thuong_khac + tien_thuong_le + tien_thuong_tet
 
+                    # THÊM MỚI: Cấn trừ số lần có phép khỏi hệ thống đếm ghi chú
+                    so_lan_ve_som_thuc_te = max(0, so_lan_ve_som - ve_som_co_phep)
+                    
                     if so_lan_tre > 0: ghi_chu_txt.append(f"Đi trễ {so_lan_tre} lần")
-                    if so_lan_ve_som > 0: ghi_chu_txt.append(f"Về sớm {so_lan_ve_som} lần")
+                    if so_lan_ve_som_thuc_te > 0: ghi_chu_txt.append(f"Về sớm {so_lan_ve_som_thuc_te} lần")
                     ghi_chu = st.text_area("Ghi chú", value=", ".join(ghi_chu_txt) + "." if ghi_chu_txt else "")
 
                 tien_cb, tien_nl, tien_tn, tien_com_th = l_cb * ngay_cong, l_nl * ngay_cong, t_nien * ngay_cong, t_com * ngay_cong
