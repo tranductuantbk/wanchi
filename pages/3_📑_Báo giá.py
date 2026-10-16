@@ -86,9 +86,9 @@ def don_dep_lich_su():
         conn.commit()
     except Exception as e: conn.rollback()
 
-# LẤY GIÁ TỪ KHO
-try: df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_dai_ly, gia_khach_le FROM public.dm_san_pham", conn)
-except: df_sp = pd.DataFrame(columns=['ma_sp', 'ten_sp', 'gia_dai_ly', 'gia_khach_le'])
+# LẤY GIÁ TỪ KHO (Đã bổ sung cột quy_cach_loc)
+try: df_sp = pd.read_sql("SELECT ma_sp, ten_sp, quy_cach_loc, gia_dai_ly, gia_khach_le FROM public.dm_san_pham", conn)
+except: df_sp = pd.DataFrame(columns=['ma_sp', 'ten_sp', 'quy_cach_loc', 'gia_dai_ly', 'gia_khach_le'])
 
 # LẤY DANH BẠ KHÁCH HÀNG TỪ KHO
 try: df_kh = pd.read_sql("SELECT ten_kh, so_dien_thoai FROM public.dm_khach_hang", conn)
@@ -249,35 +249,61 @@ with tab1:
             ten_kh = c1.text_input("Tên khách hàng:", value=chon_kh, key="t1_kh_old")
             sdt_kh = c2.text_input("Số điện thoại:", value=sdt_cu, key="t1_sdt_old")
 
-    with st.form("add_sp_t1", clear_on_submit=True):
-        col_s1, col_s2 = st.columns([3, 1])
-        sp_list = df_sp['ten_sp'].tolist() if not df_sp.empty else []
-        sp_chon = col_s1.selectbox("Chọn sản phẩm", ["-- Chọn --"] + sp_list)
-        sl_chon = col_s2.number_input("Số lượng", min_value=1, step=1)
+    st.markdown("---")
+    
+    # GỠ BỎ st.form ĐỂ KIỂM TRA LẺ LỐC NGAY LẬP TỨC
+    col_s1, col_s2 = st.columns([3, 1])
+    sp_list = df_sp['ten_sp'].tolist() if not df_sp.empty else []
+    sp_chon = col_s1.selectbox("Chọn sản phẩm", ["-- Chọn --"] + sp_list, key="t1_chon_sp")
+    
+    quy_cach_loc = 1
+    if sp_chon != "-- Chọn --":
+        info_sp = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
+        try:
+            quy_cach_loc = int(info_sp.get('quy_cach_loc', 1))
+        except:
+            quy_cach_loc = 1
+        if pd.isna(quy_cach_loc) or quy_cach_loc <= 0:
+            quy_cach_loc = 1
+        st.info(f"📦 **Quy cách đóng gói của xưởng:** `{quy_cach_loc} SP / Lốc`")
         
-        if st.form_submit_button("Thêm vào danh sách"):
-            if sp_chon != "-- Chọn --":
-                info = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
+    sl_chon = col_s2.number_input("Số lượng", min_value=1, step=1, key="t1_sl")
+
+    # KIỂM TRA LẺ LỐC
+    if sp_chon != "-- Chọn --" and quy_cach_loc > 1:
+        so_sp_le = sl_chon % quy_cach_loc
+        so_loc_thuc_te = sl_chon / quy_cach_loc
+        
+        if so_sp_le != 0:
+            loc_duoi = (sl_chon // quy_cach_loc) * quy_cach_loc
+            loc_tren = loc_duoi + quy_cach_loc
+            
+            st.warning(f"⚠️ **KHÁCH ĐẶT BỊ LẺ LỐC!** (Đang lẻ {so_sp_le} sản phẩm so với quy cách {quy_cach_loc} SP/lốc).")
+            st.markdown(f"💡 **GỢI Ý CHỐT SALE:** Tư vấn khách lấy **{loc_duoi} SP** hoặc **{loc_tren} SP** để chẵn lốc giao hàng.")
+        else:
+            st.success(f"✅ **CHẴN LỐC:** Vừa tròn {int(so_loc_thuc_te)} lốc.")
+            
+    if st.button("Thêm vào danh sách", type="secondary"):
+        if sp_chon != "-- Chọn --":
+            info = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
+            gia_cty_goc = info.get('gia_khach_le', 0)
+            
+            st.session_state.gio_bao_gia.append({
+                "Mã SP": info['ma_sp'], 
+                "Tên SP": sp_chon, 
+                "Số Lượng": sl_chon, 
+                "Giá công ty": gia_cty_goc,  
+                "Đơn Giá": 0 
+            })
+            
+            # TÍNH LẠI CHIẾT KHẤU THEO TỔNG ĐƠN
+            tong_niem_yet = sum([item['Giá công ty'] * item['Số Lượng'] for item in st.session_state.gio_bao_gia])
+            ck = tinh_chiet_khau_theo_tong(tong_niem_yet)
+            
+            for item in st.session_state.gio_bao_gia:
+                item['Đơn Giá'] = int(round(item['Giá công ty'] * ck, -1)) 
                 
-                # Giá Công Ty
-                gia_cty_goc = info.get('gia_khach_le', 0)
-                
-                st.session_state.gio_bao_gia.append({
-                    "Mã SP": info['ma_sp'], 
-                    "Tên SP": sp_chon, 
-                    "Số Lượng": sl_chon, 
-                    "Giá công ty": gia_cty_goc,  
-                    "Đơn Giá": 0 
-                })
-                
-                # TÍNH LẠI CHIẾT KHẤU THEO TỔNG ĐƠN (Dựa trên Giá công ty)
-                tong_niem_yet = sum([item['Giá công ty'] * item['Số Lượng'] for item in st.session_state.gio_bao_gia])
-                ck = tinh_chiet_khau_theo_tong(tong_niem_yet)
-                
-                for item in st.session_state.gio_bao_gia:
-                    item['Đơn Giá'] = int(round(item['Giá công ty'] * ck, -1)) 
-                    
-                st.rerun()
+            st.rerun()
 
     if st.session_state.gio_bao_gia:
         st.markdown("---")
