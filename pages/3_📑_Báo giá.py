@@ -372,7 +372,7 @@ with tab1:
             ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
             horizontal=True, 
             key="radio_xuat_t1",
-            index=2 # Mặc định chọn Xuất cả 2
+            index=1 # Mặc định chọn Chỉ xuất Ảnh
         )
         
         col_btn1, col_btn2 = st.columns([2, 2])
@@ -517,7 +517,7 @@ with tab2:
             ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
             horizontal=True, 
             key="radio_xuat_t2",
-            index=2
+            index=1 # Mặc định chọn Chỉ xuất Ảnh
         )
 
         col_btn_c1, col_btn_c2 = st.columns([2, 2])
@@ -608,7 +608,7 @@ with tab3:
                     st.dataframe(df_chi_tiet, use_container_width=True, hide_index=True)
                     
                     # Bổ sung lựa chọn định dạng cho Lịch sử
-                    loai_xuat_his = st.radio("Lựa chọn định dạng để XUẤT LẠI:", ["Chỉ xuất PDF", "Chỉ xuất Ảnh (PNG)", "Cả PDF và Ảnh"], horizontal=True, key=f"radio_his_{ma_tim_kiem}", index=2)
+                    loai_xuat_his = st.radio("Lựa chọn định dạng để XUẤT LẠI:", ["Chỉ xuất PDF", "Chỉ xuất Ảnh (PNG)", "Cả PDF và Ảnh"], horizontal=True, key=f"radio_his_{ma_tim_kiem}", index=1)
                     
                     col_his1, col_his2 = st.columns(2)
                     with col_his1:
