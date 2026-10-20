@@ -65,11 +65,6 @@ try:
 except Exception as e: 
     conn.rollback()
 
-# Lấy danh sách nguyên vật liệu từ kho
-try:
-    df_nl = pd.read_sql("SELECT ten_nl FROM public.dm_nguyen_lieu", conn)
-    danh_sach_nl = df_nl['ten_nl'].tolist() if not df_nl.empty else ["-- Kho đang trống --"]
-except: danh_sach_nl = ["-- Kho đang trống --"]
 
 # ==========================================
 # GIAO DIỆN 4 TABS
@@ -92,7 +87,7 @@ with tab1:
             st.session_state['edit_sp_data'] = None
             st.rerun()
     else:
-        st.subheader("Thêm Sản Phẩm & Khai Báo Định Mức")
+        st.subheader("Thêm Sản Phẩm Mới")
 
     with st.form("form_them_sp", clear_on_submit=not is_edit):
         col1, col2 = st.columns(2)
@@ -107,38 +102,13 @@ with tab1:
             gia_cong_ty = st.number_input("Giá Công ty / Khách lẻ (VNĐ)", min_value=0.0, step=1000.0, value=float(edit_data['gia_khach_le']) if is_edit else 0.0)
             st.markdown("*(Hệ thống sẽ lưu đúng số bạn nhập)*")
             
-        st.markdown("---")
-        st.markdown("### 🧬 Thành Phần Nguyên Liệu Cấu Tạo (BOM)")
-        st.info("💡 Bấm vào bảng để khai báo lượng vật tư cấu thành sản phẩm này (Nhựa, vít, thùng...).")
-        
-        if is_edit and edit_data.get('ds_nguyen_lieu'):
-            try:
-                bom_items = json.loads(edit_data['ds_nguyen_lieu'])
-                df_mau_nl = pd.DataFrame(bom_items) if bom_items else pd.DataFrame([{"vat_tu": None, "dinh_muc": 0.0}])
-            except: df_mau_nl = pd.DataFrame([{"vat_tu": None, "dinh_muc": 0.0}])
-        else:
-            df_mau_nl = pd.DataFrame([{"vat_tu": None, "dinh_muc": 0.0}])
-
-        edited_recipe = st.data_editor(
-            df_mau_nl,
-            num_rows="dynamic",
-            column_config={
-                "vat_tu": st.column_config.SelectboxColumn("Tên Vật Tư (Lấy từ Kho)", options=danh_sach_nl, required=True),
-                "dinh_muc": st.column_config.NumberColumn("Định mức hao phí (g, cái...)", min_value=0.0)
-            },
-            hide_index=True,
-            use_container_width=True
-        )
-
-        btn_label = "🔄 CẬP NHẬT SẢN PHẨM NÀY" if is_edit else "💾 Lưu Sản Phẩm & Định Mức"
+        btn_label = "🔄 CẬP NHẬT SẢN PHẨM NÀY" if is_edit else "💾 Lưu Sản Phẩm"
         
         if st.form_submit_button(btn_label, type="primary"):
             if not ma_sp.strip() or not ten_sp.strip():
                 st.warning("⚠️ Vui lòng nhập Mã và Tên sản phẩm!")
             else:
-                valid_recipe = edited_recipe.dropna(subset=["vat_tu"])
-                valid_recipe = valid_recipe[(valid_recipe["vat_tu"] != "-- Kho đang trống --") & (valid_recipe["dinh_muc"] > 0)]
-                json_ds_nguyen_lieu = valid_recipe.to_json(orient="records") if not valid_recipe.empty else ""
+                json_ds_nguyen_lieu = "" # Bỏ khai báo vật tư
 
                 if is_edit:
                     try:
@@ -161,7 +131,7 @@ with tab1:
                                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""", 
                                   (ma_sp.strip(), ten_sp.strip(), gia_dai_ly, gia_cong_ty, gia_von, 0, quy_cach_loc, json_ds_nguyen_lieu))
                         conn.commit()
-                        st.success(f"✅ Đã thêm {ten_sp} cùng bộ định mức thành công!")
+                        st.success(f"✅ Đã thêm {ten_sp} thành công!")
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as e: 
@@ -194,14 +164,6 @@ with tab2:
         st.write("*(Nhấp đúp chuột vào các cột **Quy Cách Lốc**, **Giá Đại Lý**, **Giá Công Ty**, **Giá Vốn** để sửa trực tiếp!)*")
         
         if not df_sp.empty:
-            def format_recipe(json_str):
-                if not json_str or pd.isna(json_str) or json_str == "": return "Không có"
-                try:
-                    items = json.loads(json_str)
-                    return ", ".join([f"{item['vat_tu']} ({item['dinh_muc']})" for item in items])
-                except: return "Lỗi hiển thị"
-
-            df_sp['thanh_phan_hien_thi'] = df_sp['ds_nguyen_lieu'].apply(format_recipe)
             df_hien_thi = df_sp.drop(columns=['ds_nguyen_lieu', 'chi_phi_khac'])
 
             # BẢNG CHO PHÉP CHỈNH SỬA TRỰC TIẾP
@@ -211,7 +173,6 @@ with tab2:
                     "id": None, 
                     "ma_sp": st.column_config.TextColumn("Mã SP", disabled=True),
                     "ten_sp": st.column_config.TextColumn("Tên Sản Phẩm", disabled=True),
-                    "thanh_phan_hien_thi": st.column_config.TextColumn("Định mức Vật Tư (Sửa qua Tab 1)", disabled=True),
                     "quy_cach_loc": st.column_config.NumberColumn("Quy cách lốc (Sửa)", format="%d", min_value=1),
                     "gia_dai_ly": st.column_config.NumberColumn("Giá Đại lý (Sửa)", format="%d"),
                     "gia_khach_le": st.column_config.NumberColumn("Giá Công ty (Sửa)", format="%d"),
@@ -284,7 +245,7 @@ with tab3:
             st.session_state['edit_ome_data'] = None
             st.rerun()
     else:
-        st.subheader("Thêm Sản Phẩm OME & Khai Báo Định Mức")
+        st.subheader("Thêm Sản Phẩm OME Mới")
 
     with st.form("form_them_ome", clear_on_submit=not is_edit_ome):
         col_o1, col_o2 = st.columns(2)
@@ -295,37 +256,12 @@ with tab3:
             gia_von_ome = st.number_input("Giá Vốn / Giá thành (VNĐ)", min_value=0.0, step=1000.0, value=float(edit_ome['gia_von']) if is_edit_ome else 0.0)
             quy_cach_loc_ome = st.number_input("Quy cách lốc (SP / Lốc)", min_value=1, step=1, value=int(edit_ome.get('quy_cach_loc', 1)) if is_edit_ome else 1)
 
-        st.markdown("---")
-        st.markdown("### 🧬 Thành Phần Nguyên Liệu (Trừ Kho Wanchi)")
-        st.info("Lưu ý: Chỉ điền các loại vật tư do xưởng Wanchi cung cấp. Vật tư khách mang đến không cần điền.")
-        
-        if is_edit_ome and edit_ome.get('ds_nguyen_lieu'):
-            try:
-                bom_items_ome = json.loads(edit_ome['ds_nguyen_lieu'])
-                df_mau_nl_ome = pd.DataFrame(bom_items_ome) if bom_items_ome else pd.DataFrame([{"vat_tu": None, "dinh_muc": 0.0}])
-            except: df_mau_nl_ome = pd.DataFrame([{"vat_tu": None, "dinh_muc": 0.0}])
-        else:
-            df_mau_nl_ome = pd.DataFrame([{"vat_tu": None, "dinh_muc": 0.0}])
-
-        edited_recipe_ome = st.data_editor(
-            df_mau_nl_ome,
-            num_rows="dynamic",
-            column_config={
-                "vat_tu": st.column_config.SelectboxColumn("Tên Vật Tư (Lấy từ Kho)", options=danh_sach_nl, required=True),
-                "dinh_muc": st.column_config.NumberColumn("Định mức hao phí (g, cái...)", min_value=0.0)
-            },
-            hide_index=True,
-            use_container_width=True
-        )
-
         btn_label_ome = "🔄 CẬP NHẬT SP OME NÀY" if is_edit_ome else "💾 Lưu Sản Phẩm OME"
         
         if st.form_submit_button(btn_label_ome, type="primary"):
             if not ten_sp_ome.strip(): st.warning("⚠️ Vui lòng nhập Tên sản phẩm OME!")
             else:
-                valid_recipe_ome = edited_recipe_ome.dropna(subset=["vat_tu"])
-                valid_recipe_ome = valid_recipe_ome[(valid_recipe_ome["vat_tu"] != "-- Kho đang trống --") & (valid_recipe_ome["dinh_muc"] > 0)]
-                json_ds_nguyen_lieu_ome = valid_recipe_ome.to_json(orient="records") if not valid_recipe_ome.empty else ""
+                json_ds_nguyen_lieu_ome = ""
 
                 if is_edit_ome:
                     try:
@@ -381,14 +317,6 @@ with tab4:
         st.write("*(Nhấp đúp chuột vào cột **Quy Cách Lốc**, **Giá Bán**, **Giá Vốn** để sửa trực tiếp!)*")
         
         if not df_ome.empty:
-            def format_recipe(json_str):
-                if not json_str or pd.isna(json_str) or json_str == "": return "Không có"
-                try:
-                    items = json.loads(json_str)
-                    return ", ".join([f"{item['vat_tu']} ({item['dinh_muc']})" for item in items])
-                except: return "Lỗi hiển thị"
-
-            df_ome['thanh_phan_hien_thi'] = df_ome['ds_nguyen_lieu'].apply(format_recipe)
             df_hien_thi_ome = df_ome.drop(columns=['ds_nguyen_lieu', 'chi_phi_khac'])
 
             edited_df_ome = st.data_editor(
@@ -396,7 +324,6 @@ with tab4:
                 column_config={
                     "id": None, 
                     "ten_sp": st.column_config.TextColumn("Tên SP OME", disabled=True),
-                    "thanh_phan_hien_thi": st.column_config.TextColumn("Định mức Vật Tư (Sửa qua Tab 3)", disabled=True),
                     "quy_cach_loc": st.column_config.NumberColumn("Quy cách lốc (Sửa)", format="%d", min_value=1),
                     "gia_ome": st.column_config.NumberColumn("Giá bán OME (Sửa)", format="%d"),
                     "gia_von": st.column_config.NumberColumn("Giá Vốn (Sửa)", format="%d"),
