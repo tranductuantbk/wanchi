@@ -42,7 +42,7 @@ except ImportError:
     HAS_FITZ = False
 
 def convert_pdf_to_png(pdf_bytes):
-    """Hàm chuyển byte PDF thành byte Ảnh PNG độ nét cao"""
+    """Hàm phụ trợ chuyển byte PDF thành byte Ảnh PNG độ nét cao"""
     if not HAS_FITZ:
         st.error("⚠️ Hệ thống thiếu thư viện 'PyMuPDF' để xuất ảnh. Vui lòng chạy lệnh: pip install PyMuPDF")
         return None
@@ -246,9 +246,9 @@ if role == "admin":
                     ma_pin_moi = st.text_input("Mã PIN (4 số)", value="0000", max_chars=4)
 
                 if st.form_submit_button("💾 Lưu Hồ Sơ", type="primary") and ten_nv:
-                    # Cập nhật chia 10
-                    tc_thuong_calc = (luong_cb + luong_nl) / 10.0 * 1.5
-                    tc_cn_calc = (luong_cb + luong_nl) / 10.0 * 2.0
+                    # Tính toán chia cho 9.5 theo yêu cầu mới nhất
+                    tc_thuong_calc = (luong_cb + luong_nl + t_nien_fixed) / 9.5 * 1.5
+                    tc_cn_calc = (luong_cb + luong_nl + t_nien_fixed) / 9.5 * 2.0
                     try:
                         c.execute("""INSERT INTO public.nhan_vien 
                                      (ten_nv, bo_phan, ngay_vao_lam, luong_cb, luong_nang_luc, tham_nien, tien_com, tc_ngay_thuong_gia, tc_chu_nhat_gia, phu_cap_khac, ma_pin) 
@@ -278,9 +278,9 @@ if role == "admin":
                                         so_nam_db = 0
                                     t_nien = so_nam_db * cf['tien_tham_nien'] if so_nam_db > 0 else 0
                                     
-                                    # Cập nhật chia 10
-                                    tc_thuong_calc = (l_cb + l_nl) / 10.0 * 1.5
-                                    tc_cn_calc = (l_cb + l_nl) / 10.0 * 2.0
+                                    # Tính toán chia cho 9.5 theo yêu cầu mới nhất
+                                    tc_thuong_calc = (l_cb + l_nl + t_nien) / 9.5 * 1.5
+                                    tc_cn_calc = (l_cb + l_nl + t_nien) / 9.5 * 2.0
                                     
                                     c.execute("""UPDATE public.nhan_vien SET ten_nv=%s, bo_phan=%s, ngay_vao_lam=%s, luong_cb=%s, luong_nang_luc=%s, tham_nien=%s, tien_com=%s, tc_ngay_thuong_gia=%s, tc_chu_nhat_gia=%s, phu_cap_khac=%s, ma_pin=%s WHERE id=%s""", 
                                               (str(row['ten_nv']).strip(), str(row['bo_phan']), str(row['ngay_vao_lam']), l_cb, l_nl, t_nien, float(row['tien_com']), tc_thuong_calc, tc_cn_calc, float(row['phu_cap_khac']), str(row['ma_pin']), int(row['id'])))
@@ -449,7 +449,6 @@ if role == "admin":
                         st.session_state['pdf_luong'] = generate_payslip_pdf(chon_nv_luong, ky_luong_str, data_dict)
                         st.session_state['pdf_luong_name'] = f"Phieu_Luong_{chon_nv_luong.replace(' ', '_')}.pdf"
                         
-                        # Chuyển đổi PDF sang PNG nếu có thư viện PyMuPDF
                         img_luong = convert_pdf_to_png(st.session_state['pdf_luong'])
                         if img_luong:
                             st.session_state['img_luong'] = img_luong
@@ -484,7 +483,7 @@ if role == "admin":
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
                     
                     st.markdown("**3. Cách tính tăng ca & Quên quẹt thẻ (Tự động)**")
-                    st.info("- Ngày thường = (CB + Năng lực) / 10 * 150%\n- Chủ nhật = (CB + Năng lực) / 10 * 200%\n- Quên ra ca = Tính 1 công chuẩn, KHÔNG tính tăng ca.\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
+                    st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca = Tính 1 công chuẩn, KHÔNG tính tăng ca.\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                     
                     st.markdown("**5. Cách tính thưởng Lễ & Tết**")
                     st.info("- **Lễ 30/4, 1/5, 2/9**: Trùng T2-T7 = Lương CB + 100.000đ; Trùng Chủ nhật = 100.000đ.\n- **Thưởng Tết**: Lương CB x 30 ngày.\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết có nút tích chọn ở phần Tính lương)*")
@@ -629,7 +628,6 @@ with container_cham_cong:
 
     st.markdown("---")
     try:
-        # Lấy thêm cột ve_som_co_phep để hiển thị bảng theo dõi cuối ngày
         df_cc = pd.read_sql(f"SELECT ten_nv, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ngay='{hom_nay}' ORDER BY gio_vao DESC", conn)
         if not df_cc.empty:
             df_cc['ve_som_co_phep'] = df_cc['ve_som_co_phep'].apply(lambda x: 'Có' if x else '')
