@@ -56,7 +56,7 @@ if role == "employee":
     st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: Trang Quản Lý Kho chỉ dành cho Quản lý WANCHI.")
     st.stop()
 
-st.header("📦 Quản Lý Kho (Thông Minh & Chống Thất Thoát)")
+st.header("📦 Quản Lý Kho")
 
 conn = get_connection()
 c = conn.cursor()
@@ -174,7 +174,7 @@ def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi):
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📋 Danh Mục NVL, NCC", "📥 Nhập / Xuất Kho (Thông Minh)", "📊 Báo Cáo Tồn Kho"])
+tab1, tab2, tab3 = st.tabs(["📋 NVL, NCC, Công Nợ", "📥 Nhập / Xuất Kho", "📊 Báo Cáo Tồn Kho"])
 
 with tab1:
     # --- KHU VỰC THÊM & THEO DÕI NHÀ CUNG CẤP ---
@@ -433,7 +433,6 @@ with tab2:
                 with st.form("form_nhap_nvl"):
                     col_n1, col_n2 = st.columns(2)
                     with col_n1:
-                        # CHỈNH SỬA: Cho phép chọn ngày nhập thủ công, mặc định hôm nay
                         ngay_nhap_hd = st.date_input("Ngày nhập hàng", lay_gio_vn().date(), format="DD/MM/YYYY")
                         nl_chon = st.selectbox("Chọn Vật Tư cần nhập", df_nl_ton['ten_nl'].tolist())
                         sl_tt = st.number_input("Số lượng nhập", min_value=1.0, step=1.0)
@@ -466,7 +465,7 @@ with tab2:
         except Exception as e: st.error(f"Lỗi truy xuất: {str(e)}")
 
     elif "2. Nhập Thành Phẩm" in chuyem_muc:
-        st.markdown("#### 📦 Nhập Thành Phẩm Vừa Sản Xuất (Tự động trừ NVL cấu thành)")
+        st.markdown("#### 📦 Nhập Thành Phẩm Vừa Sản Xuất")
         try:
             df_sp_chuan = pd.read_sql("SELECT ten_sp, ds_nguyen_lieu, ton_kho, 'chuẩn' as loai FROM public.dm_san_pham", conn)
             df_sp_ome = pd.read_sql("SELECT ten_sp, ds_nguyen_lieu, ton_kho, 'ome' as loai FROM public.dm_san_pham_ome", conn)
@@ -482,7 +481,7 @@ with tab2:
                     with col_sl2:
                         don_vi_nhap = st.selectbox("Đơn vị", ["bộ", "lẻ", "kg"], index=0)
 
-                    if st.form_submit_button("🔄 Lưu & Tự Động Cấn Trừ BOM", type="primary"):
+                    if st.form_submit_button("🔄 Lưu Thành Phẩm", type="primary"):
                         sp_info = df_all_sp[df_all_sp['ten_sp'] == sp_chon].iloc[0]
                         loai_sp = sp_info['loai']
                         ds_nl_json = sp_info['ds_nguyen_lieu']
@@ -495,25 +494,8 @@ with tab2:
                         c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
                                      VALUES (%s, 'Nhập Thành Phẩm', %s, %s, %s)""", (ngay_tt, sp_chon, sl_nhap, ghi_chu_sp))
                         
-                        try:
-                            ds_vat_tu = json.loads(ds_nl_json) if ds_nl_json else []
-                            if isinstance(ds_vat_tu, str): ds_vat_tu = json.loads(ds_vat_tu)
-                            
-                            for vt in ds_vat_tu:
-                                ten_vt = vt.get('vat_tu')
-                                dinh_muc = float(vt.get('dinh_muc', 0))
-                                
-                                tong_hao_phi = dinh_muc * sl_nhap
-                                
-                                c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho - %s WHERE ten_nl = %s", (tong_hao_phi, ten_vt))
-                                c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) 
-                                             VALUES (%s, 'Xuất cấn trừ BOM', %s, %s, %s)""", 
-                                          (ngay_tt, ten_vt, -tong_hao_phi, f"Làm {sl_nhap} {don_vi_nhap} {sp_chon}"))
-                        except Exception as e:
-                            st.warning(f"Lỗi cập nhật BOM (Cấn trừ vật tư): {e}")
-                        
                         conn.commit()
-                        st.success(f"✅ Đã nhập {sl_nhap} {don_vi_nhap} {sp_chon}. Kho NVL đã được tự động trừ hao phí tương ứng!")
+                        st.success(f"✅ Đã nhập {sl_nhap} {don_vi_nhap} {sp_chon} vào kho!")
                         time.sleep(2); st.rerun()
             else: st.info("Chưa có danh mục sản phẩm.")
         except Exception as e: st.error(str(e))
