@@ -97,6 +97,29 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
+# LẤY THÔNG TIN TỔNG QUỸ HIỆN TẠI
+# ==========================================
+try:
+    df_tong = pd.read_sql("SELECT loai_gd, so_tien FROM public.quy_thu_chi", conn)
+    if not df_tong.empty:
+        tong_thu_ht = df_tong[df_tong['loai_gd'] == 'Thu']['so_tien'].sum()
+        tong_chi_ht = df_tong[df_tong['loai_gd'] == 'Chi']['so_tien'].sum()
+    else:
+        tong_thu_ht, tong_chi_ht = 0.0, 0.0
+except:
+    tong_thu_ht, tong_chi_ht = 0.0, 0.0
+
+ton_quy_ht = tong_thu_ht - tong_chi_ht
+
+# HIỂN THỊ TỔNG QUAN NGÂN SÁCH NGAY ĐẦU TRANG
+st.markdown("### 🏦 TÌNH TRẠNG NGÂN SÁCH HIỆN TẠI")
+col_t1, col_t2, col_t3 = st.columns(3)
+col_t1.metric("💰 TỔNG NẠP (THU)", f"{format_vn(tong_thu_ht)} VNĐ")
+col_t2.metric("💸 TỔNG ĐÃ CHI", f"{format_vn(tong_chi_ht)} VNĐ")
+col_t3.metric("🟢 TỒN QUỸ HIỆN TẠI", f"{format_vn(ton_quy_ht)} VNĐ")
+st.markdown("---")
+
+# ==========================================
 # HÀM XUẤT PHIẾU PDF (THU / CHI)
 # ==========================================
 def generate_phieu_pdf(ma_phieu, loai_gd, ngay_gd, so_tien, noi_dung, co_hoa_don):
@@ -209,6 +232,8 @@ with tab1:
                     st.session_state['img_gd'] = img_gd
                     
                 st.success("✅ Đã ghi nhận Phiếu Thu vào hệ thống!")
+                time.sleep(1)
+                st.rerun()
             else:
                 st.warning("⚠️ Vui lòng nhập số tiền lớn hơn 0 và ghi rõ nội dung nạp quỹ.")
 
@@ -247,6 +272,8 @@ with tab2:
                     st.session_state['img_gd'] = img_gd
                     
                 st.success("✅ Đã ghi nhận Phiếu Chi vào hệ thống!")
+                time.sleep(1)
+                st.rerun()
             else:
                 st.warning("⚠️ Vui lòng nhập số tiền lớn hơn 0 và ghi rõ nội dung chi.")
 
@@ -268,23 +295,12 @@ if 'pdf_gd' in st.session_state:
 
 # --- TAB 3: BẢNG KÊ & LỊCH SỬ ---
 with tab3:
-    st.subheader("📊 Tổng Quan Quỹ & Lịch Sử Giao Dịch")
+    st.subheader("📊 Lịch Sử Giao Dịch")
     
     try:
         df_quy = pd.read_sql("SELECT ma_phieu, loai_gd, ngay_gd, so_tien, noi_dung, co_hoa_don FROM public.quy_thu_chi ORDER BY id DESC", conn)
         
         if not df_quy.empty:
-            tong_thu = df_quy[df_quy['loai_gd'] == 'Thu']['so_tien'].sum()
-            tong_chi = df_quy[df_quy['loai_gd'] == 'Chi']['so_tien'].sum()
-            ton_quy = tong_thu - tong_chi
-            
-            # --- HIỂN THỊ METRICS TỔNG QUAN ---
-            col_m1, col_m2, col_m3 = st.columns(3)
-            col_m1.metric("💰 TỔNG NẠP (THU)", f"{format_vn(tong_thu)} VNĐ")
-            col_m2.metric("💸 TỔNG ĐÃ CHI", f"{format_vn(tong_chi)} VNĐ")
-            col_m3.metric("🏦 TỒN QUỸ HIỆN TẠI", f"{format_vn(ton_quy)} VNĐ")
-            
-            st.markdown("---")
             st.markdown(f"**Danh sách 100 giao dịch Thu / Chi gần nhất:**")
             
             # Đổi tên cột cho hiển thị đẹp
