@@ -25,6 +25,29 @@ def download_font():
         except: pass
 download_font()
 
+# ==========================================
+# KHỞI TẠO THƯ VIỆN CHUYỂN PDF SANG ẢNH
+# ==========================================
+try:
+    import fitz  # PyMuPDF
+    HAS_FITZ = True
+except ImportError:
+    HAS_FITZ = False
+
+def convert_pdf_to_png(pdf_bytes):
+    """Hàm phụ trợ chuyển byte PDF thành byte Ảnh PNG độ nét cao"""
+    if not HAS_FITZ:
+        st.error("⚠️ Hệ thống thiếu thư viện 'PyMuPDF' để xuất ảnh. Vui lòng chạy lệnh: pip install PyMuPDF")
+        return None
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page = doc.load_page(0) 
+        pix = page.get_pixmap(dpi=200) 
+        return pix.tobytes("png")
+    except Exception as e:
+        st.error(f"Lỗi khi chuyển đổi ảnh: {e}")
+        return None
+
 st.set_page_config(page_title="Quản Lý Kho WANCHI", page_icon="📦", layout="wide")
 
 role = check_password()
@@ -69,7 +92,7 @@ def format_vn(value):
     except: return str(value)
 
 # ==========================================
-# HÀM TẠO PHIẾU XUẤT KHO PDF
+# HÀM TẠO PHIẾU XUẤT KHO / PHIẾU CHI PDF
 # ==========================================
 def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf = FPDF()
@@ -112,20 +135,58 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
         out = pdf.output(dest='S')
         return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
+def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi):
+    pdf = FPDF()
+    pdf.add_page()
+    has_font = os.path.exists(FONT_FILE)
+    if has_font:
+        pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+        pdf.add_font("Roboto", "B", FONT_FILE, uni=True) 
+        font_name = "Roboto"
+    else: font_name = "Helvetica"
+
+    pdf.set_font(font_name, 'B' if has_font else '', 16)
+    pdf.cell(0, 10, "PHIẾU CHI TIỀN (THANH TOÁN CÔNG NỢ NCC)", ln=True, align="C")
+    
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(0, 6, f"Ngày lập: {ngay_chi}", ln=True, align="C")
+    pdf.cell(0, 6, f"Mã Phiếu Thanh Toán: {ma_phieu}", ln=True, align="C")
+    pdf.ln(10)
+    
+    pdf.cell(0, 8, f"Họ tên người nhận (Nhà cung cấp): {ten_ncc}", ln=True)
+    pdf.cell(0, 8, f"Lý do chi: Thanh toán công nợ tiền vật tư / nguyên liệu nhập kho.", ln=True)
+    pdf.set_font(font_name, 'B' if has_font else '', 12)
+    pdf.cell(0, 10, f"Số tiền thanh toán: {format_vn(tong_chi)} VNĐ", ln=True)
+    pdf.ln(15)
+    
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(95, 6, "Người Lập Phiếu", align='C')
+    pdf.cell(95, 6, "Người Nhận Tiền", ln=True, align='C')
+    pdf.cell(95, 6, "(Ký, ghi rõ họ tên)", align='C')
+    pdf.cell(95, 6, "(Ký, ghi rõ họ tên)", align='C')
+    
+    try: return bytes(pdf.output())
+    except:
+        out = pdf.output(dest='S')
+        return out.encode('latin-1') if isinstance(out, str) else bytes(out)
+
+
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["📋 Danh Mục NVL, NCC", "📥 Nhập / Xuất Kho (Thông Minh)", "📊 Báo Cáo Tồn Kho"])
 
 with tab1:
-    # --- KHU VỰC THÊM NHÀ CUNG CẤP ---
-    st.subheader("🏢 Quản Lý Nhà Cung Cấp (NCC)")
+    # --- KHU VỰC THÊM & THEO DÕI NHÀ CUNG CẤP ---
+    st.subheader("🏢 Quản Lý Nhà Cung Cấp & Theo Dõi Công Nợ")
+    
+    # 1. Thêm NCC
     with st.form("form_them_ncc", clear_on_submit=True):
         c_ncc1, c_ncc2 = st.columns([3, 1])
         with c_ncc1: 
             ten_ncc = st.text_input("Tên Nhà Cung Cấp Mới (*)")
         with c_ncc2:
-            st.write("") # Cân bằng nút bấm với ô nhập
+            st.write("") 
             btn_ncc = st.form_submit_button("💾 Lưu NCC", type="primary", use_container_width=True)
         if btn_ncc:
             if ten_ncc.strip():
@@ -140,12 +201,73 @@ with tab1:
             else:
                 st.warning("Vui lòng nhập tên Nhà Cung Cấp!")
 
+    # 2. Bảng Theo dõi công nợ NCC
+    st.markdown("**🔍 Theo dõi Hóa đơn & Công Nợ NCC**")
     try:
-        df_ncc = pd.read_sql("SELECT id, ten_ncc as \"Tên Nhà Cung Cấp\" FROM public.dm_ncc ORDER BY id DESC", conn)
-        if not df_ncc.empty:
-            with st.expander("👁️ Xem danh sách Nhà Cung Cấp hiện tại", expanded=False):
-                st.dataframe(df_ncc.drop(columns=['id']), hide_index=True, use_container_width=True)
-    except: pass
+        df_ncc = pd.read_sql("SELECT ten_ncc FROM public.dm_ncc ORDER BY id DESC", conn)
+        danh_sach_ncc = df_ncc['ten_ncc'].tolist() if not df_ncc.empty else []
+        
+        col_cn1, col_cn2 = st.columns([1, 2])
+        with col_cn1:
+            ncc_chon_cong_no = st.selectbox("Lọc công nợ theo Nhà Cung Cấp:", ["-- Chọn NCC --"] + danh_sach_ncc)
+        
+        if ncc_chon_cong_no != "-- Chọn NCC --":
+            # Lấy các giao dịch chưa thanh toán của NCC này
+            df_no = pd.read_sql(f"SELECT id, ngay_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu FROM public.ls_nhap_xuat_kho WHERE nha_cung_cap='{ncc_chon_cong_no}' AND trang_thai_tt='Chưa thanh toán' AND loai_thao_tac='Nhập NVL'", conn)
+            
+            if not df_no.empty:
+                tong_no = df_no['thanh_tien'].sum()
+                st.warning(f"🚨 **CẢNH BÁO:** Bạn đang nợ {ncc_chon_cong_no} tổng cộng **{format_vn(tong_no)} VNĐ**.")
+                
+                # Hiển thị bảng chi tiết các hóa đơn chưa trả
+                df_hien_thi_no = df_no.copy()
+                df_hien_thi_no.columns = ["Mã Giao Dịch (ID)", "Ngày Nhập", "Tên Vật Tư", "Số Lượng", "Đơn Giá", "Thành Tiền", "Ghi Chú"]
+                st.dataframe(df_hien_thi_no, hide_index=True, use_container_width=True)
+                
+                # Nút thanh toán công nợ
+                st.markdown("**📁 Tùy chọn in phiếu chi:**")
+                loai_xuat_chi = st.radio(
+                    "Định dạng xuất Phiếu Chi:", 
+                    ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
+                    horizontal=True, 
+                    key="radio_xuat_chi",
+                    index=1 # Mặc định chọn Ảnh
+                )
+                
+                c_tt1, c_tt2 = st.columns([1, 2])
+                with c_tt1:
+                    if st.button("💸 THANH TOÁN TẤT CẢ CÔNG NỢ NÀY", type="primary", use_container_width=True):
+                        # Cập nhật trạng thái trong CSDL
+                        c.execute("UPDATE public.ls_nhap_xuat_kho SET trang_thai_tt='Đã thanh toán' WHERE nha_cung_cap=%s AND trang_thai_tt='Chưa thanh toán' AND loai_thao_tac='Nhập NVL'", (ncc_chon_cong_no,))
+                        conn.commit()
+                        
+                        # Tạo phiếu PDF và lưu vào session
+                        ngay_chi_hien_tai = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                        ma_phieu_chi = f"PC_{int(time.time())}"
+                        
+                        st.session_state['pdf_phieu_chi'] = generate_phieu_chi_pdf(ncc_chon_cong_no, ma_phieu_chi, tong_no, ngay_chi_hien_tai)
+                        st.session_state['ten_file_chi'] = f"PhieuChi_{ncc_chon_cong_no}.pdf"
+                        
+                        img_chi = convert_pdf_to_png(st.session_state['pdf_phieu_chi'])
+                        if img_chi:
+                            st.session_state['img_phieu_chi'] = img_chi
+                            
+                        st.success(f"✅ Đã thanh toán công nợ cho {ncc_chon_cong_no}. Hệ thống đã gạch nợ. Tải Phiếu Chi bên dưới.")
+                
+                # Hiển thị nút tải
+                if 'pdf_phieu_chi' in st.session_state:
+                    st.markdown("---")
+                    dl_c1, dl_c2 = st.columns(2)
+                    if "PDF" in loai_xuat_chi or "Cả" in loai_xuat_chi:
+                        with dl_c1:
+                            st.download_button("🖨️ TẢI PHIẾU CHI (PDF)", data=st.session_state['pdf_phieu_chi'], file_name=st.session_state['ten_file_chi'], mime="application/pdf", type="primary", use_container_width=True)
+                    if ("Ảnh" in loai_xuat_chi or "Cả" in loai_xuat_chi) and st.session_state.get('img_phieu_chi'):
+                        with dl_c2:
+                            st.download_button("🖼️ TẢI PHIẾU CHI (ẢNH)", data=st.session_state['img_phieu_chi'], file_name=st.session_state['ten_file_chi'].replace('.pdf','.png'), mime="image/png", type="primary", use_container_width=True)
+            else:
+                st.success(f"✅ Tuyệt vời! Hiện tại bạn không nợ công ty {ncc_chon_cong_no} đồng nào.")
+
+    except Exception as e: pass
 
     st.markdown("---")
     
@@ -302,7 +424,6 @@ with tab2:
         try:
             df_nl_ton = pd.read_sql("SELECT ten_nl, don_vi, ton_kho FROM public.dm_nguyen_lieu", conn)
             
-            # Lấy danh sách NCC
             try: df_ncc = pd.read_sql("SELECT ten_ncc FROM public.dm_ncc", conn)
             except: df_ncc = pd.DataFrame()
             
@@ -312,24 +433,25 @@ with tab2:
                 with st.form("form_nhap_nvl"):
                     col_n1, col_n2 = st.columns(2)
                     with col_n1:
+                        # CHỈNH SỬA: Cho phép chọn ngày nhập thủ công, mặc định hôm nay
+                        ngay_nhap_hd = st.date_input("Ngày nhập hàng", lay_gio_vn().date(), format="DD/MM/YYYY")
                         nl_chon = st.selectbox("Chọn Vật Tư cần nhập", df_nl_ton['ten_nl'].tolist())
                         sl_tt = st.number_input("Số lượng nhập", min_value=1.0, step=1.0)
-                        don_gia = st.number_input("Đơn giá nhập (VNĐ)", min_value=0.0, step=1000.0)
                     with col_n2:
                         ncc_chon = st.selectbox("Chọn Nhà Cung Cấp", danh_sach_ncc)
+                        don_gia = st.number_input("Đơn giá nhập (VNĐ)", min_value=0.0, step=1000.0)
                         trang_thai_tt = st.selectbox("Trạng thái thanh toán", ["Chưa thanh toán", "Đã thanh toán"])
-                        ghi_chu = st.text_input("Ghi chú thêm (Số xe, người giao...)")
+                    
+                    ghi_chu = st.text_input("Ghi chú thêm (Số xe, người giao...)")
 
                     if st.form_submit_button("💾 Xác nhận Nhập NVL", type="primary"):
                         if ncc_chon.startswith("--"):
                             st.error("⚠️ Vui lòng thêm tên Nhà Cung Cấp ở Tab 1 trước khi nhập hàng!")
                         else:
                             thanh_tien = sl_tt * don_gia
-                            ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                            ngay_tt = ngay_nhap_hd.strftime("%d/%m/%Y")
                             
-                            # Cộng tồn kho
                             c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_tt, nl_chon))
-                            # Ghi nhận vào Lịch sử (kèm NCC, trạng thái TT và tiền bạc)
                             c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
                                          (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, nha_cung_cap, trang_thai_tt) 
                                          VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s, %s, %s)""", 
