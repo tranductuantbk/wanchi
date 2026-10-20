@@ -83,6 +83,11 @@ try:
                 )''')
     c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS nha_cung_cap TEXT")
     c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS trang_thai_tt TEXT")
+    
+    # BẢNG MỚI ĐỂ LƯU LỊCH SỬ PHIẾU CHI
+    c.execute('''CREATE TABLE IF NOT EXISTS public.ls_phieu_chi (
+                    id SERIAL PRIMARY KEY, ma_phieu TEXT, ngay_chi TEXT, ten_ncc TEXT, tong_chi REAL, chi_tiet TEXT
+                )''')
     conn.commit()
 except: 
     conn.rollback()
@@ -90,6 +95,18 @@ except:
 def format_vn(value):
     try: return "{:,.0f}".format(value).replace(",", ".")
     except: return str(value)
+
+def don_dep_lich_su_chi():
+    """Hàm tự động dọn dẹp, chỉ giữ lại 50 phiếu chi gần nhất"""
+    try:
+        c.execute("""DELETE FROM public.ls_phieu_chi 
+                     WHERE id NOT IN (
+                         SELECT id FROM public.ls_phieu_chi 
+                         ORDER BY id DESC LIMIT 50
+                     )""")
+        conn.commit()
+    except: 
+        conn.rollback()
 
 # ==========================================
 # HÀM TẠO PHIẾU XUẤT KHO / PHIẾU CHI PDF
@@ -225,7 +242,7 @@ def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi, df_selected=No
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📋 NVL, NCC, Công Nợ", "📥 Nhập / Xuất Kho", "📊 Báo Cáo Tồn Kho"])
+tab1, tab2, tab3, tab4 = st.tabs(["📋 NVL, NCC, Công Nợ", "📥 Nhập / Xuất Kho", "📊 Báo Cáo Tồn Kho", "🕰️ Lịch Sử Công Nợ"])
 
 with tab1:
     # --- KHU VỰC THÊM & THEO DÕI NHÀ CUNG CẤP ---
@@ -318,12 +335,20 @@ with tab1:
                                 c.execute("UPDATE public.ls_nhap_xuat_kho SET trang_thai_tt='Đã thanh toán' WHERE id = %s", (ids_to_pay[0],))
                             else:
                                 c.execute(f"UPDATE public.ls_nhap_xuat_kho SET trang_thai_tt='Đã thanh toán' WHERE id IN {ids_tuple}")
-                            conn.commit()
                             
+                            # Lưu vào Lịch sử Phiếu Chi
                             ngay_chi_hien_tai = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                             ma_phieu_chi = f"PC_{int(time.time())}"
+                            chi_tiet_json = selected_rows.to_json(orient='records')
                             
-                            # Gửi dataframe selected_rows vào hàm tạo PDF
+                            c.execute("""INSERT INTO public.ls_phieu_chi (ma_phieu, ngay_chi, ten_ncc, tong_chi, chi_tiet) 
+                                         VALUES (%s, %s, %s, %s, %s)""", 
+                                      (ma_phieu_chi, ngay_chi_hien_tai, ncc_chon_cong_no, float(tong_chi_chon), chi_tiet_json))
+                            conn.commit()
+                            
+                            # Dọn dẹp chỉ để lại 50 phiếu gần nhất
+                            don_dep_lich_su_chi()
+                            
                             st.session_state['pdf_phieu_chi'] = generate_phieu_chi_pdf(ncc_chon_cong_no, ma_phieu_chi, tong_chi_chon, ngay_chi_hien_tai, selected_rows)
                             st.session_state['ten_file_chi'] = f"PhieuChi_{ncc_chon_cong_no}.pdf"
                             
@@ -606,3 +631,52 @@ with tab3:
                 st.success("✅ Đã cập nhật tồn kho Thành phẩm!"); time.sleep(1); st.rerun()
     except Exception as e:
         st.error(f"Lỗi truy xuất tồn kho: {e}")
+
+# ------------------------------------------
+# TAB 4: LỊCH SỬ CÔNG NỢ
+# ------------------------------------------
+with tab4:
+    st.subheader("🕰️ Lịch sử Thanh toán Công nợ (50 phiếu gần nhất)")
+    try:
+        df_ls_chi = pd.read_sql("SELECT ma_phieu, ngay_chi, ten_ncc, tong_chi, chi_tiet FROM public.ls_phieu_chi ORDER BY id DESC LIMIT 50", conn)
+        if not df_ls_chi.empty:
+            df_hien_thi = df_ls_chi.drop(columns=['chi_tiet'])
+            df_hien_thi.columns = ["Mã Phiếu", "Ngày Chi", "Tên Nhà Cung Cấp", "Tổng Chi (VNĐ)"]
+            st.dataframe(df_hien_thi, use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
+            st.subheader("🖨️ Xuất lại Phiếu Công Nợ / Phiếu Chi")
+            options_chi = ["-- Chọn phiếu chi --"] + df_ls_chi['ma_phieu'].tolist()
+            chon_phieu = st.selectbox("🔍 Chọn Mã Phiếu để xuất lại:", options_chi)
+            
+            if chon_phieu != "-- Chọn phiếu chi --":
+                row_data = df_ls_chi[df_ls_chi['ma_phieu'] == chon_phieu].iloc[0]
+                df_chi_tiet = pd.DataFrame(json.loads(row_data['chi_tiet']))
+                
+                st.write(f"**Chi tiết các khoản thanh toán của mã {chon_phieu}:**")
+                st.dataframe(df_chi_tiet.drop(columns=["Chọn Thanh Toán"], errors="ignore"), use_container_width=True, hide_index=True)
+                
+                loai_xuat_ls = st.radio(
+                    "Định dạng xuất Phiếu Chi (Xuất lại):", 
+                    ["Chỉ xuất PDF", "Chỉ xuất Ảnh (PNG)", "Cả PDF và Ảnh"], 
+                    horizontal=True, 
+                    key=f"radio_ls_{chon_phieu}", 
+                    index=1
+                )
+                
+                pdf_re = generate_phieu_chi_pdf(row_data['ten_ncc'], chon_phieu, float(row_data['tong_chi']), row_data['ngay_chi'], df_chi_tiet)
+                pdf_name_re = f"PhieuChi_{row_data['ten_ncc']}_{chon_phieu}.pdf"
+                
+                col_ls1, col_ls2 = st.columns(2)
+                if "PDF" in loai_xuat_ls or "Cả" in loai_xuat_ls:
+                    with col_ls1:
+                        st.download_button("📥 XUẤT LẠI FILE PDF", data=pdf_re, file_name=pdf_name_re, mime="application/pdf", type="primary", use_container_width=True)
+                if "Ảnh" in loai_xuat_ls or "Cả" in loai_xuat_ls:
+                    img_re = convert_pdf_to_png(pdf_re)
+                    if img_re:
+                        with col_ls2:
+                            st.download_button("🖼️ XUẤT LẠI FILE ẢNH", data=img_re, file_name=pdf_name_re.replace('.pdf','.png'), mime="image/png", type="primary", use_container_width=True)
+        else:
+            st.info("Hệ thống chưa ghi nhận lịch sử thanh toán công nợ nào.")
+    except Exception as e:
+        st.error(f"Lỗi: {e}")
