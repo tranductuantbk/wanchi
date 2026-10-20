@@ -9,6 +9,29 @@ import json
 from db_utils import get_connection, check_password
 
 # ==========================================
+# KHỞI TẠO THƯ VIỆN CHUYỂN PDF SANG ẢNH
+# ==========================================
+try:
+    import fitz  # PyMuPDF
+    HAS_FITZ = True
+except ImportError:
+    HAS_FITZ = False
+
+def convert_pdf_to_png(pdf_bytes):
+    """Hàm phụ trợ chuyển byte PDF thành byte Ảnh PNG độ nét cao"""
+    if not HAS_FITZ:
+        st.error("⚠️ Hệ thống thiếu thư viện 'PyMuPDF' để xuất ảnh. Vui lòng chạy lệnh: pip install PyMuPDF")
+        return None
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page = doc.load_page(0) # Lấy trang đầu tiên
+        pix = page.get_pixmap(dpi=200) # dpi=200 cho ảnh xuất ra cực nét
+        return pix.tobytes("png")
+    except Exception as e:
+        st.error(f"Lỗi khi chuyển đổi ảnh: {e}")
+        return None
+
+# ==========================================
 # CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7)
 # ==========================================
 VN_TZ = timezone(timedelta(hours=7))
@@ -86,7 +109,7 @@ def don_dep_lich_su():
         conn.commit()
     except Exception as e: conn.rollback()
 
-# LẤY GIÁ TỪ KHO (Đã bổ sung cột quy_cach_loc)
+# LẤY GIÁ TỪ KHO
 try: df_sp = pd.read_sql("SELECT ma_sp, ten_sp, quy_cach_loc, gia_dai_ly, gia_khach_le FROM public.dm_san_pham", conn)
 except: df_sp = pd.DataFrame(columns=['ma_sp', 'ten_sp', 'quy_cach_loc', 'gia_dai_ly', 'gia_khach_le'])
 
@@ -110,6 +133,7 @@ def clear_t1():
     st.session_state['t1_kh'] = ""
     st.session_state['t1_sdt'] = ""
     if 'pdf_data_t1' in st.session_state: del st.session_state['pdf_data_t1']
+    if 'img_data_t1' in st.session_state: del st.session_state['img_data_t1']
 
 def clear_t2():
     st.session_state['edit_bg_custom_data'] = None
@@ -117,6 +141,7 @@ def clear_t2():
     st.session_state['t2_kh'] = ""
     st.session_state['t2_sdt'] = ""
     if 'pdf_data_t2' in st.session_state: del st.session_state['pdf_data_t2']
+    if 'img_data_t2' in st.session_state: del st.session_state['img_data_t2']
 
 def nap_du_lieu_sua(row_dict, chi_tiet_list, is_chuan):
     if is_chuan:
@@ -236,7 +261,6 @@ with tab1:
     else:
         st.subheader("Tạo báo giá từ danh mục có sẵn")
         
-        # BỔ SUNG CHỌN KHÁCH HÀNG TỪ DANH BẠ
         kh_list = ["-- Khách mới (Tự nhập) --"] + df_kh['ten_kh'].tolist() if not df_kh.empty else ["-- Khách mới (Tự nhập) --"]
         chon_kh = st.selectbox("🙋‍♂️ Chọn khách hàng từ danh bạ:", kh_list, key="t1_chon_kh")
         
@@ -251,7 +275,6 @@ with tab1:
 
     st.markdown("---")
     
-    # GỠ BỎ st.form ĐỂ KIỂM TRA LẺ LỐC NGAY LẬP TỨC
     col_s1, col_s2 = st.columns([3, 1])
     sp_list = df_sp['ten_sp'].tolist() if not df_sp.empty else []
     sp_chon = col_s1.selectbox("Chọn sản phẩm", ["-- Chọn --"] + sp_list, key="t1_chon_sp")
@@ -296,13 +319,10 @@ with tab1:
                 "Đơn Giá": 0 
             })
             
-            # TÍNH LẠI CHIẾT KHẤU THEO TỔNG ĐƠN
             tong_niem_yet = sum([item['Giá công ty'] * item['Số Lượng'] for item in st.session_state.gio_bao_gia])
             ck = tinh_chiet_khau_theo_tong(tong_niem_yet)
-            
             for item in st.session_state.gio_bao_gia:
                 item['Đơn Giá'] = int(round(item['Giá công ty'] * ck, -1)) 
-                
             st.rerun()
 
     if st.session_state.gio_bao_gia:
@@ -345,10 +365,20 @@ with tab1:
         
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_cuoi)} VNĐ")
         
+        # BỔ SUNG LỰA CHỌN LOẠI FILE XUẤT 
+        st.markdown("**📁 Tùy chọn xuất file:**")
+        loai_xuat_t1 = st.radio(
+            "Lựa chọn định dạng để tạo Báo giá:", 
+            ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
+            horizontal=True, 
+            key="radio_xuat_t1",
+            index=2 # Mặc định chọn Xuất cả 2
+        )
+        
         col_btn1, col_btn2 = st.columns([2, 2])
         with col_btn1:
             if ten_kh.strip():
-                btn_label = "🔄 CẬP NHẬT BÁO GIÁ & TẠO LẠI PDF" if is_edit else "💾 CHỐT ĐƠN & TẠO FILE PDF"
+                btn_label = "🔄 CẬP NHẬT & TẠO FILE" if is_edit else "💾 CHỐT ĐƠN & TẠO FILE"
                 if st.button(btn_label, type="primary", use_container_width=True, key="luu_t1"):
                     
                     if is_edit:
@@ -361,44 +391,54 @@ with tab1:
                     
                     # Bỏ cột "Giá công ty" ra khỏi PDF
                     st.session_state['pdf_data_t1'] = generate_generic_pdf(
-                        df_hien_thi, 
-                        "BÁO GIÁ SẢN PHẨM", 
-                        f"Mã phiếu: {ma_bg} | Khách hàng: {ten_kh} | SĐT: {sdt_kh}", 
-                        ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], 
-                        col_widths=[30, 70, 20, 35, 35], 
-                        total_amount=tong_cuoi
-                    )
+                        df_hien_thi, "BÁO GIÁ SẢN PHẨM", f"Mã phiếu: {ma_bg} | Khách hàng: {ten_kh} | SĐT: {sdt_kh}", 
+                        ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35], total_amount=tong_cuoi)
                     st.session_state['pdf_name_t1'] = f"{ma_bg}_{ten_kh}.pdf"
+                    
+                    # Tự động render luôn cả hình ảnh vào bộ nhớ ảo
+                    img_data = convert_pdf_to_png(st.session_state['pdf_data_t1'])
+                    if img_data:
+                        st.session_state['img_data_t1'] = img_data
                     
                     try:
                         chi_tiet_json = df_hien_thi.to_json(orient='records')
                         if is_edit:
-                            c.execute("""UPDATE public.lich_su_bao_gia 
-                                         SET ten_kh=%s, so_dien_thoai=%s, tong_tien=%s, chi_tiet=%s 
-                                         WHERE id=%s""", 
+                            c.execute("""UPDATE public.lich_su_bao_gia SET ten_kh=%s, so_dien_thoai=%s, tong_tien=%s, chi_tiet=%s WHERE id=%s""", 
                                       (ten_kh, sdt_kh, tong_cuoi, chi_tiet_json, edit_bg['id']))
                             conn.commit()
-                            st.success(f"✅ Đã CẬP NHẬT báo giá {ma_bg} thành công! Tải PDF bên dưới.")
+                            st.success(f"✅ Đã CẬP NHẬT báo giá {ma_bg} thành công! Tải file bên dưới.")
                             clear_t1()
                         else:
-                            c.execute("""INSERT INTO public.lich_su_bao_gia 
-                                         (ma_bao_gia, ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet) 
-                                         VALUES (%s, %s, %s, %s, %s, %s, %s)""", 
+                            c.execute("""INSERT INTO public.lich_su_bao_gia (ma_bao_gia, ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s, %s)""", 
                                       (ma_bg, ngay_gio_str, ten_kh, sdt_kh, tong_cuoi, 'Tiêu chuẩn', chi_tiet_json))
                             conn.commit()
                             don_dep_lich_su()
-                            st.success(f"✅ Đã chốt báo giá {ma_bg}! Vui lòng tải File PDF bên dưới.")
+                            st.success(f"✅ Đã chốt báo giá {ma_bg}! Vui lòng tải file bên dưới.")
                     except Exception as e:
                         conn.rollback()
                         st.warning(f"⚠️ Lỗi Database: {e}")
             else:
                 st.error("⚠️ Vui lòng nhập Tên Khách Hàng!")
-                
-        if 'pdf_data_t1' in st.session_state:
-            st.download_button("📥 TẢI FILE BÁO GIÁ XUỐNG MÁY (PDF)", data=st.session_state['pdf_data_t1'], file_name=st.session_state['pdf_name_t1'], mime="application/pdf", type="primary", use_container_width=True)
-            
+        
         with col_btn2:
             st.button("🗑️ Dọn dẹp giỏ hàng & Làm mới", use_container_width=True, on_click=clear_t1)
+                
+        # HIỂN THỊ CÁC NÚT TẢI XUỐNG DỰA THEO LỰA CHỌN
+        if 'pdf_data_t1' in st.session_state:
+            st.markdown("---")
+            col_dl1, col_dl2 = st.columns(2)
+            
+            # Button tải PDF
+            if "PDF" in loai_xuat_t1 or "Cả" in loai_xuat_t1:
+                with col_dl1:
+                    st.download_button("📥 TẢI FILE PDF CHUẨN", data=st.session_state['pdf_data_t1'], file_name=st.session_state['pdf_name_t1'], mime="application/pdf", type="primary", use_container_width=True)
+            
+            # Button tải Ảnh
+            if ("Ảnh" in loai_xuat_t1 or "Cả" in loai_xuat_t1) and st.session_state.get('img_data_t1'):
+                with col_dl2:
+                    img_name = st.session_state['pdf_name_t1'].replace('.pdf', '.png')
+                    st.download_button("🖼️ TẢI FILE ẢNH BÁO GIÁ", data=st.session_state['img_data_t1'], file_name=img_name, mime="image/png", type="primary", use_container_width=True)
+
 
 # --- TAB 2: BÁO GIÁ TÙY CHỈNH ---
 with tab2:
@@ -414,7 +454,6 @@ with tab2:
     else:
         st.subheader("🛠️ Tạo Báo Giá Dịch Vụ / Sản Phẩm Tự Nhập")
         
-        # BỔ SUNG CHỌN KHÁCH HÀNG TỪ DANH BẠ
         kh_list_c = ["-- Khách mới (Tự nhập) --"] + df_kh['ten_kh'].tolist() if not df_kh.empty else ["-- Khách mới (Tự nhập) --"]
         chon_kh_c = st.selectbox("🙋‍♂️ Chọn khách hàng từ danh bạ:", kh_list_c, key="t2_chon_kh")
         
@@ -471,10 +510,20 @@ with tab2:
         
         st.write(f"### 💰 TỔNG CỘNG THANH TOÁN: {format_vn(tong_cuoi_c)} VNĐ")
         
+        # BỔ SUNG LỰA CHỌN LOẠI FILE XUẤT 
+        st.markdown("**📁 Tùy chọn xuất file:**")
+        loai_xuat_t2 = st.radio(
+            "Lựa chọn định dạng để tạo Báo giá Tùy chỉnh:", 
+            ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
+            horizontal=True, 
+            key="radio_xuat_t2",
+            index=2
+        )
+
         col_btn_c1, col_btn_c2 = st.columns([2, 2])
         with col_btn_c1:
             if ten_kh_c.strip():
-                btn_label_c = "🔄 CẬP NHẬT BÁO GIÁ & TẠO LẠI PDF" if is_edit_c else "💾 CHỐT ĐƠN & TẠO FILE PDF"
+                btn_label_c = "🔄 CẬP NHẬT & TẠO FILE" if is_edit_c else "💾 CHỐT ĐƠN & TẠO FILE"
                 if st.button(btn_label_c, type="primary", use_container_width=True, key="luu_t2"):
                     if is_edit_c:
                         ma_bg_c = edit_bg_c['ma_bao_gia']
@@ -489,13 +538,18 @@ with tab2:
                         ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35], total_amount=tong_cuoi_c)
                     st.session_state['pdf_name_t2'] = f"{ma_bg_c}_{ten_kh_c}.pdf"
                     
+                    # Tự động render luôn cả hình ảnh vào bộ nhớ ảo
+                    img_data_c = convert_pdf_to_png(st.session_state['pdf_data_t2'])
+                    if img_data_c:
+                        st.session_state['img_data_t2'] = img_data_c
+                    
                     try:
                         chi_tiet_json_c = df_hien_thi_c.to_json(orient='records')
                         if is_edit_c:
                             c.execute("""UPDATE public.lich_su_bao_gia SET ten_kh=%s, so_dien_thoai=%s, tong_tien=%s, chi_tiet=%s WHERE id=%s""", 
                                       (ten_kh_c, sdt_kh_c, tong_cuoi_c, chi_tiet_json_c, edit_bg_c['id']))
                             conn.commit()
-                            st.success(f"✅ Đã CẬP NHẬT báo giá {ma_bg_c} thành công! Tải PDF bên dưới.")
+                            st.success(f"✅ Đã CẬP NHẬT báo giá {ma_bg_c} thành công! Tải file bên dưới.")
                             clear_t2()
                         else:
                             c.execute("""INSERT INTO public.lich_su_bao_gia (ma_bao_gia, ngay_tao, ten_kh, so_dien_thoai, tong_tien, loai_bao_gia, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s, %s)""", 
@@ -507,11 +561,23 @@ with tab2:
                         conn.rollback() 
                         st.warning(f"⚠️ Lỗi Database: {e}")
             else: st.error("⚠️ Vui lòng nhập Tên Khách Hàng!")
-
-        if 'pdf_data_t2' in st.session_state:
-            st.download_button("📥 TẢI FILE BÁO GIÁ (PDF)", data=st.session_state['pdf_data_t2'], file_name=st.session_state['pdf_name_t2'], mime="application/pdf", type="primary", use_container_width=True)
             
         with col_btn_c2: st.button("🗑️ Xóa sạch báo giá này", use_container_width=True, key="clear_t2", on_click=clear_t2)
+
+        # HIỂN THỊ CÁC NÚT TẢI XUỐNG DỰA THEO LỰA CHỌN (BÁO GIÁ TÙY CHỈNH)
+        if 'pdf_data_t2' in st.session_state:
+            st.markdown("---")
+            col_dl_c1, col_dl_c2 = st.columns(2)
+            
+            if "PDF" in loai_xuat_t2 or "Cả" in loai_xuat_t2:
+                with col_dl_c1:
+                    st.download_button("📥 TẢI FILE PDF", data=st.session_state['pdf_data_t2'], file_name=st.session_state['pdf_name_t2'], mime="application/pdf", type="primary", use_container_width=True)
+            
+            if ("Ảnh" in loai_xuat_t2 or "Cả" in loai_xuat_t2) and st.session_state.get('img_data_t2'):
+                with col_dl_c2:
+                    img_name_c = st.session_state['pdf_name_t2'].replace('.pdf', '.png')
+                    st.download_button("🖼️ TẢI FILE ẢNH", data=st.session_state['img_data_t2'], file_name=img_name_c, mime="image/png", type="primary", use_container_width=True)
+
 
 # --- TAB 3: XEM LỊCH SỬ & XUẤT LẠI ---
 with tab3:
@@ -530,7 +596,7 @@ with tab3:
                 ma_hien_thi = row['ma_bao_gia'] if pd.notna(row['ma_bao_gia']) else f"Mã ID-{row['id']}"
                 options.append(f"[{ma_hien_thi}] Khách: {row['ten_kh']} ({row['ngay_tao']})")
             
-            chon_bg = st.selectbox("🔍 Chọn một báo giá bên dưới để tải PDF hoặc Chỉnh sửa:", options)
+            chon_bg = st.selectbox("🔍 Chọn một báo giá bên dưới để tải PDF/Ảnh hoặc Chỉnh sửa:", options)
             if chon_bg != "-- Chọn báo giá --":
                 ma_tim_kiem = chon_bg.split("] ")[0].replace("[", "")
                 if "Mã ID-" in ma_tim_kiem: row_data = df_his[df_his['id'] == int(ma_tim_kiem.replace("Mã ID-", ""))].iloc[0]
@@ -540,6 +606,9 @@ with tab3:
                     df_chi_tiet = pd.DataFrame(json.loads(row_data['chi_tiet']))
                     st.write(f"**Nội dung phiếu (Mã {ma_tim_kiem}):**")
                     st.dataframe(df_chi_tiet, use_container_width=True, hide_index=True)
+                    
+                    # Bổ sung lựa chọn định dạng cho Lịch sử
+                    loai_xuat_his = st.radio("Lựa chọn định dạng để XUẤT LẠI:", ["Chỉ xuất PDF", "Chỉ xuất Ảnh (PNG)", "Cả PDF và Ảnh"], horizontal=True, key=f"radio_his_{ma_tim_kiem}", index=2)
                     
                     col_his1, col_his2 = st.columns(2)
                     with col_his1:
@@ -552,9 +621,19 @@ with tab3:
                             col_widths=[30, 70, 20, 35, 35], 
                             total_amount=row_data['tong_tien']
                         )
-                        st.download_button("📥 XUẤT LẠI FILE PDF NÀY", data=pdf_re, file_name=f"{ma_tim_kiem}_ReExport_{row_data['ten_kh']}.pdf", mime="application/pdf", type="primary", use_container_width=True)
+                        
+                        pdf_name_re = f"{ma_tim_kiem}_ReExport_{row_data['ten_kh']}.pdf"
+                        if "PDF" in loai_xuat_his or "Cả" in loai_xuat_his:
+                            st.download_button("📥 XUẤT LẠI FILE PDF", data=pdf_re, file_name=pdf_name_re, mime="application/pdf", type="primary", use_container_width=True)
+                        
+                        if "Ảnh" in loai_xuat_his or "Cả" in loai_xuat_his:
+                            img_re = convert_pdf_to_png(pdf_re)
+                            if img_re:
+                                img_name_re = pdf_name_re.replace('.pdf', '.png')
+                                st.download_button("🖼️ XUẤT LẠI FILE ẢNH", data=img_re, file_name=img_name_re, mime="image/png", type="primary", use_container_width=True)
                     
                     with col_his2:
+                        st.write("") # Cân dòng
                         is_chuan_flag = (row_data['loai_bao_gia'] == 'Tiêu chuẩn')
                         if st.button("🛠️ Nạp dữ liệu để Chỉnh Sửa", type="primary", use_container_width=True, on_click=nap_du_lieu_sua, args=(row_data.to_dict(), json.loads(row_data['chi_tiet']), is_chuan_flag)):
                             if is_chuan_flag: st.success("✅ Đã nạp thành công! Hãy bấm sang Tab '🤝 Báo Giá' để sửa.")
