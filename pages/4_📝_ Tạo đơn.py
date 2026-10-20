@@ -63,7 +63,7 @@ def download_font():
     return True
 download_font()
 
-st.header("📝 Hệ Thống Lên Đơn Hàng WANCHI")
+st.header("📝 Hệ Thống Tạo Đơn Hàng WANCHI")
 
 conn = get_connection()
 c = conn.cursor()
@@ -170,7 +170,6 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
 
     pdf.set_font(font_name, size=10)
     stt = 1
-    # Lấy dữ liệu bằng Tên Cột để tự do mở rộng cột trên web mà không lỗi PDF
     for _, row in df_items.iterrows():
         ten_sp = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
         so_luong = row.get('Số Lượng', 0)
@@ -202,7 +201,7 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
 # ==========================================
 # GIAO DIỆN TẠO ĐƠN (4 TABS)
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["🛒 Lên Đơn Hàng Wanchi", "🛠️ Lên Đơn Hàng OME", "📑 Lên Đơn Hàng Báo Giá", "📂 Lịch Sử Đơn Hàng"])
+tab1, tab2, tab3, tab4 = st.tabs(["🛒 Tạo Đơn Hàng Wanchi", "🛠️ Tạo Đơn Hàng OME", "📑 Tạo Đơn Hàng Báo Giá", "📂 Lịch Sử Đơn Hàng"])
 
 # ------------------------------------------
 # TAB 1: ĐƠN HÀNG WANCHI (CHUẨN)
@@ -220,7 +219,6 @@ with tab1:
         nhom_kh = thong_tin_kh.get('nhom_kh', 'Công ty')
         loai_gia_chot = "Giá Đại Lý" if nhom_kh == "Đại lý" else "Giá Công ty"
         
-        # ĐÃ SỬA: Nâng chiết khấu Ưu đãi lên 20%
         if nhom_kh == "Ưu đãi": loai_gia_chot = "Giá Ưu Đãi (Giảm 20%)"
         
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
@@ -236,19 +234,16 @@ with tab1:
             elif sp_chon != "-- Chọn Sản Phẩm --":
                 info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
                 
-                # Giá gốc đại lý và giá công ty khách lẻ (Do đã xóa công thức chia tự động)
                 gia_goc = info.get('gia_dai_ly', 0)
                 gia_cty_chuan = info.get('gia_khach_le', 0)
                 
                 if loai_gia_chot == "Giá Đại Lý":
                     don_gia = int(gia_goc)
                 elif "Ưu Đãi" in loai_gia_chot:
-                    # ĐÃ SỬA: Tính Giá công ty * 0.80 (Giảm 20%)
                     don_gia = int(round(gia_cty_chuan * 0.80, -1))
                 else:
                     don_gia = int(gia_cty_chuan)
                 
-                # Để Giá Công ty nằm kế bên Đơn Giá (tham khảo)
                 st.session_state.gio_chuan.append({
                     "Tên Sản Phẩm": sp_chon,
                     "Loại Giá": loai_gia_chot,
@@ -263,7 +258,6 @@ with tab1:
         st.markdown("---")
         df_gio_chuan = pd.DataFrame(st.session_state.gio_chuan)
         
-        # Bổ sung cột "Xóa"
         df_gio_chuan.insert(0, "Xóa", False)
         
         st.info("💡 **Mẹo Pro:** Nhấp đúp vào **Số Lượng** để sửa. Cột Giá Công Ty chỉ hiện ở đây để đối chiếu, sẽ không xuất hiện trong PDF và Lịch sử đơn!")
@@ -284,21 +278,22 @@ with tab1:
             key="editor_don_chuan"
         )
         
-        # XỬ LÝ LỆNH TỰ ĐỘNG XÓA
         if edited_df_chuan['Xóa'].any():
             df_valid = edited_df_chuan[edited_df_chuan['Xóa'] == False].drop(columns=['Xóa'])
             df_valid['Thành Tiền'] = df_valid['Số Lượng'] * df_valid['Đơn Giá']
             st.session_state.gio_chuan = df_valid.to_dict('records')
             st.rerun() 
             
-        # XỬ LÝ LỆNH SỬA SỐ LƯỢNG
         edited_df_chuan['Thành Tiền'] = edited_df_chuan['Số Lượng'] * edited_df_chuan['Đơn Giá']
         st.session_state.gio_chuan = edited_df_chuan.drop(columns=['Xóa']).to_dict('records')
         
         tong_tien_chuan = float(edited_df_chuan['Thành Tiền'].sum())
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien_chuan)} VNĐ")
         
-        # BỔ SUNG LỰA CHỌN LOẠI FILE XUẤT 
+        # KIỂM TRA & HIỂN THỊ CẢNH BÁO NẾU LÀ ĐẠI LÝ & ĐƠN < 12 TRIỆU
+        if loai_gia_chot == "Giá Đại Lý" and tong_tien_chuan < 12000000:
+            st.warning(f"⚠️ **CẢNH BÁO:** Khách hàng là ĐẠI LÝ nhưng tổng đơn hàng chưa đạt định mức **12.000.000 VNĐ** (Hiện tại: {format_vn(tong_tien_chuan)} VNĐ).")
+
         st.markdown("**📁 Tùy chọn xuất file:**")
         loai_xuat_t1 = st.radio(
             "Lựa chọn định dạng xuất Hóa đơn:", 
@@ -312,21 +307,17 @@ with tab1:
         with col_btn_c1:
             if st.button("💾 CHỐT ĐƠN & TẠO FILE (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True):
                 
-                # BƯỚC 1: Xóa hoàn toàn cột "Giá Công ty" trước khi lưu và xuất in
                 df_print = pd.DataFrame(st.session_state.gio_chuan)
                 if 'Giá Công ty' in df_print.columns:
                     df_print = df_print.drop(columns=['Giá Công ty'])
                 
-                # BƯỚC 2: Xuất PDF (chỉ chứa các cột sạch)
                 st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_print, tong_tien_chuan, "Hàng Chuẩn")
                 st.session_state['pdf_ten_chuan'] = f"{ma_don_hien_tai}_{kh_chuan}.pdf"
                 
-                # Tự động chuyển qua ảnh
                 img_data_chuan = convert_pdf_to_png(st.session_state['pdf_don_chuan'])
                 if img_data_chuan:
                     st.session_state['img_don_chuan'] = img_data_chuan
                 
-                # BƯỚC 3: Lưu vào DB
                 try:
                     chi_tiet_json = df_print.to_json(orient='records')
                     ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
@@ -345,7 +336,6 @@ with tab1:
                 if 'img_don_chuan' in st.session_state: del st.session_state['img_don_chuan']
                 st.rerun()
                 
-        # NÚT TẢI XUỐNG DỰA TRÊN LỰA CHỌN
         if 'pdf_don_chuan' in st.session_state:
             st.markdown("---")
             col_dl1, col_dl2 = st.columns(2)
@@ -423,7 +413,6 @@ with tab2:
         tong_tien_ome = float(edited_df_ome['Thành Tiền'].sum())
         st.write(f"### 💰 TỔNG CỘNG OME: {format_vn(tong_tien_ome)} VNĐ")
         
-        # BỔ SUNG LỰA CHỌN LOẠI FILE XUẤT 
         st.markdown("**📁 Tùy chọn xuất file:**")
         loai_xuat_t2 = st.radio(
             "Lựa chọn định dạng xuất Hóa đơn OME:", 
@@ -465,7 +454,6 @@ with tab2:
                 if 'img_don_ome' in st.session_state: del st.session_state['img_don_ome']
                 st.rerun()
 
-        # NÚT TẢI XUỐNG DỰA TRÊN LỰA CHỌN
         if 'pdf_don_ome' in st.session_state:
             st.markdown("---")
             col_dl_o1, col_dl_o2 = st.columns(2)
@@ -480,7 +468,7 @@ with tab2:
                     st.download_button("🖼️ TẢI FILE ẢNH HÓA ĐƠN", data=st.session_state['img_don_ome'], file_name=img_name_ome, mime="image/png", type="primary", use_container_width=True)
 
 # ------------------------------------------
-# TAB 3: LÊN ĐƠN HÀNG BÁO GIÁ
+# TAB 3: TẠO ĐƠN HÀNG BÁO GIÁ
 # ------------------------------------------
 with tab3:
     st.subheader("📑 Chuyển đổi Báo Giá thành Đơn Hàng")
@@ -499,7 +487,6 @@ with tab3:
             if chon_bg != "-- Chọn Báo Giá --":
                 ma_bg_chon = chon_bg.split("] ")[0].replace("[", "")
                 
-                # Tìm đúng dòng báo giá
                 if ma_bg_chon == "Mã Cũ":
                     ten_kh_split = chon_bg.split("Khách: ")[1].split(" (")[0]
                     bg_info = df_bg[df_bg['ten_kh'] == ten_kh_split].iloc[0]
@@ -511,7 +498,6 @@ with tab3:
                 if pd.notna(bg_info['chi_tiet']) and bg_info['chi_tiet']:
                     bg_items = json.loads(bg_info['chi_tiet'])
                     
-                    # Dịch form dữ liệu từ Báo Giá sang form Đơn Hàng để Kho đọc được
                     order_items = []
                     for item in bg_items:
                         order_items.append({
@@ -538,7 +524,6 @@ with tab3:
                     )
                     
                     if st.button("🚀 CHỐT ĐƠN & TẠO FILE TỪ BÁO GIÁ", type="primary", use_container_width=True):
-                        # Dùng header "Hàng Chuẩn" để PDF in ra chữ "HÓA ĐƠN BÁN HÀNG"
                         st.session_state['pdf_don_bg'] = generate_order_pdf(ma_don_hien_tai, bg_info['ten_kh'], bg_info['so_dien_thoai'], df_order_bg, tong_tien_bg, "Hàng Chuẩn") 
                         st.session_state['pdf_ten_bg'] = f"{ma_don_hien_tai}_TuBaoGia_{bg_info['ten_kh']}.pdf"
                         
@@ -600,10 +585,9 @@ with tab4:
                     sdt_his = "" 
                     if row_data['loai_don'] == 'Hàng Chuẩn': sdt_his = df_kh[df_kh['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == row_data['ten_kh']].empty else ""
                     elif row_data['loai_don'] == 'Hàng OME': sdt_his = df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].empty else ""
-                    else: # Dành cho Đơn Hàng từ Báo Giá
+                    else:
                         sdt_his = "Theo Báo Giá"
 
-                    # Dùng Hàng Chuẩn header cho các đơn từ báo giá
                     loai_pdf_header = "Hàng Chuẩn" if "Báo Giá" in row_data['loai_don'] else row_data['loai_don']
                     
                     loai_xuat_his = st.radio("Lựa chọn định dạng để XUẤT LẠI:", ["Chỉ xuất PDF", "Chỉ xuất Ảnh (PNG)", "Cả PDF và Ảnh"], horizontal=True, key=f"radio_his_{chon_don}", index=1)
