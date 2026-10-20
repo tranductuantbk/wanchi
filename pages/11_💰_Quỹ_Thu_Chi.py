@@ -132,7 +132,6 @@ def generate_phieu_pdf(ma_phieu, loai_gd, ngay_gd, so_tien, noi_dung, co_hoa_don
         font_name = "Roboto"
     else: font_name = "Helvetica"
 
-    # Logo và thông tin công ty
     start_y, start_x = 12, 65  
     try:
         if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
@@ -151,7 +150,6 @@ def generate_phieu_pdf(ma_phieu, loai_gd, ngay_gd, so_tien, noi_dung, co_hoa_don
     pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
     pdf.ln(12)
 
-    # Tiêu đề
     pdf.set_font(font_name, 'B' if has_font else '', 16)
     tieu_de = "PHIẾU THU TIỀN" if loai_gd == "Thu" else "PHIẾU CHI TIỀN"
     pdf.cell(0, 10, tieu_de, ln=True, align="C")
@@ -161,7 +159,6 @@ def generate_phieu_pdf(ma_phieu, loai_gd, ngay_gd, so_tien, noi_dung, co_hoa_don
     pdf.cell(0, 6, f"Mã Phiếu: {ma_phieu}", ln=True, align="C")
     pdf.ln(8)
     
-    # Nội dung
     pdf.set_font(font_name, 'B' if has_font else '', 12)
     pdf.cell(40, 10, "Số tiền:", border=0)
     pdf.set_font(font_name, "", 12)
@@ -180,7 +177,6 @@ def generate_phieu_pdf(ma_phieu, loai_gd, ngay_gd, so_tien, noi_dung, co_hoa_don
 
     pdf.ln(15)
     
-    # Chữ ký
     pdf.set_font(font_name, "", 11)
     pdf.cell(95, 6, "Người Lập Phiếu", align='C')
     pdf.cell(95, 6, "Người Giao/Nhận Tiền", ln=True, align='C')
@@ -196,7 +192,7 @@ def generate_phieu_pdf(ma_phieu, loai_gd, ngay_gd, so_tien, noi_dung, co_hoa_don
 # ==========================================
 # GIAO DIỆN NGƯỜI DÙNG
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📥 Nạp Ngân Sách (Thu)", "📤 Chi Tiền", "📊 Bảng Kê & Lịch Sử"])
+tab1, tab2, tab3 = st.tabs(["📥 Nạp Ngân Sách (Thu)", "📤 Chi Tiền", "📊 Bảng Kê & Chỉnh Sửa"])
 
 # --- TAB 1: NẠP NGÂN SÁCH ---
 with tab1:
@@ -232,7 +228,7 @@ with tab1:
                     st.session_state['img_gd'] = img_gd
                     
                 st.success("✅ Đã ghi nhận Phiếu Thu vào hệ thống!")
-                time.sleep(1)
+                time.sleep(1.5)
                 st.rerun()
             else:
                 st.warning("⚠️ Vui lòng nhập số tiền lớn hơn 0 và ghi rõ nội dung nạp quỹ.")
@@ -272,15 +268,15 @@ with tab2:
                     st.session_state['img_gd'] = img_gd
                     
                 st.success("✅ Đã ghi nhận Phiếu Chi vào hệ thống!")
-                time.sleep(1)
+                time.sleep(1.5)
                 st.rerun()
             else:
                 st.warning("⚠️ Vui lòng nhập số tiền lớn hơn 0 và ghi rõ nội dung chi.")
 
-# --- HIỂN THỊ NÚT TẢI XUỐNG DƯỚI CÙNG CHO CẢ 2 TAB THU & CHI ---
+# --- HIỂN THỊ NÚT TẢI XUỐNG CHO CẢ 2 TAB THU & CHI ---
 if 'pdf_gd' in st.session_state:
     st.markdown("---")
-    st.info("🖨️ **Bản In Giao Dịch Vừa Tạo:**")
+    st.info("🖨️ **Bản In Giao Dịch Vừa Tạo (Hoặc Vừa Sửa):**")
     dl_c1, dl_c2 = st.columns(2)
     loai_xuat = st.session_state.get('rd_xuat', [])
     
@@ -293,22 +289,75 @@ if 'pdf_gd' in st.session_state:
             img_name = st.session_state['ten_file_gd'].replace('.pdf', '.png')
             st.download_button("🖼️ TẢI PHIẾU (ẢNH)", data=st.session_state['img_gd'], file_name=img_name, mime="image/png", type="primary", use_container_width=True)
 
-# --- TAB 3: BẢNG KÊ & LỊCH SỬ ---
+# --- TAB 3: BẢNG KÊ, LỊCH SỬ & CHỈNH SỬA ---
 with tab3:
-    st.subheader("📊 Lịch Sử Giao Dịch")
-    
+    st.subheader("🛠️ Công Cụ Chỉnh Sửa Phiếu Bị Sai")
     try:
         df_quy = pd.read_sql("SELECT ma_phieu, loai_gd, ngay_gd, so_tien, noi_dung, co_hoa_don FROM public.quy_thu_chi ORDER BY id DESC", conn)
         
         if not df_quy.empty:
-            st.markdown(f"**Danh sách 100 giao dịch Thu / Chi gần nhất:**")
+            phieu_sua = st.selectbox("📌 Chọn Mã Phiếu cần sửa:", ["-- Chọn --"] + df_quy['ma_phieu'].tolist())
             
-            # Đổi tên cột cho hiển thị đẹp
+            if phieu_sua != "-- Chọn --":
+                row_data = df_quy[df_quy['ma_phieu'] == phieu_sua].iloc[0]
+                loai_phieu = row_data['loai_gd']
+                
+                try: 
+                    d_ngay_cu = datetime.strptime(row_data['ngay_gd'], "%d/%m/%Y").date()
+                except: 
+                    d_ngay_cu = lay_gio_vn().date()
+                
+                with st.form("form_sua_quy"):
+                    st.info(f"Đang chỉnh sửa phiếu **{phieu_sua}** ({loai_phieu})")
+                    col_s1, col_s2 = st.columns(2)
+                    with col_s1:
+                        ngay_moi = st.date_input("Sửa Ngày giao dịch", d_ngay_cu, format="DD/MM/YYYY")
+                        tien_moi = st.number_input("Sửa Số tiền (VNĐ)", value=float(row_data['so_tien']), min_value=0.0, step=50000.0)
+                        
+                        if loai_phieu == "Chi":
+                            hd_idx = 0 if row_data['co_hoa_don'] == "Có hóa đơn" else 1
+                            hd_moi = st.radio("Sửa tình trạng hóa đơn:", ["Có hóa đơn", "Không có hóa đơn"], index=hd_idx, horizontal=True)
+                        else:
+                            hd_moi = "Không áp dụng"
+                            
+                    with col_s2:
+                        nd_moi = st.text_area("Sửa Nội dung", value=row_data['noi_dung'], height=130)
+                        
+                    st.markdown("**📁 Tùy chọn in lại phiếu sau khi sửa:**")
+                    loai_xuat_sua = st.radio("Định dạng xuất:", ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], horizontal=True, index=1, key="rd_sua")
+
+                    if st.form_submit_button("💾 LƯU CẬP NHẬT PHIẾU NÀY", type="primary"):
+                        if tien_moi > 0 and nd_moi.strip():
+                            ngay_moi_str = ngay_moi.strftime("%d/%m/%Y")
+                            
+                            c.execute("""UPDATE public.quy_thu_chi 
+                                         SET ngay_gd=%s, so_tien=%s, noi_dung=%s, co_hoa_don=%s 
+                                         WHERE ma_phieu=%s""", 
+                                      (ngay_moi_str, tien_moi, nd_moi, hd_moi, phieu_sua))
+                            conn.commit()
+                            
+                            # Lưu lại bản in mới
+                            st.session_state['pdf_gd'] = generate_phieu_pdf(phieu_sua, loai_phieu, ngay_moi_str, tien_moi, nd_moi, hd_moi)
+                            st.session_state['ten_file_gd'] = f"{phieu_sua}.pdf"
+                            st.session_state['rd_xuat'] = loai_xuat_sua
+                            
+                            img_gd = convert_pdf_to_png(st.session_state['pdf_gd'])
+                            if img_gd:
+                                st.session_state['img_gd'] = img_gd
+                                
+                            st.success(f"✅ Đã cập nhật thành công phiếu {phieu_sua}!")
+                            time.sleep(1.5)
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Số tiền phải lớn hơn 0 và cần có nội dung.")
+            
+            st.markdown("---")
+            st.subheader("📊 Lịch Sử 100 Giao Dịch Gần Nhất")
+            
             df_hien_thi = df_quy.copy()
             df_hien_thi.columns = ["Mã Phiếu", "Loại", "Ngày", "Số Tiền (VNĐ)", "Nội Dung", "Hóa Đơn"]
             df_hien_thi['Số Tiền (VNĐ)'] = df_hien_thi['Số Tiền (VNĐ)'].apply(lambda x: format_vn(x))
             
-            # Highlight màu nền cho Thu (xanh) / Chi (đỏ)
             def highlight_loai(val):
                 if val == 'Thu': return 'color: green; font-weight: bold'
                 elif val == 'Chi': return 'color: red; font-weight: bold'
