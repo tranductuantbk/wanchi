@@ -53,8 +53,16 @@ try:
     c.execute("ALTER TABLE public.dm_san_pham ADD COLUMN IF NOT EXISTS ton_kho REAL DEFAULT 0")
     c.execute("ALTER TABLE public.dm_san_pham_ome ADD COLUMN IF NOT EXISTS ton_kho REAL DEFAULT 0")
     c.execute("ALTER TABLE public.don_hang ADD COLUMN IF NOT EXISTS trang_thai TEXT DEFAULT 'Chờ xuất kho'")
+    
+    # BẢNG VÀ CỘT MỚI CHO NHÀ CUNG CẤP & THANH TOÁN
+    c.execute('''CREATE TABLE IF NOT EXISTS public.dm_ncc (
+                    id SERIAL PRIMARY KEY, ten_ncc TEXT UNIQUE
+                )''')
+    c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS nha_cung_cap TEXT")
+    c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS trang_thai_tt TEXT")
     conn.commit()
-except: pass
+except: 
+    conn.rollback()
 
 def format_vn(value):
     try: return "{:,.0f}".format(value).replace(",", ".")
@@ -107,9 +115,41 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📋 Danh Mục NVL", "📥 Nhập / Xuất Kho (Thông Minh)", "📊 Báo Cáo Tồn Kho"])
+tab1, tab2, tab3 = st.tabs(["📋 Danh Mục NVL, NCC", "📥 Nhập / Xuất Kho (Thông Minh)", "📊 Báo Cáo Tồn Kho"])
 
 with tab1:
+    # --- KHU VỰC THÊM NHÀ CUNG CẤP ---
+    st.subheader("🏢 Quản Lý Nhà Cung Cấp (NCC)")
+    with st.form("form_them_ncc", clear_on_submit=True):
+        c_ncc1, c_ncc2 = st.columns([3, 1])
+        with c_ncc1: 
+            ten_ncc = st.text_input("Tên Nhà Cung Cấp Mới (*)")
+        with c_ncc2:
+            st.write("") # Cân bằng nút bấm với ô nhập
+            btn_ncc = st.form_submit_button("💾 Lưu NCC", type="primary", use_container_width=True)
+        if btn_ncc:
+            if ten_ncc.strip():
+                try:
+                    c.execute("INSERT INTO public.dm_ncc (ten_ncc) VALUES (%s)", (ten_ncc.strip(),))
+                    conn.commit()
+                    st.success("✅ Đã thêm Nhà Cung Cấp thành công!")
+                    time.sleep(1); st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error("⚠️ Lỗi: Tên Nhà Cung Cấp này đã tồn tại!")
+            else:
+                st.warning("Vui lòng nhập tên Nhà Cung Cấp!")
+
+    try:
+        df_ncc = pd.read_sql("SELECT id, ten_ncc as \"Tên Nhà Cung Cấp\" FROM public.dm_ncc ORDER BY id DESC", conn)
+        if not df_ncc.empty:
+            with st.expander("👁️ Xem danh sách Nhà Cung Cấp hiện tại", expanded=False):
+                st.dataframe(df_ncc.drop(columns=['id']), hide_index=True, use_container_width=True)
+    except: pass
+
+    st.markdown("---")
+    
+    # --- KHU VỰC THÊM NGUYÊN VẬT LIỆU ---
     st.subheader("➕ Thêm Nguyên Vật Liệu Mới")
     with st.form("form_them_nl", clear_on_submit=True):
         c1, c2, c3 = st.columns([1, 2, 1])
@@ -132,7 +172,6 @@ with tab1:
     try:
         df_nl = pd.read_sql("SELECT id, ma_nl, ten_nl, don_vi, ton_kho FROM public.dm_nguyen_lieu ORDER BY id DESC", conn)
         if not df_nl.empty:
-            # Xử lý NaN để tránh lỗi Streamlit khi so sánh
             df_nl = df_nl.fillna({"ma_nl": "", "ten_nl": "", "don_vi": "", "ton_kho": 0.0})
             
             edited_nl = st.data_editor(
@@ -198,7 +237,7 @@ with tab1:
         st.error(f"Lỗi truy xuất dữ liệu: {e}")
 
 with tab2:
-    chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📥 1. Nhập NVL", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)"], horizontal=True)
+    chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📥 1. Nhập NVL, NCC", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)"], horizontal=True)
     st.markdown("---")
 
     if "3. Xuất Kho" in chuyem_muc:
@@ -258,39 +297,63 @@ with tab2:
             else: st.info("Chưa có đơn hàng nào.")
         except Exception as e: st.error(str(e))
     
-    elif "1. Nhập NVL" in chuyem_muc:
-        st.markdown("#### 📥 Nhập Cấu Kiện / Nguyên Vật Liệu")
+    elif "1. Nhập NVL, NCC" in chuyem_muc:
+        st.markdown("#### 📥 Nhập Nguyên Vật Liệu từ Nhà Cung Cấp")
         try:
             df_nl_ton = pd.read_sql("SELECT ten_nl, don_vi, ton_kho FROM public.dm_nguyen_lieu", conn)
+            
+            # Lấy danh sách NCC
+            try: df_ncc = pd.read_sql("SELECT ten_ncc FROM public.dm_ncc", conn)
+            except: df_ncc = pd.DataFrame()
+            
+            danh_sach_ncc = df_ncc['ten_ncc'].tolist() if not df_ncc.empty else ["-- Chưa có Nhà Cung Cấp --"]
+
             if not df_nl_ton.empty:
                 with st.form("form_nhap_nvl"):
-                    nl_chon = st.selectbox("Chọn Vật Tư", df_nl_ton['ten_nl'].tolist())
-                    sl_tt = st.number_input("Số lượng nhập", min_value=1.0, step=1.0)
-                    ghi_chu = st.text_input("Ghi chú (Nhà cung cấp / Điều chỉnh)")
+                    col_n1, col_n2 = st.columns(2)
+                    with col_n1:
+                        nl_chon = st.selectbox("Chọn Vật Tư cần nhập", df_nl_ton['ten_nl'].tolist())
+                        sl_tt = st.number_input("Số lượng nhập", min_value=1.0, step=1.0)
+                        don_gia = st.number_input("Đơn giá nhập (VNĐ)", min_value=0.0, step=1000.0)
+                    with col_n2:
+                        ncc_chon = st.selectbox("Chọn Nhà Cung Cấp", danh_sach_ncc)
+                        trang_thai_tt = st.selectbox("Trạng thái thanh toán", ["Chưa thanh toán", "Đã thanh toán"])
+                        ghi_chu = st.text_input("Ghi chú thêm (Số xe, người giao...)")
 
                     if st.form_submit_button("💾 Xác nhận Nhập NVL", type="primary"):
-                        ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
-                        c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_tt, nl_chon))
-                        c.execute("""INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu) 
-                                     VALUES (%s, 'Nhập NVL', %s, %s, 0, 0, %s)""", (ngay_tt, nl_chon, sl_tt, ghi_chu))
-                        conn.commit()
-                        st.success(f"✅ Đã nhập {sl_tt} {nl_chon} vào kho!")
-                        time.sleep(1); st.rerun()
-        except Exception as e: st.error(str(e))
+                        if ncc_chon.startswith("--"):
+                            st.error("⚠️ Vui lòng thêm tên Nhà Cung Cấp ở Tab 1 trước khi nhập hàng!")
+                        else:
+                            thanh_tien = sl_tt * don_gia
+                            ngay_tt = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                            
+                            # Cộng tồn kho
+                            c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl_tt, nl_chon))
+                            # Ghi nhận vào Lịch sử (kèm NCC, trạng thái TT và tiền bạc)
+                            c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
+                                         (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, nha_cung_cap, trang_thai_tt) 
+                                         VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s, %s, %s)""", 
+                                      (ngay_tt, nl_chon, sl_tt, don_gia, thanh_tien, ghi_chu, ncc_chon, trang_thai_tt))
+                            conn.commit()
+                            
+                            st.success(f"✅ Đã nhập {sl_tt} {nl_chon} từ {ncc_chon} vào kho!")
+                            st.info(f"💰 Tổng tiền lô hàng: **{format_vn(thanh_tien)} VNĐ** ({trang_thai_tt})")
+                            time.sleep(2); st.rerun()
+            else:
+                st.warning("⚠️ Kho chưa có Danh mục Vật tư nào. Vui lòng tạo Vật tư ở Tab 1 trước!")
+        except Exception as e: st.error(f"Lỗi truy xuất: {str(e)}")
 
     elif "2. Nhập Thành Phẩm" in chuyem_muc:
         st.markdown("#### 📦 Nhập Thành Phẩm Vừa Sản Xuất (Tự động trừ NVL cấu thành)")
         try:
             df_sp_chuan = pd.read_sql("SELECT ten_sp, ds_nguyen_lieu, ton_kho, 'chuẩn' as loai FROM public.dm_san_pham", conn)
             df_sp_ome = pd.read_sql("SELECT ten_sp, ds_nguyen_lieu, ton_kho, 'ome' as loai FROM public.dm_san_pham_ome", conn)
-            # Khắc phục lỗi gộp bảng nếu 1 trong 2 bảng trống
             df_all_sp = pd.concat([df_sp_chuan, df_sp_ome]).dropna(subset=['ten_sp']).reset_index(drop=True)
             
             if not df_all_sp.empty:
                 with st.form("form_nhap_sp"):
                     sp_chon = st.selectbox("Chọn Thành Phẩm đã làm xong", df_all_sp['ten_sp'].unique().tolist())
                     
-                    # Bố trí số lượng và đơn vị ngang hàng
                     col_sl1, col_sl2 = st.columns([2, 1])
                     with col_sl1:
                         sl_nhap = st.number_input("Số lượng thành phẩm nhập kho", min_value=1.0, step=1.0)
@@ -318,7 +381,6 @@ with tab2:
                                 ten_vt = vt.get('vat_tu')
                                 dinh_muc = float(vt.get('dinh_muc', 0))
                                 
-                                # Tính toán hao phí trực tiếp: định mức * số lượng nhập
                                 tong_hao_phi = dinh_muc * sl_nhap
                                 
                                 c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho - %s WHERE ten_nl = %s", (tong_hao_phi, ten_vt))
@@ -341,7 +403,7 @@ with tab3:
     with c_tk1:
         st.subheader("🧊 Tồn Kho Nguyên Vật Liệu")
         df_ton_nl = pd.read_sql("SELECT id, ten_nl, ton_kho, don_vi FROM public.dm_nguyen_lieu ORDER BY ten_nl", conn)
-        df_ton_nl['ton_kho'] = df_ton_nl['ton_kho'].fillna(0.0) # Vá lỗi NA
+        df_ton_nl['ton_kho'] = df_ton_nl['ton_kho'].fillna(0.0) 
         
         edited_nl_ton = st.data_editor(
             df_ton_nl,
@@ -368,7 +430,7 @@ with tab3:
         df_tc = pd.read_sql("SELECT id, ten_sp, ton_kho, 'chuẩn' as loai FROM public.dm_san_pham", conn)
         df_to = pd.read_sql("SELECT id, ten_sp, ton_kho, 'ome' as loai FROM public.dm_san_pham_ome", conn)
         df_tp = pd.concat([df_tc, df_to]).dropna(subset=['id']).reset_index(drop=True)
-        df_tp['ton_kho'] = df_tp['ton_kho'].fillna(0.0) # Vá lỗi NA
+        df_tp['ton_kho'] = df_tp['ton_kho'].fillna(0.0) 
         
         edited_tp = st.data_editor(
             df_tp,
