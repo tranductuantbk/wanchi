@@ -4,3 +4,4 @@ fpdf
 psycopg2-binary
 plotly
 openpyxl
+PyMuPDF
