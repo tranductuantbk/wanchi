@@ -135,7 +135,7 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
         out = pdf.output(dest='S')
         return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
-def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi, danh_sach_phieu=""):
+def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi, df_selected=None):
     pdf = FPDF()
     pdf.add_page()
     has_font = os.path.exists(FONT_FILE)
@@ -171,18 +171,44 @@ def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi, danh_sach_phie
     pdf.set_font(font_name, "", 11)
     pdf.cell(0, 6, f"Ngày lập: {ngay_chi}", ln=True, align="C")
     pdf.cell(0, 6, f"Mã Phiếu Thanh Toán: {ma_phieu}", ln=True, align="C")
+    pdf.ln(5)
+    
+    pdf.cell(0, 8, f"Người nhận tiền (Nhà cung cấp): {ten_ncc}", ln=True)
+    pdf.cell(0, 8, f"Lý do chi: Thanh toán công nợ tiền vật tư / nguyên liệu nhập kho.", ln=True)
+    pdf.ln(3)
+    
+    # ---- BẢNG LIỆT KÊ CHI TIẾT CÁC GIAO DỊCH ĐƯỢC THANH TOÁN ----
+    if df_selected is not None and not df_selected.empty:
+        pdf.set_font(font_name, 'B' if has_font else '', 10)
+        pdf.set_fill_color(230, 230, 230)
+        pdf.cell(15, 10, "STT", border=1, align="C", fill=True)
+        pdf.cell(35, 10, "Ngày Nhập", border=1, align="C", fill=True)
+        pdf.cell(90, 10, "Thông tin SP (Vật tư)", border=1, align="C", fill=True)
+        pdf.cell(50, 10, "Thành Tiền", border=1, ln=True, align="C", fill=True)
+
+        pdf.set_font(font_name, "", 10)
+        stt = 1
+        for _, row in df_selected.iterrows():
+            ngay = str(row.get("Ngày Nhập", ""))
+            ten_vt = str(row.get("Tên Vật Tư", ""))
+            sl = row.get("Số Lượng", 0)
+            sp_info = f"{ten_vt} (SL: {format_vn(sl)})"
+            thanh_tien = row.get("Thành Tiền", 0)
+            
+            pdf.cell(15, 8, str(stt), border=1, align="C")
+            pdf.cell(35, 8, ngay, border=1, align="C")
+            pdf.cell(90, 8, sp_info, border=1, align="L")
+            pdf.cell(50, 8, format_vn(thanh_tien), border=1, ln=True, align="R")
+            stt += 1
+            
+        pdf.set_font(font_name, 'B' if has_font else '', 11)
+        pdf.cell(140, 10, "TỔNG CỘNG:", border=1, align="R")
+        pdf.cell(50, 10, format_vn(tong_chi) + " VNĐ", border=1, ln=True, align="R")
+    else:
+        pdf.set_font(font_name, 'B' if has_font else '', 12)
+        pdf.cell(0, 10, f"Số tiền thanh toán: {format_vn(tong_chi)} VNĐ", ln=True)
+
     pdf.ln(10)
-    
-    pdf.cell(0, 8, f"Họ tên người nhận (Nhà cung cấp): {ten_ncc}", ln=True)
-    
-    ly_do_chi = "Lý do chi: Thanh toán công nợ tiền vật tư / nguyên liệu nhập kho."
-    if danh_sach_phieu:
-        ly_do_chi = f"Lý do chi: Thanh toán công nợ cho các giao dịch (ID mã phiếu nhập): {danh_sach_phieu}"
-    pdf.multi_cell(0, 8, ly_do_chi)
-    
-    pdf.set_font(font_name, 'B' if has_font else '', 12)
-    pdf.cell(0, 10, f"Số tiền thanh toán: {format_vn(tong_chi)} VNĐ", ln=True)
-    pdf.ln(15)
     
     pdf.set_font(font_name, "", 11)
     pdf.cell(95, 6, "Người Lập Phiếu", align='C')
@@ -296,9 +322,9 @@ with tab1:
                             
                             ngay_chi_hien_tai = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                             ma_phieu_chi = f"PC_{int(time.time())}"
-                            danh_sach_phieu_str = ", ".join([str(x) for x in ids_to_pay])
                             
-                            st.session_state['pdf_phieu_chi'] = generate_phieu_chi_pdf(ncc_chon_cong_no, ma_phieu_chi, tong_chi_chon, ngay_chi_hien_tai, danh_sach_phieu_str)
+                            # Gửi dataframe selected_rows vào hàm tạo PDF
+                            st.session_state['pdf_phieu_chi'] = generate_phieu_chi_pdf(ncc_chon_cong_no, ma_phieu_chi, tong_chi_chon, ngay_chi_hien_tai, selected_rows)
                             st.session_state['ten_file_chi'] = f"PhieuChi_{ncc_chon_cong_no}.pdf"
                             
                             img_chi = convert_pdf_to_png(st.session_state['pdf_phieu_chi'])
