@@ -201,15 +201,16 @@ def generate_generic_pdf(dataframe, title, ma_phieu="", ten_kh="", sdt="", colum
 
     pdf.set_font(font_name, 'B' if has_font else '', 16)
     pdf.cell(0, 10, title, ln=True, align='C')
+    pdf.ln(2)
     
-    # HIỂN THỊ MỖI THÔNG TIN TRÊN 1 DÒNG RIÊNG BIỆT
+    # HIỂN THỊ MỖI THÔNG TIN TRÊN 1 DÒNG RIÊNG BIỆT (Căn trái)
     pdf.set_font(font_name, size=11)
     if ma_phieu:
-        pdf.cell(0, 6, f"Mã phiếu: {ma_phieu}", ln=True, align='C')
+        pdf.cell(0, 6, f"Mã khách hàng: {ma_phieu}", ln=True, align='L')
     if ten_kh:
-        pdf.cell(0, 6, f"Khách hàng: {ten_kh}", ln=True, align='C')
+        pdf.cell(0, 6, f"Khách hàng: {ten_kh}", ln=True, align='L')
     if sdt:
-        pdf.cell(0, 6, f"SĐT: {sdt}", ln=True, align='C')
+        pdf.cell(0, 6, f"Số điện thoại: {sdt}", ln=True, align='L')
     pdf.ln(5)
 
     if columns_to_print is None: columns_to_print = dataframe.columns.tolist()
