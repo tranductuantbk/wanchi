@@ -76,6 +76,9 @@ try:
                     noi_dung TEXT, 
                     co_hoa_don TEXT
                 )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS public.cau_hinh_quy (
+                    id SERIAL PRIMARY KEY, ten_cau_hinh TEXT UNIQUE, gia_tri TEXT
+                )''')
     conn.commit()
 except: 
     conn.rollback()
@@ -95,6 +98,20 @@ def don_dep_lich_su_quy():
 def format_vn(value):
     try: return "{:,.0f}".format(value).replace(",", ".")
     except: return str(value)
+
+def get_quy_tac():
+    """Lấy quy tắc thu chi từ database"""
+    try:
+        df_cf = pd.read_sql("SELECT ten_cau_hinh, gia_tri FROM public.cau_hinh_quy", conn)
+        config = dict(zip(df_cf.ten_cau_hinh, df_cf.gia_tri))
+        return {
+            'ngay_nap': int(config.get('NGAY_NAP_QUY', 5)),
+            'chi_sinh_nhat': float(config.get('CHI_SINH_NHAT', 500000))
+        }
+    except:
+        return {'ngay_nap': 5, 'chi_sinh_nhat': 500000.0}
+
+qt_hien_tai = get_quy_tac()
 
 # ==========================================
 # LẤY THÔNG TIN TỔNG QUỸ HIỆN TẠI
@@ -192,11 +209,12 @@ def generate_phieu_pdf(ma_phieu, loai_gd, ngay_gd, so_tien, noi_dung, co_hoa_don
 # ==========================================
 # GIAO DIỆN NGƯỜI DÙNG
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📥 Nạp Ngân Sách (Thu)", "📤 Chi Tiền", "📊 Bảng Kê & Chỉnh Sửa"])
+tab1, tab2, tab3, tab4 = st.tabs(["📥 Nạp Ngân Sách (Thu)", "📤 Chi Tiền", "📊 Bảng Kê & Chỉnh Sửa", "⚙️ Quy Tắc Thu Chi"])
 
 # --- TAB 1: NẠP NGÂN SÁCH ---
 with tab1:
     st.subheader("📥 Nhập Khoản Thu / Nạp Ngân Sách")
+    st.info(f"💡 **Quy tắc quỹ:** Lịch nạp quỹ định kỳ là **Ngày {qt_hien_tai['ngay_nap']} hàng tháng**.")
     with st.form("form_thu_quy", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
@@ -236,6 +254,7 @@ with tab1:
 # --- TAB 2: CHI TIỀN ---
 with tab2:
     st.subheader("📤 Tạo Phiếu Chi Tiền")
+    st.info(f"🎂 **Định mức chi sinh nhật:** Mua bánh, đồ ăn là **{format_vn(qt_hien_tai['chi_sinh_nhat'])} VNĐ**.")
     with st.form("form_chi_quy", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
@@ -369,3 +388,34 @@ with tab3:
             st.info("Chưa có phát sinh giao dịch nạp / chi quỹ nào.")
     except Exception as e:
         st.error(f"Lỗi tải dữ liệu quỹ: {e}")
+
+# --- TAB 4: QUY TẮC THU CHI ---
+with tab4:
+    st.subheader("⚙️ Cài Đặt Quy Tắc Thu Chi")
+    st.markdown("Quản lý các mốc thời gian và hạn mức ngân sách định kỳ.")
+    
+    with st.form("form_quy_tac"):
+        col_q1, col_q2 = st.columns(2)
+        with col_q1:
+            ngay_nap_moi = st.number_input("Ngày nạp quỹ hàng tháng", min_value=1, max_value=31, value=int(qt_hien_tai['ngay_nap']), step=1)
+        with col_q2:
+            chi_sn_moi = st.number_input("Hạn mức chi sinh nhật (Mua bánh, đồ ăn)", min_value=0.0, value=float(qt_hien_tai['chi_sinh_nhat']), step=50000.0)
+            
+        if st.form_submit_button("💾 LƯU QUY TẮC", type="primary", use_container_width=True):
+            try:
+                c.execute("INSERT INTO public.cau_hinh_quy (ten_cau_hinh, gia_tri) VALUES ('NGAY_NAP_QUY', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (str(ngay_nap_moi),))
+                c.execute("INSERT INTO public.cau_hinh_quy (ten_cau_hinh, gia_tri) VALUES ('CHI_SINH_NHAT', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (str(chi_sn_moi),))
+                conn.commit()
+                st.success("✅ Đã lưu quy tắc thành công!")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                conn.rollback()
+                st.error(f"Lỗi khi lưu quy tắc: {e}")
+                
+    st.markdown("---")
+    st.info(f"""
+    💡 **Tóm tắt quy tắc hiện tại:**
+    - Hệ thống yêu cầu nạp tiền định kỳ vào **Ngày {qt_hien_tai['ngay_nap']} hàng tháng**.
+    - Ngân sách cho mỗi lần chi sinh nhật (mua bánh, đồ ăn) là **{format_vn(qt_hien_tai['chi_sinh_nhat'])} VNĐ**.
+    """)
