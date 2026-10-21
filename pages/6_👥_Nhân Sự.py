@@ -316,7 +316,7 @@ if role == "admin":
                 c.execute("SELECT ngay, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ten_nv=%s AND ngay LIKE %s", (chon_nv_luong, f"%/{ky_luong_str}"))
                 bang_cong = c.fetchall()
 
-                auto_ngay_cong, auto_tc_thuong, auto_tc_cn, so_lan_tre, so_lan_ve_som = 0.0, 0.0, 0.0, 0, 0
+                auto_ngay_cong, auto_tc_thuong, auto_tc_cn, so_lan_tre, so_lan_ve_som, so_lan_quen_ra_ca = 0.0, 0.0, 0.0, 0, 0, 0
                 for r in bang_cong:
                     ngay_str, g_vao, g_ra, co_phep = r
                     co_phep = bool(co_phep)
@@ -325,6 +325,7 @@ if role == "admin":
                     if not g_ra: 
                         g_ra = cf['gio_ra'] 
                         quen_ra_ca = True
+                        so_lan_quen_ra_ca += 1
                         
                     try:
                         d = datetime.strptime(ngay_str, "%d/%m/%Y")
@@ -354,7 +355,7 @@ if role == "admin":
                             auto_tc_thuong += ot_hrs      
                     except: pass
 
-                st.info(f"📅 Quét được **{len(bang_cong)}** ngày chấm công. Phát hiện **{so_lan_tre}** lần đi trễ và **{so_lan_ve_som}** lần về sớm (không phép).")
+                st.info(f"📅 Quét được **{len(bang_cong)}** ngày chấm công. Phát hiện **{so_lan_tre}** lần đi trễ, **{so_lan_ve_som}** lần về sớm, và **{so_lan_quen_ra_ca}** lần quên ra ca.")
                 
                 if so_lan_tre > cf['so_lan_tre_toida']:
                     st.error(f"🚨 CẢNH BÁO ĐỎ: Nhân viên này đã đi trễ {so_lan_tre} lần trong tháng (Vượt mức cho phép {cf['so_lan_tre_toida']} lần)!")
@@ -398,24 +399,27 @@ if role == "admin":
                             for ngay_le in ["30/04", "01/05", "02/09"]:
                                 le_dd, le_mm = ngay_le.split('/')
                                 if le_mm == thang_str:
-                                    d_le = datetime.strptime(f"{le_dd}/{le_mm}/{nam_str}", "%d/%m/%Y")
-                                    if d_le.weekday() == 6:
-                                        tien_thuong_le += 100000
-                                        ghi_chu_txt.append(f"Lễ {ngay_le} (CN: +100k)")
-                                    else:
-                                        tien_thuong_le += (l_cb + 100000)
-                                        ghi_chu_txt.append(f"Lễ {ngay_le} (T2-T7: +100k & LCB)")
+                                    tien_thuong_le += (l_cb + 100000)
+                                    ghi_chu_txt.append(f"Lễ {ngay_le} (+100k & LCB)")
                     except: pass
                     
                     tien_thuong_tet = (l_cb * 30) if thuong_tet else 0
                     tien_thuong_sn = cf['tien_thuong_sinh_nhat'] if thuong_sn else 0
+                    
+                    tien_phu_cap_chuc_vu = 0
+                    bo_phan_str = str(nv_data.get('bo_phan', '')).lower()
+                    if 'quản lý' in bo_phan_str or 'kỹ thuật trưởng' in bo_phan_str:
+                        tien_phu_cap_chuc_vu = 300000
+                        ghi_chu_txt.append("Phụ cấp chức vụ (+300k)")
+                        
                     if thuong_tet: ghi_chu_txt.append("Thưởng Tết (+30 ngày LCB)")
                     if thuong_sn: ghi_chu_txt.append("Thưởng sinh nhật")
                     
-                    thuong = thuong_khac + tien_thuong_le + tien_thuong_tet + tien_thuong_sn
+                    thuong = thuong_khac + tien_thuong_le + tien_thuong_tet + tien_thuong_sn + tien_phu_cap_chuc_vu
                     
                     if so_lan_tre > 0: ghi_chu_txt.append(f"Đi trễ {so_lan_tre} lần")
                     if so_lan_ve_som > 0: ghi_chu_txt.append(f"Về sớm {so_lan_ve_som} lần")
+                    if so_lan_quen_ra_ca > 0: ghi_chu_txt.append(f"Quên ra ca {so_lan_quen_ra_ca} lần")
                     ghi_chu = st.text_area("Ghi chú", value=", ".join(ghi_chu_txt) + "." if ghi_chu_txt else "")
 
                 tien_cb, tien_nl, tien_tn, tien_com_th = l_cb * ngay_cong, l_nl * ngay_cong, t_nien * ngay_cong, t_com * ngay_cong
@@ -485,10 +489,10 @@ if role == "admin":
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
                     
                     st.markdown("**3. Cách tính tăng ca & Quên quẹt thẻ (Tự động)**")
-                    st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca = Tính 1 công chuẩn, KHÔNG tính tăng ca.\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
+                    st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca = Tính 1 công chuẩn, KHÔNG tính tăng ca, ghi chú báo lỗi.\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                     
                     st.markdown("**5. Cách tính thưởng Lễ & Tết**")
-                    st.info("- **Lễ 30/4, 1/5, 2/9**: Trùng T2-T7 = Lương CB + 100.000đ; Trùng Chủ nhật = 100.000đ.\n- **Thưởng Tết**: Lương CB x 30 ngày.\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết có nút tích chọn ở phần Tính lương)*")
+                    st.info("- **Lễ 30/4, 1/5, 2/9**: Lương CB + 100.000đ.\n- **Thưởng Tết**: Lương CB x 30 ngày.\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết có nút tích chọn ở phần Tính lương)*")
                 with c2:
                     st.markdown("**2. Quy tắc Đi trễ & Về sớm**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
