@@ -7,6 +7,29 @@ import os
 from db_utils import get_connection, check_password
 
 # ==========================================
+# KHỞI TẠO THƯ VIỆN CHUYỂN PDF SANG ẢNH
+# ==========================================
+try:
+    import fitz  # PyMuPDF
+    HAS_FITZ = True
+except ImportError:
+    HAS_FITZ = False
+
+def convert_pdf_to_png(pdf_bytes):
+    """Hàm phụ trợ chuyển byte PDF thành byte Ảnh PNG độ nét cao"""
+    if not HAS_FITZ:
+        st.error("⚠️ Hệ thống thiếu thư viện 'PyMuPDF' để xuất ảnh. Vui lòng chạy lệnh: pip install PyMuPDF")
+        return None
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page = doc.load_page(0) # Lấy trang đầu tiên
+        pix = page.get_pixmap(dpi=200) # dpi=200 cho ảnh xuất ra nét
+        return pix.tobytes("png")
+    except Exception as e:
+        st.error(f"Lỗi khi chuyển đổi ảnh: {e}")
+        return None
+
+# ==========================================
 # CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7)
 # ==========================================
 VN_TZ = timezone(timedelta(hours=7))
@@ -65,7 +88,7 @@ list_may = df_may['ten_may'].tolist() if not df_may.empty else ["Vui lòng thêm
 # ==========================================
 # GIAO DIỆN 3 TABS 
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📅 Lên Kế Hoạch (Dạng Bảng)", "🖨️ In Kế Hoạch (PDF)", "⚙️ Quản Lý Máy Ép"])
+tab1, tab2, tab3 = st.tabs(["📅 Lên Kế Hoạch (Dạng Bảng)", "🖨️ In Kế Hoạch (Ảnh)", "⚙️ Quản Lý Máy Ép"])
 
 # ------------------------------------------
 # TAB 1: BẢNG TÍNH EXCEL LÊN KẾ HOẠCH
@@ -216,10 +239,10 @@ with tab1:
                     st.rerun()
 
 # ------------------------------------------
-# TAB 2: IN KẾ HOẠCH (PDF)
+# TAB 2: IN KẾ HOẠCH (ẢNH)
 # ------------------------------------------
 with tab2:
-    st.subheader("🖨️ Xuất File PDF Kế Hoạch Sản Xuất")
+    st.subheader("🖨️ Xuất File Ảnh Kế Hoạch Sản Xuất")
     
     try: list_tuan_co_san = pd.read_sql("SELECT DISTINCT tuan FROM public.ke_hoach_sx_ngay", conn)['tuan'].tolist()
     except: list_tuan_co_san = []
@@ -240,7 +263,7 @@ with tab2:
             for col in ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']:
                 if col not in pivot_df.columns: pivot_df[col] = 0.0
 
-            # Lấy thông tin Tăng ca để in vào PDF
+            # Lấy thông tin Tăng ca để in
             try:
                 c.execute("SELECT ghi_chu FROM public.ke_hoach_tang_ca WHERE tuan=%s", (chon_tuan_in,))
                 tc_res_pdf = c.fetchone()
@@ -254,7 +277,7 @@ with tab2:
             hien_thi_df.columns = ['Máy Ép', 'Sản Phẩm', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật']
             st.dataframe(hien_thi_df, use_container_width=True, hide_index=True)
 
-            if st.button("🖨️ Tạo File PDF (Khổ A4 Ngang)", type="primary"):
+            if st.button("🖨️ Tạo File Ảnh (Khổ A4 Ngang)", type="primary"):
                 pdf = FPDF(orientation='L', format='A4') 
                 pdf.add_page()
                 
@@ -272,7 +295,7 @@ with tab2:
                 pdf.set_text_color(0, 0, 0)
                 pdf.cell(0, 6, f"Từ ngày: {tu_ngay_str}    đến: {den_ngay_str}", align="C", ln=True)
                 
-                # IN DÒNG TĂNG CA VÀO PDF
+                # IN DÒNG TĂNG CA
                 pdf.set_font(font_name, "", 11)
                 pdf.cell(0, 8, f"Các ngày dự kiến tăng ca: {tc_pdf}", align="C", ln=True)
                 pdf.ln(3)
@@ -309,13 +332,16 @@ with tab2:
                 try: pdf_bytes = bytes(pdf.output())
                 except: pdf_bytes = pdf.output(dest='S').encode('latin-1')
 
-                st.download_button(
-                    label="📥 TẢI XUỐNG BẢN IN (PDF)",
-                    data=pdf_bytes,
-                    file_name=f"Ke_Hoach_San_Xuat_{chon_tuan_in}.pdf",
-                    mime="application/pdf",
-                    type="primary"
-                )
+                # CHUYỂN ĐỔI PDF THÀNH ẢNH TRƯỚC KHI TẢI XUỐNG
+                img_bytes = convert_pdf_to_png(pdf_bytes)
+                if img_bytes:
+                    st.download_button(
+                        label="🖼️ TẢI XUỐNG BẢN IN (ẢNH)",
+                        data=img_bytes,
+                        file_name=f"Ke_Hoach_San_Xuat_{chon_tuan_in}.png",
+                        mime="image/png",
+                        type="primary"
+                    )
     else:
         st.info("Chưa có dữ liệu kế hoạch.")
 
