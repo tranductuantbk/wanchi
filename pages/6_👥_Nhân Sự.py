@@ -205,7 +205,8 @@ def lay_cau_hinh_gio():
         'gio_tre': config.get('GIO_TINH_TRE', '07:45'),
         'gio_ve_som': config.get('GIO_VE_SOM', '16:45'),
         'so_lan_tre_toida': int(config.get('SO_LAN_TRE_TOI_DA', 3)),
-        'tien_tham_nien': float(config.get('TIEN_THAM_NIEN_MOI_NAM', 10000))
+        'tien_tham_nien': float(config.get('TIEN_THAM_NIEN_MOI_NAM', 10000)),
+        'tien_thuong_sinh_nhat': float(config.get('THUONG_SINH_NHAT', 300000))
     }
 
 try: df_nv = pd.read_sql("SELECT * FROM public.nhan_vien ORDER BY id DESC", conn)
@@ -246,7 +247,6 @@ if role == "admin":
                     ma_pin_moi = st.text_input("Mã PIN (4 số)", value="0000", max_chars=4)
 
                 if st.form_submit_button("💾 Lưu Hồ Sơ", type="primary") and ten_nv:
-                    # Tính toán chia cho 9.5 theo yêu cầu mới nhất
                     tc_thuong_calc = (luong_cb + luong_nl + t_nien_fixed) / 9.5 * 1.5
                     tc_cn_calc = (luong_cb + luong_nl + t_nien_fixed) / 9.5 * 2.0
                     try:
@@ -278,7 +278,6 @@ if role == "admin":
                                         so_nam_db = 0
                                     t_nien = so_nam_db * cf['tien_tham_nien'] if so_nam_db > 0 else 0
                                     
-                                    # Tính toán chia cho 9.5 theo yêu cầu mới nhất
                                     tc_thuong_calc = (l_cb + l_nl + t_nien) / 9.5 * 1.5
                                     tc_cn_calc = (l_cb + l_nl + t_nien) / 9.5 * 2.0
                                     
@@ -386,6 +385,7 @@ if role == "admin":
                 with col_l3:
                     thuong_khac = st.number_input("Thưởng thêm (Nhập tay)", min_value=0, value=0, step=100000)
                     thuong_tet = st.checkbox("🎉 Cộng thưởng Tết (Lương CB x 30 ngày)")
+                    thuong_sn = st.checkbox(f"🎂 Cộng thưởng sinh nhật (+{cf['tien_thuong_sinh_nhat']:,.0f} đ)")
                     tam_ung = st.number_input("Tiền tạm ứng tự nhập nếu có", value=0, step=50000)
                     
                     tien_thuong_le = 0
@@ -408,9 +408,11 @@ if role == "admin":
                     except: pass
                     
                     tien_thuong_tet = (l_cb * 30) if thuong_tet else 0
+                    tien_thuong_sn = cf['tien_thuong_sinh_nhat'] if thuong_sn else 0
                     if thuong_tet: ghi_chu_txt.append("Thưởng Tết (+30 ngày LCB)")
+                    if thuong_sn: ghi_chu_txt.append("Thưởng sinh nhật")
                     
-                    thuong = thuong_khac + tien_thuong_le + tien_thuong_tet
+                    thuong = thuong_khac + tien_thuong_le + tien_thuong_tet + tien_thuong_sn
                     
                     if so_lan_tre > 0: ghi_chu_txt.append(f"Đi trễ {so_lan_tre} lần")
                     if so_lan_ve_som > 0: ghi_chu_txt.append(f"Về sớm {so_lan_ve_som} lần")
@@ -431,7 +433,7 @@ if role == "admin":
                     ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
                     horizontal=True, 
                     key="radio_xuat_pl",
-                    index=1 # Mặc định chọn Ảnh
+                    index=1 
                 )
                 
                 st.markdown("---")
@@ -495,6 +497,9 @@ if role == "admin":
                     
                     st.markdown("**4. Cách tính thâm niên**")
                     tien_tham_nien_moi = st.number_input("Số tiền cộng thêm cho 1 năm làm việc (VNĐ/ngày)", value=int(cf['tien_tham_nien']), step=5000)
+                    
+                    st.markdown("**6. Thưởng Sinh Nhật**")
+                    tien_thuong_sn_moi = st.number_input("Tiền thưởng sinh nhật (VNĐ)", value=int(cf['tien_thuong_sinh_nhat']), step=50000)
                 
                 if st.form_submit_button("💾 LƯU CẤU HÌNH", type="primary", use_container_width=True):
                     queries = [
@@ -504,7 +509,8 @@ if role == "admin":
                         ("GIO_TINH_TRE", gio_tre_moi.strftime("%H:%M")),
                         ("GIO_VE_SOM", gio_ve_som_moi.strftime("%H:%M")),
                         ("SO_LAN_TRE_TOI_DA", str(tre_toida_moi)),
-                        ("TIEN_THAM_NIEN_MOI_NAM", str(tien_tham_nien_moi))
+                        ("TIEN_THAM_NIEN_MOI_NAM", str(tien_tham_nien_moi)),
+                        ("THUONG_SINH_NHAT", str(tien_thuong_sn_moi))
                     ]
                     for key, val in queries:
                         c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES (%s, %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (key, val))
