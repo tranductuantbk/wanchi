@@ -223,9 +223,6 @@ def generate_generic_pdf(dataframe, title, ma_phieu="", ten_kh="", sdt="", colum
         pdf.cell(w_value, 10, format_vn(total_amount), border=1, align='R', ln=True)
 
     pdf.ln(8)
-    pdf.set_font(font_name, size=10)
-    pdf.cell(0, 6, "* Phiếu báo giá có giá trị trong 10 ngày.", ln=True)
-    pdf.cell(0, 6, "* Giá chưa bao gồm phí vận chuyển.", ln=True)
     
     # --- THÊM THÔNG TIN TỪ ẢNH ---
     pdf.set_font(font_name, 'B' if has_font else '', 11)
@@ -285,6 +282,7 @@ with tab1:
 
     st.markdown("---")
     
+    # GỠ BỎ st.form ĐỂ KIỂM TRA LẺ LỐC NGAY LẬP TỨC
     col_s1, col_s2 = st.columns([3, 1])
     sp_list = df_sp['ten_sp'].tolist() if not df_sp.empty else []
     sp_chon = col_s1.selectbox("Chọn sản phẩm", ["-- Chọn --"] + sp_list, key="t1_chon_sp")
@@ -515,7 +513,7 @@ with tab3:
                         is_chuan_flag = (row_data['loai_bao_gia'] == 'Tiêu chuẩn')
                         if st.button("🛠️ Nạp dữ liệu để Chỉnh Sửa", type="primary", use_container_width=True, on_click=nap_du_lieu_sua, args=(row_data.to_dict(), json.loads(row_data['chi_tiet']), is_chuan_flag)):
                             if is_chuan_flag: st.success("✅ Đã nạp thành công! Hãy bấm sang Tab '🤝 Báo Giá' để sửa.")
-                            else: st.error("⚠️ Phiếu tùy chỉnh không còn được hỗ trợ chỉnh sửa.")
+                            else: st.success("✅ Đã nạp thành công! Hãy bấm sang Tab '🛠️ Báo Giá Tùy Chỉnh' để sửa.")
                 else: st.warning("⚠️ Báo giá này là dữ liệu cũ, không lưu chi tiết sản phẩm nên máy không thể vẽ lại PDF hoặc chỉnh sửa được.")
         else: st.info("Chưa có lịch sử báo giá.")
     except Exception as e:
