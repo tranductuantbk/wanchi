@@ -223,16 +223,15 @@ with tab1:
         
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
     
-    # Khu vực chọn sản phẩm và tính lốc tự động
-    st.markdown("**📦 Chọn Sản Phẩm & Nhập Số lượng**")
-    col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
+    # Khu vực chọn sản phẩm và tính lốc tự động (Đã bỏ nhập số lượng cái)
+    st.markdown("**📦 Chọn Sản Phẩm & Nhập Số Lốc**")
+    col_c1, col_c2 = st.columns([3, 1])
     sp_chon = col_c1.selectbox("Tên Sản Phẩm:", ["-- Chọn Sản Phẩm --"] + df_sp_chuan['ten_sp'].tolist(), key="chon_sp_chuan")
-    so_loc_chon = col_c2.number_input("📦 Số Lốc:", min_value=0, step=1, key="sl_loc_chuan")
-    so_cai_chon = col_c3.number_input("🔢 Số lượng cái (Lẻ):", min_value=0, step=1, key="sl_cai_chuan")
+    so_loc_chon = col_c2.number_input("📦 Số Lốc:", min_value=1, step=1, key="sl_loc_chuan")
     
     tong_so_cai_chuan = 0
     
-    # CẢNH BÁO VÀ TÍNH TRÒN LỐC THEO THỜI GIAN THỰC
+    # TỰ ĐỘNG TÍNH TRÒN LỐC 
     if sp_chon != "-- Chọn Sản Phẩm --":
         info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
         loc = 1
@@ -241,19 +240,11 @@ with tab1:
             except: loc = 1
         if loc <= 0: loc = 1
 
-        tong_so_cai_chuan = (so_loc_chon * loc) + so_cai_chon
+        tong_so_cai_chuan = so_loc_chon * loc
 
         if tong_so_cai_chuan > 0:
-            st.info(f"👉 **Tổng xuất kho:** {so_loc_chon} lốc (x{loc} cái) + {so_cai_chon} cái lẻ = **{tong_so_cai_chuan} cái**")
-            if loc > 1:
-                if tong_so_cai_chuan % loc != 0:
-                    du = tong_so_cai_chuan % loc
-                    thieu = loc - du
-                    sl_duoi = tong_so_cai_chuan - du
-                    sl_tren = tong_so_cai_chuan + thieu
-                    st.warning(f"⚠️ **Chưa tròn lốc!** Sản phẩm này đóng gói **{loc} cái/lốc**. \n\nGợi ý để tròn lốc: Giảm xuống **{sl_duoi}** cái hoặc tăng lên **{sl_tren}** cái.")
-                else:
-                    st.success(f"✅ **Đã tròn lốc!** (Tương đương {tong_so_cai_chuan // loc} lốc).")
+            st.info(f"👉 **Hệ thống tự tính:** {so_loc_chon} lốc (Quy cách đóng gói: **{loc} cái/lốc**) = **Xuất {tong_so_cai_chuan} cái**")
+            st.success("✅ Số lượng đã đảm bảo xuất xuất tròn lốc.")
 
     if st.button("➕ Thêm vào đơn", type="primary", key="btn_add_chuan"):
         if kh_chuan == "-- Chọn Khách Hàng --":
@@ -261,7 +252,7 @@ with tab1:
         elif sp_chon == "-- Chọn Sản Phẩm --":
             st.error("⚠️ Vui lòng chọn sản phẩm!")
         elif tong_so_cai_chuan == 0:
-            st.error("⚠️ Vui lòng nhập Số Lốc hoặc Số lượng cái!")
+            st.error("⚠️ Vui lòng nhập Số Lốc hợp lệ!")
         else:
             info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
             
@@ -288,7 +279,7 @@ with tab1:
         
         df_gio_chuan.insert(0, "Xóa", False)
         
-        st.info("💡 **Mẹo Pro:** Nhấp đúp vào **Số Lượng** để sửa. Cột Giá Công Ty chỉ hiện ở đây để đối chiếu, sẽ không xuất hiện trong PDF và Lịch sử đơn!")
+        st.info("💡 **Mẹo Pro:** Cột Số Lượng hiển thị là tổng số cái. Cột Giá Công Ty chỉ hiện ở đây để đối chiếu, sẽ không xuất hiện trong PDF và Lịch sử đơn!")
         
         edited_df_chuan = st.data_editor(
             df_gio_chuan,
@@ -296,7 +287,7 @@ with tab1:
                 "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                 "Tên Sản Phẩm": st.column_config.TextColumn(disabled=True),
                 "Loại Giá": st.column_config.TextColumn(disabled=True),
-                "Số Lượng": st.column_config.NumberColumn("Số lượng cái", min_value=1, step=1),
+                "Số Lượng": st.column_config.NumberColumn("Số lượng cái (Tổng)", min_value=1, step=1, disabled=True), # Khóa luôn cột này để ép nhập theo lốc ở trên
                 "Giá Công ty": st.column_config.NumberColumn(disabled=True),
                 "Đơn Giá": st.column_config.NumberColumn(disabled=True),
                 "Thành Tiền": st.column_config.NumberColumn(disabled=True)
@@ -386,15 +377,14 @@ with tab2:
     if khach_hang_ome != "-- Chọn Khách Hàng --":
         sdt_ome_chot = df_kh_ome[df_kh_ome['ten_kh'] == khach_hang_ome].iloc[0].get('so_dien_thoai', '')
 
-    st.markdown("**⚙️ Chọn Sản Phẩm OME & Nhập Số lượng**")
-    col_o1, col_o2, col_o3 = st.columns([2, 1, 1])
+    st.markdown("**⚙️ Chọn Sản Phẩm OME & Nhập Số Lốc**")
+    col_o1, col_o2 = st.columns([3, 1])
     sp_ome_chon = col_o1.selectbox("Tên Sản Phẩm OME:", ["-- Chọn Sản Phẩm --"] + df_sp_ome['ten_sp'].tolist(), key="chon_sp_ome")
-    so_loc_ome_chon = col_o2.number_input("📦 Số Lốc:", min_value=0, step=1, key="sl_loc_ome")
-    so_cai_ome_chon = col_o3.number_input("🔢 Số lượng cái (Lẻ):", min_value=0, step=1, key="sl_cai_ome")
+    so_loc_ome_chon = col_o2.number_input("📦 Số Lốc:", min_value=1, step=1, key="sl_loc_ome")
     
     tong_so_cai_ome = 0
 
-    # CẢNH BÁO TRÒN LỐC THEO THỜI GIAN THỰC CHO HÀNG OME
+    # TỰ ĐỘNG TÍNH TRÒN LỐC CHO HÀNG OME
     if sp_ome_chon != "-- Chọn Sản Phẩm --":
         info_ome = df_sp_ome[df_sp_ome['ten_sp'] == sp_ome_chon].iloc[0]
         loc_ome = 1
@@ -403,25 +393,17 @@ with tab2:
             except: loc_ome = 1
         if loc_ome <= 0: loc_ome = 1
 
-        tong_so_cai_ome = (so_loc_ome_chon * loc_ome) + so_cai_ome_chon
+        tong_so_cai_ome = so_loc_ome_chon * loc_ome
 
         if tong_so_cai_ome > 0:
-            st.info(f"👉 **Tổng xuất kho:** {so_loc_ome_chon} lốc (x{loc_ome} cái) + {so_cai_ome_chon} cái lẻ = **{tong_so_cai_ome} cái**")
-            if loc_ome > 1:
-                if tong_so_cai_ome % loc_ome != 0:
-                    du_o = tong_so_cai_ome % loc_ome
-                    thieu_o = loc_ome - du_o
-                    sl_duoi_o = tong_so_cai_ome - du_o
-                    sl_tren_o = tong_so_cai_ome + thieu_o
-                    st.warning(f"⚠️ **Chưa tròn lốc!** Sản phẩm này đóng gói **{loc_ome} cái/lốc**. \n\nGợi ý để tròn lốc: Giảm xuống **{sl_duoi_o}** cái hoặc tăng lên **{sl_tren_o}** cái.")
-                else:
-                    st.success(f"✅ **Đã tròn lốc!** (Tương đương {tong_so_cai_ome // loc_ome} lốc).")
+            st.info(f"👉 **Hệ thống tự tính:** {so_loc_ome_chon} lốc (Quy cách đóng gói: **{loc_ome} cái/lốc**) = **Xuất {tong_so_cai_ome} cái**")
+            st.success("✅ Số lượng đã đảm bảo xuất xuất tròn lốc.")
 
     if st.button("➕ Thêm vào đơn OME", type="primary", key="btn_add_ome"):
         if sp_ome_chon == "-- Chọn Sản Phẩm --":
             st.error("⚠️ Vui lòng chọn sản phẩm OME!")
         elif tong_so_cai_ome == 0:
-            st.error("⚠️ Vui lòng nhập Số Lốc hoặc Số lượng cái!")
+            st.error("⚠️ Vui lòng nhập Số Lốc hợp lệ!")
         else:
             info_ome = df_sp_ome[df_sp_ome['ten_sp'] == sp_ome_chon].iloc[0]
             don_gia_ome = info_ome['gia_ome']
@@ -440,7 +422,7 @@ with tab2:
         df_gio_ome = pd.DataFrame(st.session_state.gio_ome)
         df_gio_ome.insert(0, "Xóa", False)
         
-        st.info("💡 **Mẹo Pro:** Nhấp đúp vào **Số Lượng** để sửa. Hoặc tích chọn ô **Xóa** để lập tức loại bỏ sản phẩm khỏi đơn!")
+        st.info("💡 **Mẹo Pro:** Tích chọn ô **Xóa** để lập tức loại bỏ sản phẩm khỏi đơn!")
         
         edited_df_ome = st.data_editor(
             df_gio_ome,
@@ -448,7 +430,7 @@ with tab2:
                 "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                 "Tên Sản Phẩm OME": st.column_config.TextColumn(disabled=True),
                 "Loại Giá": st.column_config.TextColumn(disabled=True),
-                "Số Lượng": st.column_config.NumberColumn("Số lượng cái", min_value=1, step=1),
+                "Số Lượng": st.column_config.NumberColumn("Số lượng cái (Tổng)", min_value=1, step=1, disabled=True),
                 "Đơn Giá OME": st.column_config.NumberColumn(disabled=True),
                 "Thành Tiền": st.column_config.NumberColumn(disabled=True)
             },
