@@ -84,18 +84,18 @@ for cot, kieu in cac_cot.items():
         conn.commit()
     except: conn.rollback()
 
-# LẤY DỮ LIỆU TỪ CÁC KHO
+# LẤY DỮ LIỆU TỪ CÁC KHO (Thêm truy vấn quy_cach_loc)
 try: df_kh = pd.read_sql("SELECT ten_kh, nhom_kh, so_dien_thoai FROM dm_khach_hang", conn)
 except: df_kh = pd.DataFrame(columns=['ten_kh', 'nhom_kh', 'so_dien_thoai'])
 
 try: df_kh_ome = pd.read_sql("SELECT ten_kh, so_dien_thoai FROM dm_khach_hang_ome", conn)
 except: df_kh_ome = pd.DataFrame(columns=['ten_kh', 'so_dien_thoai'])
 
-try: df_sp_chuan = pd.read_sql("SELECT ten_sp, gia_dai_ly, gia_khach_le FROM dm_san_pham", conn)
-except: df_sp_chuan = pd.DataFrame(columns=['ten_sp', 'gia_dai_ly', 'gia_khach_le'])
+try: df_sp_chuan = pd.read_sql("SELECT ten_sp, gia_dai_ly, gia_khach_le, quy_cach_loc FROM dm_san_pham", conn)
+except: df_sp_chuan = pd.DataFrame(columns=['ten_sp', 'gia_dai_ly', 'gia_khach_le', 'quy_cach_loc'])
 
-try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome FROM dm_san_pham_ome", conn)
-except: df_sp_ome = pd.DataFrame(columns=['ten_sp', 'gia_ome'])
+try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome, quy_cach_loc FROM dm_san_pham_ome", conn)
+except: df_sp_ome = pd.DataFrame(columns=['ten_sp', 'gia_ome', 'quy_cach_loc'])
 
 # Lấy Mã Đơn Tiếp Theo 
 def lay_ma_don_moi():
@@ -223,36 +223,56 @@ with tab1:
         
         st.success(f"📌 Đã nhận diện: Khách hàng thuộc nhóm **{nhom_kh}** -> Hệ thống tự động áp dụng **{loai_gia_chot}**.")
     
-    with st.form("form_chuan", clear_on_submit=True):
-        col_c1, col_c2 = st.columns([3, 1])
-        sp_chon = col_c1.selectbox("📦 Chọn Sản Phẩm:", ["-- Chọn Sản Phẩm --"] + df_sp_chuan['ten_sp'].tolist())
-        sl_chon = col_c2.number_input("🔢 Số lượng:", min_value=1, step=1)
-        
-        if st.form_submit_button("➕ Thêm vào đơn"):
-            if kh_chuan == "-- Chọn Khách Hàng --":
-                st.error("⚠️ Vui lòng chọn Khách hàng ở trên để hệ thống biết áp dụng loại giá nào!")
-            elif sp_chon != "-- Chọn Sản Phẩm --":
-                info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
-                
-                gia_goc = info.get('gia_dai_ly', 0)
-                gia_cty_chuan = info.get('gia_khach_le', 0)
-                
-                if loai_gia_chot == "Giá Đại Lý":
-                    don_gia = int(gia_goc)
-                elif "Ưu Đãi" in loai_gia_chot:
-                    don_gia = int(round(gia_cty_chuan * 0.80, -1))
-                else:
-                    don_gia = int(gia_cty_chuan)
-                
-                st.session_state.gio_chuan.append({
-                    "Tên Sản Phẩm": sp_chon,
-                    "Loại Giá": loai_gia_chot,
-                    "Số Lượng": sl_chon,
-                    "Giá Công ty": int(gia_cty_chuan),
-                    "Đơn Giá": don_gia,
-                    "Thành Tiền": sl_chon * don_gia
-                })
-                st.rerun()
+    # Khu vực chọn sản phẩm (Bỏ st.form để cảnh báo Real-time)
+    st.markdown("**📦 Chọn Sản Phẩm & Số lượng**")
+    col_c1, col_c2 = st.columns([3, 1])
+    sp_chon = col_c1.selectbox("Tên Sản Phẩm:", ["-- Chọn Sản Phẩm --"] + df_sp_chuan['ten_sp'].tolist(), key="chon_sp_chuan")
+    sl_chon = col_c2.number_input("Số lượng:", min_value=1, step=1, key="sl_sp_chuan")
+    
+    # CẢNH BÁO TRÒN LỐC THEO THỜI GIAN THỰC
+    if sp_chon != "-- Chọn Sản Phẩm --":
+        info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
+        loc = 1
+        if 'quy_cach_loc' in info and pd.notna(info['quy_cach_loc']):
+            try: loc = int(info['quy_cach_loc'])
+            except: loc = 1
+        if loc <= 0: loc = 1
+
+        if loc > 1:
+            if sl_chon % loc != 0:
+                du = sl_chon % loc
+                thieu = loc - du
+                sl_duoi = sl_chon - du
+                sl_tren = sl_chon + thieu
+                st.warning(f"⚠️ **Chưa tròn lốc!** Sản phẩm này đóng gói **{loc} cái/lốc**. \n\nGợi ý để tròn lốc: Giảm xuống **{sl_duoi}** hoặc tăng lên **{sl_tren}** cái.")
+            else:
+                st.success(f"✅ **Đã tròn lốc!** (Tương đương {sl_chon // loc} lốc).")
+
+    if st.button("➕ Thêm vào đơn", type="primary", key="btn_add_chuan"):
+        if kh_chuan == "-- Chọn Khách Hàng --":
+            st.error("⚠️ Vui lòng chọn Khách hàng ở trên để hệ thống biết áp dụng loại giá nào!")
+        elif sp_chon != "-- Chọn Sản Phẩm --":
+            info = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_chon].iloc[0]
+            
+            gia_goc = info.get('gia_dai_ly', 0)
+            gia_cty_chuan = info.get('gia_khach_le', 0)
+            
+            if loai_gia_chot == "Giá Đại Lý":
+                don_gia = int(gia_goc)
+            elif "Ưu Đãi" in loai_gia_chot:
+                don_gia = int(round(gia_cty_chuan * 0.80, -1))
+            else:
+                don_gia = int(gia_cty_chuan)
+            
+            st.session_state.gio_chuan.append({
+                "Tên Sản Phẩm": sp_chon,
+                "Loại Giá": loai_gia_chot,
+                "Số Lượng": sl_chon,
+                "Giá Công ty": int(gia_cty_chuan),
+                "Đơn Giá": don_gia,
+                "Thành Tiền": sl_chon * don_gia
+            })
+            st.rerun()
 
     if st.session_state.gio_chuan:
         st.markdown("---")
@@ -305,7 +325,7 @@ with tab1:
         
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
-            if st.button("💾 CHỐT ĐƠN & TẠO FILE (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True):
+            if st.button("💾 CHỐT ĐƠN & TẠO FILE (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True, key="btn_chot_chuan"):
                 
                 df_print = pd.DataFrame(st.session_state.gio_chuan)
                 if 'Giá Công ty' in df_print.columns:
@@ -330,7 +350,7 @@ with tab1:
                     st.error(f"⚠️ Lỗi Database: {e}")
         
         with col_btn_c2:
-            if st.button("🗑️ Xóa sạch đơn này", use_container_width=True):
+            if st.button("🗑️ Xóa sạch đơn này", use_container_width=True, key="btn_xoa_chuan"):
                 st.session_state.gio_chuan = []
                 if 'pdf_don_chuan' in st.session_state: del st.session_state['pdf_don_chuan']
                 if 'img_don_chuan' in st.session_state: del st.session_state['img_don_chuan']
@@ -360,24 +380,43 @@ with tab2:
     if khach_hang_ome != "-- Chọn Khách Hàng --":
         sdt_ome_chot = df_kh_ome[df_kh_ome['ten_kh'] == khach_hang_ome].iloc[0].get('so_dien_thoai', '')
 
-    with st.form("form_ome", clear_on_submit=True):
-        col_o1, col_o2 = st.columns([3, 1])
-        sp_ome_chon = col_o1.selectbox("⚙️ Chọn Sản Phẩm OME:", ["-- Chọn Sản Phẩm --"] + df_sp_ome['ten_sp'].tolist())
-        sl_ome_chon = col_o2.number_input("🔢 Số lượng:", min_value=1, step=1, key="sl_ome")
-        
-        if st.form_submit_button("➕ Thêm vào đơn OME"):
-            if sp_ome_chon != "-- Chọn Sản Phẩm --":
-                info_ome = df_sp_ome[df_sp_ome['ten_sp'] == sp_ome_chon].iloc[0]
-                don_gia_ome = info_ome['gia_ome']
-                
-                st.session_state.gio_ome.append({
-                    "Tên Sản Phẩm OME": sp_ome_chon,
-                    "Loại Giá": "Giá OME",
-                    "Số Lượng": sl_ome_chon,
-                    "Đơn Giá OME": don_gia_ome,
-                    "Thành Tiền": sl_ome_chon * don_gia_ome
-                })
-                st.rerun()
+    st.markdown("**⚙️ Chọn Sản Phẩm OME & Số lượng**")
+    col_o1, col_o2 = st.columns([3, 1])
+    sp_ome_chon = col_o1.selectbox("Tên Sản Phẩm OME:", ["-- Chọn Sản Phẩm --"] + df_sp_ome['ten_sp'].tolist(), key="chon_sp_ome")
+    sl_ome_chon = col_o2.number_input("Số lượng:", min_value=1, step=1, key="sl_ome")
+    
+    # CẢNH BÁO TRÒN LỐC THEO THỜI GIAN THỰC CHO HÀNG OME
+    if sp_ome_chon != "-- Chọn Sản Phẩm --":
+        info_ome = df_sp_ome[df_sp_ome['ten_sp'] == sp_ome_chon].iloc[0]
+        loc_ome = 1
+        if 'quy_cach_loc' in info_ome and pd.notna(info_ome['quy_cach_loc']):
+            try: loc_ome = int(info_ome['quy_cach_loc'])
+            except: loc_ome = 1
+        if loc_ome <= 0: loc_ome = 1
+
+        if loc_ome > 1:
+            if sl_ome_chon % loc_ome != 0:
+                du_o = sl_ome_chon % loc_ome
+                thieu_o = loc_ome - du_o
+                sl_duoi_o = sl_ome_chon - du_o
+                sl_tren_o = sl_ome_chon + thieu_o
+                st.warning(f"⚠️ **Chưa tròn lốc!** Sản phẩm này đóng gói **{loc_ome} cái/lốc**. \n\nGợi ý để tròn lốc: Giảm xuống **{sl_duoi_o}** hoặc tăng lên **{sl_tren_o}** cái.")
+            else:
+                st.success(f"✅ **Đã tròn lốc!** (Tương đương {sl_ome_chon // loc_ome} lốc).")
+
+    if st.button("➕ Thêm vào đơn OME", type="primary", key="btn_add_ome"):
+        if sp_ome_chon != "-- Chọn Sản Phẩm --":
+            info_ome = df_sp_ome[df_sp_ome['ten_sp'] == sp_ome_chon].iloc[0]
+            don_gia_ome = info_ome['gia_ome']
+            
+            st.session_state.gio_ome.append({
+                "Tên Sản Phẩm OME": sp_ome_chon,
+                "Loại Giá": "Giá OME",
+                "Số Lượng": sl_ome_chon,
+                "Đơn Giá OME": don_gia_ome,
+                "Thành Tiền": sl_ome_chon * don_gia_ome
+            })
+            st.rerun()
 
     if st.session_state.gio_ome:
         st.markdown("---")
@@ -424,7 +463,7 @@ with tab2:
         
         col_btn_o1, col_btn_o2 = st.columns([1, 1])
         with col_btn_o1:
-            if st.button("💾 CHỐT ĐƠN & TẠO FILE (HÀNG OME)", type="primary", use_container_width=True):
+            if st.button("💾 CHỐT ĐƠN & TẠO FILE (HÀNG OME)", type="primary", use_container_width=True, key="btn_chot_ome"):
                 if khach_hang_ome == "-- Chọn Khách Hàng --":
                     st.error("⚠️ Vui lòng chọn Khách Hàng!")
                 else:
@@ -448,7 +487,7 @@ with tab2:
                         st.error(f"⚠️ Lỗi Database: {e}")
         
         with col_btn_o2:
-            if st.button("🗑️ Xóa sạch đơn OME", use_container_width=True):
+            if st.button("🗑️ Xóa sạch đơn OME", use_container_width=True, key="btn_xoa_ome"):
                 st.session_state.gio_ome = []
                 if 'pdf_don_ome' in st.session_state: del st.session_state['pdf_don_ome']
                 if 'img_don_ome' in st.session_state: del st.session_state['img_don_ome']
@@ -523,7 +562,7 @@ with tab3:
                         index=1 # Mặc định chọn Ảnh
                     )
                     
-                    if st.button("🚀 CHỐT ĐƠN & TẠO FILE TỪ BÁO GIÁ", type="primary", use_container_width=True):
+                    if st.button("🚀 CHỐT ĐƠN & TẠO FILE TỪ BÁO GIÁ", type="primary", use_container_width=True, key="btn_chot_bg"):
                         st.session_state['pdf_don_bg'] = generate_order_pdf(ma_don_hien_tai, bg_info['ten_kh'], bg_info['so_dien_thoai'], df_order_bg, tong_tien_bg, "Hàng Chuẩn") 
                         st.session_state['pdf_ten_bg'] = f"{ma_don_hien_tai}_TuBaoGia_{bg_info['ten_kh']}.pdf"
                         
