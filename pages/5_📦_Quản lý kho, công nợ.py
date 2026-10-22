@@ -328,7 +328,7 @@ def generate_doi_soat_kh_pdf(ten_kh, tong_no, df_no):
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
-tab1, tab2, tab_kh, tab3, tab4 = st.tabs(["📋 NVL, NCC, Công Nợ", "📥 Nhập / Xuất Kho", "👤 Khách Hàng Công Nợ", "📊 Báo Cáo Tồn Kho", "🕰️ Lịch Sử Công Nợ"])
+tab2, tab1, tab_kh, tab3, tab4 = st.tabs(["📥 Nhập / Xuất Kho", "📋 NVL, NCC, Công Nợ", "👤 Khách Hàng Công Nợ", "📊 Báo Cáo Tồn Kho", "🕰️ Lịch Sử Công Nợ"])
 
 with tab1:
     st.subheader("🏢 Quản Lý Nhà Cung Cấp & Theo Dõi Công Nợ")
