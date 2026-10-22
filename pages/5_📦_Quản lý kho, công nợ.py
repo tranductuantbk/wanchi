@@ -84,6 +84,7 @@ try:
     c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS nha_cung_cap TEXT")
     c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS khach_hang TEXT")
     c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS trang_thai_tt TEXT")
+    c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS tien_da_thu REAL DEFAULT 0")
     
     # BẢNG MỚI ĐỂ LƯU LỊCH SỬ PHIẾU CHI
     c.execute('''CREATE TABLE IF NOT EXISTS public.ls_phieu_chi (
@@ -110,7 +111,7 @@ def don_dep_lich_su_chi():
         conn.rollback()
 
 # ==========================================
-# HÀM TẠO PHIẾU XUẤT KHO / PHIẾU CHI PDF
+# HÀM TẠO PHIẾU XUẤT KHO / PHIẾU CHI / PHIẾU ĐỐI SOÁT PDF
 # ==========================================
 def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf = FPDF()
@@ -230,6 +231,94 @@ def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi, df_selected=No
     pdf.cell(95, 6, "Người Nhận Tiền", ln=True, align='C')
     pdf.cell(95, 6, "(Ký, ghi rõ họ tên)", align='C')
     pdf.cell(95, 6, "(Ký, ghi rõ họ tên)", align='C')
+    
+    try: return bytes(pdf.output())
+    except:
+        out = pdf.output(dest='S')
+        return out.encode('latin-1') if isinstance(out, str) else bytes(out)
+
+def generate_doi_soat_kh_pdf(ten_kh, tong_no, df_no):
+    pdf = FPDF()
+    pdf.add_page()
+    has_font = os.path.exists(FONT_FILE)
+    if has_font:
+        pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+        pdf.add_font("Roboto", "B", FONT_FILE, uni=True) 
+        font_name = "Roboto"
+    else: font_name = "Helvetica"
+
+    start_y, start_x = 12, 65  
+    try:
+        if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
+        elif os.path.exists("logo.png"): pdf.image("logo.png", x=15, y=start_y, w=40)
+        else:
+            pdf.set_font(font_name, 'B', 18)
+            pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    except:
+        pdf.set_font(font_name, 'B', 18)
+        pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    
+    pdf.set_font(font_name, size=10)
+    pdf.set_xy(start_x, start_y + 2)
+    pdf.multi_cell(0, 5, "775 Võ Hữu Lợi, Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM")
+    pdf.set_xy(start_x, pdf.get_y() + 1)
+    pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
+    pdf.ln(12)
+
+    pdf.set_font(font_name, 'B' if has_font else '', 16)
+    pdf.cell(0, 10, "BẢNG KÊ ĐỐI SOÁT CÔNG NỢ", ln=True, align="C")
+    
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(0, 6, f"Ngày xuất: {lay_gio_vn().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
+    pdf.ln(5)
+    
+    pdf.cell(0, 8, f"Khách hàng / Đại lý: {ten_kh}", ln=True)
+    pdf.ln(3)
+    
+    if not df_no.empty:
+        pdf.set_font(font_name, 'B' if has_font else '', 9)
+        pdf.set_fill_color(230, 230, 230)
+        pdf.cell(10, 10, "STT", border=1, align="C", fill=True)
+        pdf.cell(25, 10, "Ngày Xuất", border=1, align="C", fill=True)
+        pdf.cell(65, 10, "Sản Phẩm (Ghi chú)", border=1, align="C", fill=True)
+        pdf.cell(30, 10, "Tổng Tiền", border=1, align="C", fill=True)
+        pdf.cell(30, 10, "Đã Thanh Toán", border=1, align="C", fill=True)
+        pdf.cell(30, 10, "Còn Nợ", border=1, ln=True, align="C", fill=True)
+
+        pdf.set_font(font_name, "", 9)
+        stt = 1
+        for _, row in df_no.iterrows():
+            ngay = str(row.get("Ngày Xuất", ""))
+            sp = str(row.get("Sản Phẩm", ""))
+            gc = str(row.get("Ghi Chú", ""))
+            sp_info = f"{sp} - {gc}" if gc else sp
+            
+            tt = row.get("Thành Tiền", 0)
+            dt = row.get("Đã Thu Tiền (VNĐ)", 0)
+            cn = row.get("Còn Nợ (VNĐ)", 0)
+            
+            pdf.cell(10, 8, str(stt), border=1, align="C")
+            pdf.cell(25, 8, ngay.split()[0] if ngay else "", border=1, align="C")
+            
+            # Xử lý text dài
+            current_x, current_y = pdf.get_x(), pdf.get_y()
+            pdf.multi_cell(65, 8, sp_info, border=1, align="L")
+            next_y = pdf.get_y()
+            pdf.set_xy(current_x + 65, current_y)
+            
+            pdf.cell(30, next_y - current_y, format_vn(tt), border=1, align="R")
+            pdf.cell(30, next_y - current_y, format_vn(dt), border=1, align="R")
+            pdf.cell(30, next_y - current_y, format_vn(cn), border=1, ln=True, align="R")
+            stt += 1
+            
+        pdf.set_font(font_name, 'B' if has_font else '', 11)
+        pdf.cell(160, 10, "TỔNG NỢ HIỆN TẠI:", border=1, align="R")
+        pdf.cell(30, 10, format_vn(tong_no) + " đ", border=1, ln=True, align="R")
+
+    pdf.ln(10)
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(95, 6, "Người Lập Phiếu", align='C')
+    pdf.cell(95, 6, "Khách Hàng (Xác Nhận)", ln=True, align='C')
     
     try: return bytes(pdf.output())
     except:
@@ -474,9 +563,9 @@ with tab2:
                                 
                                 # Ghi nhận xuất kho kèm Khách hàng và Trạng thái thanh toán
                                 c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
-                                             (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, khach_hang, trang_thai_tt) 
-                                             VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s)""", 
-                                          (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, -sl, don_gia_sp, thanh_tien_sp, f"Đơn {ma_don_chon}", ten_khach_hang_hien_tai, trang_thai_tt_xuat))
+                                             (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, khach_hang, trang_thai_tt, tien_da_thu) 
+                                             VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s, %s)""", 
+                                          (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, -sl, don_gia_sp, thanh_tien_sp, f"Đơn {ma_don_chon}", ten_khach_hang_hien_tai, trang_thai_tt_xuat, 0))
                                 
                             c.execute("UPDATE public.don_hang SET trang_thai = 'Đã xuất kho' WHERE ma_don = %s", (ma_don_chon,))
                             conn.commit(); st.success("Đã xuất kho và lưu công nợ!"); time.sleep(1.5); st.rerun()
@@ -585,56 +674,129 @@ with tab2:
 # TAB KHÁCH HÀNG CÔNG NỢ
 # ------------------------------------------
 with tab_kh:
-    st.subheader("👤 Theo Dõi Công Nợ Khách Hàng / Đại Lý")
+    st.subheader("👤 Theo Dõi & Thu Hồi Công Nợ Khách Hàng / Đại Lý")
     try:
-        df_kh_no = pd.read_sql("SELECT id, ngay_thao_tac, khach_hang, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac='Xuất Bán' AND trang_thai_tt='Chưa thanh toán' ORDER BY khach_hang", conn)
+        # Tải danh sách đơn xuất bán chưa thanh toán hết (kể cả có trả 1 phần)
+        df_kh_no = pd.read_sql("SELECT id, ngay_thao_tac, khach_hang, ten_nl, so_luong, don_gia, thanh_tien, COALESCE(tien_da_thu, 0) as tien_da_thu, ghi_chu FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac='Xuất Bán' AND trang_thai_tt='Chưa thanh toán' ORDER BY khach_hang, id ASC", conn)
+        
         if not df_kh_no.empty:
+            df_kh_no['tien_con_no'] = df_kh_no['thanh_tien'] - df_kh_no['tien_da_thu']
             danh_sach_kh = df_kh_no['khach_hang'].unique().tolist()
-            kh_chon = st.selectbox("🔍 Chọn Khách Hàng / Đại Lý để xem công nợ:", ["-- Tất cả --"] + danh_sach_kh)
+            kh_chon = st.selectbox("🔍 Chọn Khách Hàng / Đại Lý để xem công nợ:", ["-- Chọn Khách Hàng --"] + danh_sach_kh)
             
-            if kh_chon != "-- Tất cả --":
+            if kh_chon != "-- Chọn Khách Hàng --":
                 df_hien_thi_kh = df_kh_no[df_kh_no['khach_hang'] == kh_chon].copy()
-            else:
-                df_hien_thi_kh = df_kh_no.copy()
-            
-            tong_tien_no_kh = df_hien_thi_kh['thanh_tien'].sum()
-            st.warning(f"🚨 Tổng số tiền đang nợ: **{format_vn(tong_tien_no_kh)} VNĐ**")
-            
-            df_hien_thi_kh.insert(0, "Đã Thu Tiền", False)
-            df_hien_thi_kh.columns = ["Đã Thu Tiền", "ID Giao Dịch", "Ngày Xuất", "Khách Hàng", "Sản Phẩm", "SL (Xuất)", "Đơn Giá", "Thành Tiền", "Ghi Chú"]
-            
-            st.write("Tích chọn vào các đơn hàng đã được thanh toán để gạch nợ:")
-            edited_kh_no = st.data_editor(
-                df_hien_thi_kh,
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "Đã Thu Tiền": st.column_config.CheckboxColumn("Xác Nhận Thu", default=False),
-                    "ID Giao Dịch": st.column_config.NumberColumn(disabled=True),
-                    "Ngày Xuất": st.column_config.TextColumn(disabled=True),
-                    "Khách Hàng": st.column_config.TextColumn(disabled=True),
-                    "Sản Phẩm": st.column_config.TextColumn(disabled=True),
-                    "SL (Xuất)": st.column_config.NumberColumn(disabled=True),
-                    "Đơn Giá": st.column_config.NumberColumn(disabled=True),
-                    "Thành Tiền": st.column_config.NumberColumn(disabled=True),
-                    "Ghi Chú": st.column_config.TextColumn(disabled=True)
-                },
-                key="editor_kh_no"
-            )
-            
-            selected_kh_rows = edited_kh_no[edited_kh_no["Đã Thu Tiền"] == True]
-            if st.button("💰 XÁC NHẬN ĐÃ THU TIỀN CÁC MỤC ĐÃ CHỌN", type="primary", use_container_width=True):
-                ids_to_update = selected_kh_rows["ID Giao Dịch"].tolist()
-                if not ids_to_update:
-                    st.error("⚠️ Vui lòng tích chọn ít nhất 1 dòng từ bảng trên!")
-                else:
-                    if len(ids_to_update) == 1:
-                        c.execute("UPDATE public.ls_nhap_xuat_kho SET trang_thai_tt='Đã thanh toán' WHERE id = %s", (ids_to_update[0],))
+                tong_tien_no_kh = df_hien_thi_kh['tien_con_no'].sum()
+                
+                st.warning(f"🚨 **TỔNG NỢ HIỆN TẠI CỦA {kh_chon.upper()}: {format_vn(tong_tien_no_kh)} VNĐ**")
+                
+                # --- XUẤT FILE ĐỐI SOÁT ---
+                st.markdown("**📁 Tùy chọn in phiếu đối soát để gửi khách:**")
+                loai_xuat_ds = st.radio(
+                    "Định dạng xuất Phiếu Đối Soát:", 
+                    ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
+                    horizontal=True, 
+                    index=1
+                )
+                
+                col_ds1, col_ds2 = st.columns(2)
+                with col_ds1:
+                    if st.button("📝 TẠO FILE ĐỐI SOÁT CÔNG NỢ", use_container_width=True):
+                        df_in = df_hien_thi_kh[['ngay_thao_tac', 'ten_nl', 'ghi_chu', 'thanh_tien', 'tien_da_thu', 'tien_con_no']].copy()
+                        df_in.columns = ["Ngày Xuất", "Sản Phẩm", "Ghi Chú", "Thành Tiền", "Đã Thu Tiền (VNĐ)", "Còn Nợ (VNĐ)"]
+                        
+                        pdf_ds = generate_doi_soat_kh_pdf(kh_chon, tong_tien_no_kh, df_in)
+                        st.session_state['pdf_doi_soat'] = pdf_ds
+                        st.session_state['file_ds_name'] = f"DoiSoat_{kh_chon}.pdf"
+                        
+                        img_ds = convert_pdf_to_png(pdf_ds)
+                        if img_ds:
+                            st.session_state['img_doi_soat'] = img_ds
+                        st.success("Đã tạo file thành công!")
+                
+                if 'pdf_doi_soat' in st.session_state and st.session_state.get('file_ds_name') == f"DoiSoat_{kh_chon}.pdf":
+                    dl_d1, dl_d2 = st.columns(2)
+                    if "PDF" in loai_xuat_ds or "Cả" in loai_xuat_ds:
+                        with dl_d1:
+                            st.download_button("🖨️ TẢI FILE ĐỐI SOÁT (PDF)", data=st.session_state['pdf_doi_soat'], file_name=st.session_state['file_ds_name'], mime="application/pdf", type="primary", use_container_width=True)
+                    if ("Ảnh" in loai_xuat_ds or "Cả" in loai_xuat_ds) and st.session_state.get('img_doi_soat'):
+                        with dl_d2:
+                            st.download_button("🖼️ TẢI FILE ĐỐI SOÁT (ẢNH)", data=st.session_state['img_doi_soat'], file_name=st.session_state['file_ds_name'].replace('.pdf','.png'), mime="image/png", type="primary", use_container_width=True)
+                
+                st.markdown("---")
+                
+                # --- THANH TOÁN TRẢ TỪNG PHẦN ---
+                st.markdown("#### 💰 Thanh toán & Cấn trừ nợ")
+                with st.form("form_thu_tien_kh"):
+                    col_thu1, col_thu2 = st.columns([2, 1])
+                    with col_thu1:
+                        so_tien_thu = st.number_input("Nhập số tiền khách hàng thanh toán (VNĐ):", min_value=0.0, step=100000.0)
+                    with col_thu2:
+                        st.write("")
+                        st.write("")
+                        btn_thu = st.form_submit_button("✅ XÁC NHẬN THU TIỀN & CẤN TRỪ NỢ", type="primary", use_container_width=True)
+                        
+                    if btn_thu:
+                        if so_tien_thu > 0:
+                            if so_tien_thu > tong_tien_no_kh:
+                                st.error(f"⚠️ Số tiền nhập vào lớn hơn tổng nợ ({format_vn(tong_tien_no_kh)} đ). Vui lòng nhập lại!")
+                            else:
+                                tien_dang_thu = so_tien_thu
+                                for _, row in df_hien_thi_kh.iterrows():
+                                    if tien_dang_thu <= 0:
+                                        break
+                                    
+                                    tien_con_no_don_nay = row['tien_con_no']
+                                    if tien_dang_thu >= tien_con_no_don_nay:
+                                        c.execute("UPDATE public.ls_nhap_xuat_kho SET tien_da_thu = thanh_tien, trang_thai_tt = 'Đã thanh toán' WHERE id = %s", (row['id'],))
+                                        tien_dang_thu -= tien_con_no_don_nay
+                                    else:
+                                        c.execute("UPDATE public.ls_nhap_xuat_kho SET tien_da_thu = tien_da_thu + %s WHERE id = %s", (tien_dang_thu, row['id']))
+                                        tien_dang_thu = 0
+                                conn.commit()
+                                st.success(f"✅ Đã cấn trừ thành công {format_vn(so_tien_thu)} VNĐ vào công nợ của {kh_chon}!")
+                                time.sleep(1.5); st.rerun()
+                        else:
+                            st.warning("Vui lòng nhập số tiền lớn hơn 0.")
+
+                st.markdown("---")
+                
+                # --- BẢNG CHI TIẾT ---
+                st.write("**Bảng chi tiết các đơn còn nợ (Có thể tích chọn để gạch nợ thủ công nguyên đơn):**")
+                df_hien_thi_kh.insert(0, "Đã Thu Đủ Tiền Đơn", False)
+                df_hien_thi_b = df_hien_thi_kh[['Đã Thu Đủ Tiền Đơn', 'id', 'ngay_thao_tac', 'ten_nl', 'thanh_tien', 'tien_da_thu', 'tien_con_no', 'ghi_chu']].copy()
+                df_hien_thi_b.columns = ["Đã Thu Đủ Tiền Đơn", "ID", "Ngày Xuất", "Sản Phẩm", "Tổng Tiền", "Đã Thu (Một phần)", "Còn Nợ (Cần Thu)", "Ghi Chú"]
+                
+                edited_kh_no = st.data_editor(
+                    df_hien_thi_b,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "Đã Thu Đủ Tiền Đơn": st.column_config.CheckboxColumn("Thu Đủ Nguyên Đơn", default=False),
+                        "ID": st.column_config.NumberColumn(disabled=True),
+                        "Ngày Xuất": st.column_config.TextColumn(disabled=True),
+                        "Sản Phẩm": st.column_config.TextColumn(disabled=True),
+                        "Tổng Tiền": st.column_config.NumberColumn(disabled=True),
+                        "Đã Thu (Một phần)": st.column_config.NumberColumn(disabled=True),
+                        "Còn Nợ (Cần Thu)": st.column_config.NumberColumn(disabled=True),
+                        "Ghi Chú": st.column_config.TextColumn(disabled=True)
+                    },
+                    key="editor_kh_no"
+                )
+                
+                selected_kh_rows = edited_kh_no[edited_kh_no["Đã Thu Đủ Tiền Đơn"] == True]
+                if st.button("💰 GẠCH NỢ THỦ CÔNG CÁC ĐƠN ĐÃ CHỌN", type="primary", use_container_width=True):
+                    ids_to_update = selected_kh_rows["ID"].tolist()
+                    if not ids_to_update:
+                        st.error("⚠️ Vui lòng tích chọn ít nhất 1 đơn!")
                     else:
-                        c.execute(f"UPDATE public.ls_nhap_xuat_kho SET trang_thai_tt='Đã thanh toán' WHERE id IN {tuple(ids_to_update)}")
-                    conn.commit()
-                    st.success("✅ Đã cập nhật trạng thái thu tiền thành công!")
-                    time.sleep(1.5); st.rerun()
+                        if len(ids_to_update) == 1:
+                            c.execute("UPDATE public.ls_nhap_xuat_kho SET tien_da_thu = thanh_tien, trang_thai_tt='Đã thanh toán' WHERE id = %s", (ids_to_update[0],))
+                        else:
+                            c.execute(f"UPDATE public.ls_nhap_xuat_kho SET tien_da_thu = thanh_tien, trang_thai_tt='Đã thanh toán' WHERE id IN {tuple(ids_to_update)}")
+                        conn.commit()
+                        st.success("✅ Đã gạch nợ thành công!")
+                        time.sleep(1.5); st.rerun()
         else:
             st.success("✅ Tuyệt vời! Hiện tại không có Khách hàng hoặc Đại lý nào nợ tiền.")
     except Exception as e: st.error(f"Lỗi: {e}")
