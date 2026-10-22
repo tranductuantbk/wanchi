@@ -56,7 +56,7 @@ if role == "employee":
     st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: Trang Quản Lý Kho chỉ dành cho Quản lý WANCHI.")
     st.stop()
 
-st.header("📦 Quản Lý Kho")
+st.header("📦 Quản Lý Kho, Công Nợ")
 
 conn = get_connection()
 c = conn.cursor()
@@ -82,6 +82,7 @@ try:
                     id SERIAL PRIMARY KEY, ten_ncc TEXT UNIQUE
                 )''')
     c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS nha_cung_cap TEXT")
+    c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS khach_hang TEXT")
     c.execute("ALTER TABLE public.ls_nhap_xuat_kho ADD COLUMN IF NOT EXISTS trang_thai_tt TEXT")
     
     # BẢNG MỚI ĐỂ LƯU LỊCH SỬ PHIẾU CHI
@@ -162,7 +163,6 @@ def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi, df_selected=No
         font_name = "Roboto"
     else: font_name = "Helvetica"
 
-    # ---- BỔ SUNG LOGO VÀ ĐỊA CHỈ ----
     start_y, start_x = 12, 65  
     try:
         if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
@@ -180,7 +180,6 @@ def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi, df_selected=No
     pdf.set_xy(start_x, pdf.get_y() + 1)
     pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
     pdf.ln(12)
-    # ---------------------------------
 
     pdf.set_font(font_name, 'B' if has_font else '', 16)
     pdf.cell(0, 10, "PHIẾU CHI TIỀN (THANH TOÁN CÔNG NỢ NCC)", ln=True, align="C")
@@ -194,7 +193,6 @@ def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi, df_selected=No
     pdf.cell(0, 8, f"Lý do chi: Thanh toán công nợ tiền vật tư / nguyên liệu nhập kho.", ln=True)
     pdf.ln(3)
     
-    # ---- BẢNG LIỆT KÊ CHI TIẾT CÁC GIAO DỊCH ĐƯỢC THANH TOÁN ----
     if df_selected is not None and not df_selected.empty:
         pdf.set_font(font_name, 'B' if has_font else '', 10)
         pdf.set_fill_color(230, 230, 230)
@@ -238,17 +236,13 @@ def generate_phieu_chi_pdf(ten_ncc, ma_phieu, tong_chi, ngay_chi, df_selected=No
         out = pdf.output(dest='S')
         return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
-
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["📋 NVL, NCC, Công Nợ", "📥 Nhập / Xuất Kho", "📊 Báo Cáo Tồn Kho", "🕰️ Lịch Sử Công Nợ"])
+tab1, tab2, tab_kh, tab3, tab4 = st.tabs(["📋 NVL, NCC, Công Nợ", "📥 Nhập / Xuất Kho", "👤 Khách Hàng Công Nợ", "📊 Báo Cáo Tồn Kho", "🕰️ Lịch Sử Công Nợ"])
 
 with tab1:
-    # --- KHU VỰC THÊM & THEO DÕI NHÀ CUNG CẤP ---
     st.subheader("🏢 Quản Lý Nhà Cung Cấp & Theo Dõi Công Nợ")
-    
-    # 1. Thêm NCC
     with st.form("form_them_ncc", clear_on_submit=True):
         c_ncc1, c_ncc2 = st.columns([3, 1])
         with c_ncc1: 
@@ -269,7 +263,6 @@ with tab1:
             else:
                 st.warning("Vui lòng nhập tên Nhà Cung Cấp!")
 
-    # 2. Bảng Theo dõi công nợ NCC
     st.markdown("**🔍 Theo dõi Hóa đơn & Công Nợ NCC**")
     try:
         df_ncc = pd.read_sql("SELECT ten_ncc FROM public.dm_ncc ORDER BY id DESC", conn)
@@ -286,7 +279,6 @@ with tab1:
                 tong_no = df_no['thanh_tien'].sum()
                 st.warning(f"🚨 **CẢNH BÁO:** Bạn đang nợ {ncc_chon_cong_no} tổng cộng **{format_vn(tong_no)} VNĐ**.")
                 
-                # Bổ sung cột Checkbox để chọn trả từng phần
                 df_no.insert(0, "Chọn Thanh Toán", False)
                 df_hien_thi_no = df_no.copy()
                 df_hien_thi_no.columns = ["Chọn Thanh Toán", "Mã Giao Dịch (ID)", "Ngày Nhập", "Tên Vật Tư", "Số Lượng", "Đơn Giá", "Thành Tiền", "Ghi Chú"]
@@ -320,7 +312,7 @@ with tab1:
                     ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
                     horizontal=True, 
                     key="radio_xuat_chi",
-                    index=1 # Mặc định chọn Ảnh
+                    index=1
                 )
                 
                 c_tt1, c_tt2 = st.columns([1, 2])
@@ -336,7 +328,6 @@ with tab1:
                             else:
                                 c.execute(f"UPDATE public.ls_nhap_xuat_kho SET trang_thai_tt='Đã thanh toán' WHERE id IN {ids_tuple}")
                             
-                            # Lưu vào Lịch sử Phiếu Chi
                             ngay_chi_hien_tai = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                             ma_phieu_chi = f"PC_{int(time.time())}"
                             chi_tiet_json = selected_rows.to_json(orient='records')
@@ -345,8 +336,6 @@ with tab1:
                                          VALUES (%s, %s, %s, %s, %s)""", 
                                       (ma_phieu_chi, ngay_chi_hien_tai, ncc_chon_cong_no, float(tong_chi_chon), chi_tiet_json))
                             conn.commit()
-                            
-                            # Dọn dẹp chỉ để lại 50 phiếu gần nhất
                             don_dep_lich_su_chi()
                             
                             st.session_state['pdf_phieu_chi'] = generate_phieu_chi_pdf(ncc_chon_cong_no, ma_phieu_chi, tong_chi_chon, ngay_chi_hien_tai, selected_rows)
@@ -356,7 +345,7 @@ with tab1:
                             if img_chi:
                                 st.session_state['img_phieu_chi'] = img_chi
                                 
-                            st.success(f"✅ Đã thanh toán công nợ thành công. Hệ thống đã gạch nợ. Tải Phiếu Chi bên dưới.")
+                            st.success(f"✅ Đã thanh toán công nợ thành công. Hệ thống đã gạch nợ.")
                 
                 if 'pdf_phieu_chi' in st.session_state:
                     st.markdown("---")
@@ -369,12 +358,9 @@ with tab1:
                             st.download_button("🖼️ TẢI PHIẾU CHI (ẢNH)", data=st.session_state['img_phieu_chi'], file_name=st.session_state['ten_file_chi'].replace('.pdf','.png'), mime="image/png", type="primary", use_container_width=True)
             else:
                 st.success(f"✅ Tuyệt vời! Hiện tại bạn không nợ công ty {ncc_chon_cong_no} đồng nào.")
-
     except Exception as e: pass
 
     st.markdown("---")
-    
-    # --- KHU VỰC THÊM NGUYÊN VẬT LIỆU ---
     st.subheader("➕ Thêm Nguyên Vật Liệu Mới")
     with st.form("form_them_nl", clear_on_submit=True):
         c1, c2, c3 = st.columns([1, 2, 1])
@@ -391,13 +377,10 @@ with tab1:
 
     st.markdown("---")
     st.subheader("📄 Danh Sách Nguyên Vật Liệu")
-    st.info("💡 **Mẹo:** Nhấp đúp chuột vào các cột **Mã NVL**, **Tên Nguyên Vật Liệu**, **Đơn Vị** để sửa trực tiếp.")
-
     try:
         df_nl = pd.read_sql("SELECT id, ma_nl, ten_nl, don_vi FROM public.dm_nguyen_lieu ORDER BY id DESC", conn)
         if not df_nl.empty:
             df_nl = df_nl.fillna({"ma_nl": "", "ten_nl": "", "don_vi": ""})
-            
             edited_nl = st.data_editor(
                 df_nl,
                 column_config={
@@ -409,9 +392,7 @@ with tab1:
                 hide_index=True, use_container_width=True, key="editor_nl"
             )
 
-            diff_mask = (edited_nl['ma_nl'] != df_nl['ma_nl']) | \
-                        (edited_nl['ten_nl'] != df_nl['ten_nl']) | \
-                        (edited_nl['don_vi'] != df_nl['don_vi'])
+            diff_mask = (edited_nl['ma_nl'] != df_nl['ma_nl']) | (edited_nl['ten_nl'] != df_nl['ten_nl']) | (edited_nl['don_vi'] != df_nl['don_vi'])
 
             if diff_mask.any():
                 st.warning("⚠️ CHÚ Ý: Bạn vừa chỉnh sửa thông tin vật tư trên bảng. Bạn có muốn lưu lại những thay đổi này không?")
@@ -426,18 +407,14 @@ with tab1:
                                           (str(row['ma_nl']).strip(), str(row['ten_nl']).strip(), str(row['don_vi']).strip(), int(row['id'])))
                                 count += 1
                             conn.commit()
-                            st.success(f"✅ Đã cập nhật thành công {count} vật tư!")
-                            time.sleep(1.5)
-                            st.rerun()
+                            st.success(f"✅ Đã cập nhật thành công {count} vật tư!"); time.sleep(1.5); st.rerun()
                         except Exception as e:
                             conn.rollback()
-                            st.error(f"Lỗi cập nhật (có thể trùng tên NVL): {e}")
+                            st.error(f"Lỗi cập nhật: {e}")
                 with col_luu2:
-                    if st.button("❌ HỦY BỎ", use_container_width=True):
-                        st.rerun()
-
+                    if st.button("❌ HỦY BỎ", use_container_width=True): st.rerun()
+            
             st.markdown("---")
-            st.subheader("🗑️ Xóa Nguyên Vật Liệu")
             col_xoa1, col_xoa2 = st.columns([3, 1])
             with col_xoa1: nl_can_xoa = st.selectbox("Chọn NVL cần xóa:", ["-- Chọn --"] + df_nl['ten_nl'].tolist())
             with col_xoa2:
@@ -446,18 +423,11 @@ with tab1:
                     if nl_can_xoa != "-- Chọn --":
                         try:
                             c.execute("DELETE FROM public.dm_nguyen_lieu WHERE ten_nl=%s", (nl_can_xoa,))
-                            conn.commit()
-                            st.success(f"✅ Đã xóa: {nl_can_xoa}")
-                            time.sleep(1)
-                            st.rerun()
+                            conn.commit(); st.success(f"✅ Đã xóa: {nl_can_xoa}"); time.sleep(1); st.rerun()
                         except Exception as e:
-                            conn.rollback()
-                            st.error(f"Lỗi: {e}")
-
-        else:
-            st.info("Kho NVL đang trống.")
-    except Exception as e:
-        st.error(f"Lỗi truy xuất dữ liệu: {e}")
+                            conn.rollback(); st.error(f"Lỗi: {e}")
+        else: st.info("Kho NVL đang trống.")
+    except Exception as e: st.error(f"Lỗi truy xuất dữ liệu: {e}")
 
 with tab2:
     chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📥 1. Nhập NVL, NCC", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)"], horizontal=True)
@@ -475,11 +445,20 @@ with tab2:
                 ma_don_chon = don_chon_str.split("] ")[1].split(" - ")[0]
                 don_info = df_dh[df_dh['ma_don'] == ma_don_chon].iloc[0]
                 
+                # Logic xác định trạng thái thanh toán mặc định dựa trên Khách hàng
+                ten_khach_hang_hien_tai = don_info['ten_kh']
+                la_dai_ly = "đại lý" in ten_khach_hang_hien_tai.lower()
+                trang_thai_tt_xuat = st.selectbox(
+                    "Trạng thái thanh toán Đơn hàng", 
+                    ["Chưa thanh toán", "Đã thanh toán"], 
+                    index=0 if la_dai_ly else 1
+                )
+                
                 items = json.loads(don_info['chi_tiet'])
                 df_items = pd.DataFrame(items)
                 st.dataframe(df_items, use_container_width=True, hide_index=True)
                 
-                c_btn1, c_btn2, c_btn3 = st.columns([2, 2, 2])
+                c_btn1, c_btn2 = st.columns([2, 2])
                 
                 if don_info['trang_thai'] in ['Chờ xuất kho', 'Mới tạo']:
                     with c_btn1:
@@ -487,11 +466,20 @@ with tab2:
                             for item in items:
                                 ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
                                 sl = float(item.get('Số Lượng', 0))
+                                don_gia_sp = float(item.get('Đơn Giá', item.get('Giá', 0))) # Lấy giá nếu có
+                                thanh_tien_sp = sl * don_gia_sp
+                                
                                 c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
                                 c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
-                                c.execute("INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) VALUES (%s, 'Xuất Bán', %s, %s, %s)", (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, -sl, f"Đơn {ma_don_chon}"))
+                                
+                                # Ghi nhận xuất kho kèm Khách hàng và Trạng thái thanh toán
+                                c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
+                                             (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, khach_hang, trang_thai_tt) 
+                                             VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s)""", 
+                                          (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, -sl, don_gia_sp, thanh_tien_sp, f"Đơn {ma_don_chon}", ten_khach_hang_hien_tai, trang_thai_tt_xuat))
+                                
                             c.execute("UPDATE public.don_hang SET trang_thai = 'Đã xuất kho' WHERE ma_don = %s", (ma_don_chon,))
-                            conn.commit(); st.success("Đã xuất kho!"); time.sleep(1.5); st.rerun()
+                            conn.commit(); st.success("Đã xuất kho và lưu công nợ!"); time.sleep(1.5); st.rerun()
                     
                     with c_btn2:
                         if st.button("❌ HỦY ĐƠN NÀY", use_container_width=True):
@@ -513,7 +501,6 @@ with tab2:
                                 c.execute("INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) VALUES (%s, 'Thu hồi đơn', %s, %s, %s)", (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, sl, f"Thu hồi đơn {ma_don_chon}"))
                             c.execute("UPDATE public.don_hang SET trang_thai = 'Đã thu hồi' WHERE ma_don = %s", (ma_don_chon,))
                             conn.commit(); st.info("Đã thu hồi hàng về kho."); time.sleep(1.5); st.rerun()
-                
                 else:
                     st.info(f"Đơn hàng này đang ở trạng thái: **{don_info['trang_thai']}**")
 
@@ -524,10 +511,8 @@ with tab2:
         st.markdown("#### 📥 Nhập Nguyên Vật Liệu từ Nhà Cung Cấp")
         try:
             df_nl_ton = pd.read_sql("SELECT ten_nl, don_vi FROM public.dm_nguyen_lieu", conn)
-            
             try: df_ncc = pd.read_sql("SELECT ten_ncc FROM public.dm_ncc", conn)
             except: df_ncc = pd.DataFrame()
-            
             danh_sach_ncc = df_ncc['ten_ncc'].tolist() if not df_ncc.empty else ["-- Chưa có Nhà Cung Cấp --"]
 
             if not df_nl_ton.empty:
@@ -556,13 +541,10 @@ with tab2:
                                          VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s, %s, %s)""", 
                                       (ngay_tt, nl_chon, sl_tt, don_gia, thanh_tien, ghi_chu, ncc_chon, trang_thai_tt))
                             conn.commit()
-                            
                             st.success(f"✅ Đã ghi nhận lô hàng từ {ncc_chon} vào Lịch sử & Công nợ!")
-                            st.info(f"💰 Tổng tiền lô hàng: **{format_vn(thanh_tien)} VNĐ** ({trang_thai_tt})")
                             time.sleep(2); st.rerun()
-            else:
-                st.warning("⚠️ Kho chưa có Danh mục Vật tư nào. Vui lòng tạo Vật tư ở Tab 1 trước!")
-        except Exception as e: st.error(f"Lỗi truy xuất: {str(e)}")
+            else: st.warning("⚠️ Kho chưa có Danh mục Vật tư nào.")
+        except Exception as e: st.error(str(e))
 
     elif "2. Nhập Thành Phẩm" in chuyem_muc:
         st.markdown("#### 📦 Nhập Thành Phẩm Vừa Sản Xuất")
@@ -599,6 +581,64 @@ with tab2:
             else: st.info("Chưa có danh mục sản phẩm.")
         except Exception as e: st.error(str(e))
 
+# ------------------------------------------
+# TAB KHÁCH HÀNG CÔNG NỢ
+# ------------------------------------------
+with tab_kh:
+    st.subheader("👤 Theo Dõi Công Nợ Khách Hàng / Đại Lý")
+    try:
+        df_kh_no = pd.read_sql("SELECT id, ngay_thao_tac, khach_hang, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac='Xuất Bán' AND trang_thai_tt='Chưa thanh toán' ORDER BY khach_hang", conn)
+        if not df_kh_no.empty:
+            danh_sach_kh = df_kh_no['khach_hang'].unique().tolist()
+            kh_chon = st.selectbox("🔍 Chọn Khách Hàng / Đại Lý để xem công nợ:", ["-- Tất cả --"] + danh_sach_kh)
+            
+            if kh_chon != "-- Tất cả --":
+                df_hien_thi_kh = df_kh_no[df_kh_no['khach_hang'] == kh_chon].copy()
+            else:
+                df_hien_thi_kh = df_kh_no.copy()
+            
+            tong_tien_no_kh = df_hien_thi_kh['thanh_tien'].sum()
+            st.warning(f"🚨 Tổng số tiền đang nợ: **{format_vn(tong_tien_no_kh)} VNĐ**")
+            
+            df_hien_thi_kh.insert(0, "Đã Thu Tiền", False)
+            df_hien_thi_kh.columns = ["Đã Thu Tiền", "ID Giao Dịch", "Ngày Xuất", "Khách Hàng", "Sản Phẩm", "SL (Xuất)", "Đơn Giá", "Thành Tiền", "Ghi Chú"]
+            
+            st.write("Tích chọn vào các đơn hàng đã được thanh toán để gạch nợ:")
+            edited_kh_no = st.data_editor(
+                df_hien_thi_kh,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Đã Thu Tiền": st.column_config.CheckboxColumn("Xác Nhận Thu", default=False),
+                    "ID Giao Dịch": st.column_config.NumberColumn(disabled=True),
+                    "Ngày Xuất": st.column_config.TextColumn(disabled=True),
+                    "Khách Hàng": st.column_config.TextColumn(disabled=True),
+                    "Sản Phẩm": st.column_config.TextColumn(disabled=True),
+                    "SL (Xuất)": st.column_config.NumberColumn(disabled=True),
+                    "Đơn Giá": st.column_config.NumberColumn(disabled=True),
+                    "Thành Tiền": st.column_config.NumberColumn(disabled=True),
+                    "Ghi Chú": st.column_config.TextColumn(disabled=True)
+                },
+                key="editor_kh_no"
+            )
+            
+            selected_kh_rows = edited_kh_no[edited_kh_no["Đã Thu Tiền"] == True]
+            if st.button("💰 XÁC NHẬN ĐÃ THU TIỀN CÁC MỤC ĐÃ CHỌN", type="primary", use_container_width=True):
+                ids_to_update = selected_kh_rows["ID Giao Dịch"].tolist()
+                if not ids_to_update:
+                    st.error("⚠️ Vui lòng tích chọn ít nhất 1 dòng từ bảng trên!")
+                else:
+                    if len(ids_to_update) == 1:
+                        c.execute("UPDATE public.ls_nhap_xuat_kho SET trang_thai_tt='Đã thanh toán' WHERE id = %s", (ids_to_update[0],))
+                    else:
+                        c.execute(f"UPDATE public.ls_nhap_xuat_kho SET trang_thai_tt='Đã thanh toán' WHERE id IN {tuple(ids_to_update)}")
+                    conn.commit()
+                    st.success("✅ Đã cập nhật trạng thái thu tiền thành công!")
+                    time.sleep(1.5); st.rerun()
+        else:
+            st.success("✅ Tuyệt vời! Hiện tại không có Khách hàng hoặc Đại lý nào nợ tiền.")
+    except Exception as e: st.error(f"Lỗi: {e}")
+
 with tab3:
     st.info("💡 **Mẹo:** Bạn có thể chỉnh sửa trực tiếp số liệu ở cột **Tồn Kho (Sửa được)**. Sau khi sửa, hãy bấm nút Lưu xuất hiện bên dưới bảng để cập nhật.")
     
@@ -632,9 +672,6 @@ with tab3:
     except Exception as e:
         st.error(f"Lỗi truy xuất tồn kho: {e}")
 
-# ------------------------------------------
-# TAB 4: LỊCH SỬ CÔNG NỢ
-# ------------------------------------------
 with tab4:
     st.subheader("🕰️ Lịch sử Thanh toán Công nợ (50 phiếu gần nhất)")
     try:
