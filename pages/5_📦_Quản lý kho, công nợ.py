@@ -325,6 +325,90 @@ def generate_doi_soat_kh_pdf(ten_kh, tong_no, df_no):
         out = pdf.output(dest='S')
         return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
+def generate_doi_soat_ncc_pdf(ten_ncc, tong_no, df_no):
+    pdf = FPDF()
+    pdf.add_page()
+    has_font = os.path.exists(FONT_FILE)
+    if has_font:
+        pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+        pdf.add_font("Roboto", "B", FONT_FILE, uni=True) 
+        font_name = "Roboto"
+    else: font_name = "Helvetica"
+
+    start_y, start_x = 12, 65  
+    try:
+        if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
+        elif os.path.exists("logo.png"): pdf.image("logo.png", x=15, y=start_y, w=40)
+        else:
+            pdf.set_font(font_name, 'B', 18)
+            pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    except:
+        pdf.set_font(font_name, 'B', 18)
+        pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    
+    pdf.set_font(font_name, size=10)
+    pdf.set_xy(start_x, start_y + 2)
+    pdf.multi_cell(0, 5, "775 Võ Hữu Lợi, Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM")
+    pdf.set_xy(start_x, pdf.get_y() + 1)
+    pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
+    pdf.ln(12)
+
+    pdf.set_font(font_name, 'B' if has_font else '', 16)
+    pdf.cell(0, 10, "BẢNG KÊ ĐỐI SOÁT CÔNG NỢ NHÀ CUNG CẤP", ln=True, align="C")
+    
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(0, 6, f"Ngày xuất: {lay_gio_vn().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
+    pdf.ln(5)
+    
+    pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
+    pdf.ln(3)
+    
+    if not df_no.empty:
+        pdf.set_font(font_name, 'B' if has_font else '', 9)
+        pdf.set_fill_color(230, 230, 230)
+        pdf.cell(10, 10, "STT", border=1, align="C", fill=True)
+        pdf.cell(30, 10, "Ngày Nhập", border=1, align="C", fill=True)
+        pdf.cell(100, 10, "Vật Tư (Ghi chú)", border=1, align="C", fill=True)
+        pdf.cell(50, 10, "Thành Tiền", border=1, ln=True, align="C", fill=True)
+
+        pdf.set_font(font_name, "", 9)
+        stt = 1
+        for _, row in df_no.iterrows():
+            ngay = str(row.get("Ngày Nhập", ""))
+            vt = str(row.get("Tên Vật Tư", ""))
+            sl = format_vn(row.get("Số Lượng", 0))
+            gc = str(row.get("Ghi Chú", ""))
+            
+            vt_info = f"{vt} (SL: {sl})"
+            if gc and gc != "None": vt_info += f" - {gc}"
+            
+            tt = row.get("Thành Tiền", 0)
+            
+            pdf.cell(10, 8, str(stt), border=1, align="C")
+            pdf.cell(30, 8, ngay.split()[0] if ngay else "", border=1, align="C")
+            
+            current_x, current_y = pdf.get_x(), pdf.get_y()
+            pdf.multi_cell(100, 8, vt_info, border=1, align="L")
+            next_y = pdf.get_y()
+            pdf.set_xy(current_x + 100, current_y)
+            
+            pdf.cell(50, next_y - current_y, format_vn(tt), border=1, ln=True, align="R")
+            stt += 1
+            
+        pdf.set_font(font_name, 'B' if has_font else '', 11)
+        pdf.cell(140, 10, "TỔNG NỢ HIỆN TẠI:", border=1, align="R")
+        pdf.cell(50, 10, format_vn(tong_no) + " đ", border=1, ln=True, align="R")
+
+    pdf.ln(10)
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(95, 6, "Người Lập Phiếu", align='C')
+    pdf.cell(95, 6, "Nhà Cung Cấp (Xác Nhận)", ln=True, align='C')
+    
+    try: return bytes(pdf.output())
+    except:
+        out = pdf.output(dest='S')
+        return out.encode('latin-1') if isinstance(out, str) else bytes(out)
+
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
@@ -368,6 +452,44 @@ with tab1:
                 tong_no = df_no['thanh_tien'].sum()
                 st.warning(f"🚨 **CẢNH BÁO:** Bạn đang nợ {ncc_chon_cong_no} tổng cộng **{format_vn(tong_no)} VNĐ**.")
                 
+                # --- XUẤT FILE ĐỐI SOÁT ---
+                st.markdown("**📁 Tùy chọn in phiếu đối soát để gửi NCC:**")
+                loai_xuat_ds_ncc = st.radio(
+                    "Định dạng xuất Phiếu Đối Soát:", 
+                    ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
+                    horizontal=True, 
+                    index=1,
+                    key=f"radio_ds_ncc_{ncc_chon_cong_no}"
+                )
+                
+                col_ds1, col_ds2 = st.columns(2)
+                with col_ds1:
+                    if st.button("📝 TẠO FILE ĐỐI SOÁT CÔNG NỢ", use_container_width=True):
+                        df_in_ncc = df_no.copy()
+                        df_in_ncc.columns = ["ID", "Ngày Nhập", "Tên Vật Tư", "Số Lượng", "Đơn Giá", "Thành Tiền", "Ghi Chú"]
+                        
+                        pdf_ds_ncc = generate_doi_soat_ncc_pdf(ncc_chon_cong_no, tong_no, df_in_ncc)
+                        st.session_state['pdf_doi_soat_ncc'] = pdf_ds_ncc
+                        st.session_state['file_ds_name_ncc'] = f"DoiSoat_{ncc_chon_cong_no}.pdf"
+                        
+                        img_ds_ncc = convert_pdf_to_png(pdf_ds_ncc)
+                        if img_ds_ncc:
+                            st.session_state['img_doi_soat_ncc'] = img_ds_ncc
+                        st.success("Đã tạo file đối soát thành công!")
+                
+                if 'pdf_doi_soat_ncc' in st.session_state and st.session_state.get('file_ds_name_ncc') == f"DoiSoat_{ncc_chon_cong_no}.pdf":
+                    dl_d1, dl_d2 = st.columns(2)
+                    if "PDF" in loai_xuat_ds_ncc or "Cả" in loai_xuat_ds_ncc:
+                        with dl_d1:
+                            st.download_button("🖨️ TẢI FILE ĐỐI SOÁT (PDF)", data=st.session_state['pdf_doi_soat_ncc'], file_name=st.session_state['file_ds_name_ncc'], mime="application/pdf", type="primary", use_container_width=True)
+                    if ("Ảnh" in loai_xuat_ds_ncc or "Cả" in loai_xuat_ds_ncc) and st.session_state.get('img_doi_soat_ncc'):
+                        with dl_d2:
+                            st.download_button("🖼️ TẢI FILE ĐỐI SOÁT (ẢNH)", data=st.session_state['img_doi_soat_ncc'], file_name=st.session_state['file_ds_name_ncc'].replace('.pdf','.png'), mime="image/png", type="primary", use_container_width=True)
+                
+                st.markdown("---")
+
+                # --- BẢNG THANH TOÁN ---
+                st.markdown("#### 💰 Thanh toán & Cấn trừ nợ NCC")
                 df_no.insert(0, "Chọn Thanh Toán", False)
                 df_hien_thi_no = df_no.copy()
                 df_hien_thi_no.columns = ["Chọn Thanh Toán", "Mã Giao Dịch (ID)", "Ngày Nhập", "Tên Vật Tư", "Số Lượng", "Đơn Giá", "Thành Tiền", "Ghi Chú"]
