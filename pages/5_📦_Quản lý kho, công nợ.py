@@ -450,8 +450,6 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, ghi_chu, ngay_nhap):
     pdf.ln(5)
     
     pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
-    if ghi_chu:
-        pdf.cell(0, 8, f"Ghi chú: {ghi_chu}", ln=True)
     pdf.ln(3)
     
     if not df_items.empty:
@@ -475,7 +473,18 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, ghi_chu, ngay_nhap):
             pdf.cell(35, 8, pl, border=1, ln=True, align="C")
             stt += 1
 
-    pdf.ln(10)
+    pdf.ln(5)
+    
+    # BẢNG GHI CHÚ
+    if ghi_chu and ghi_chu.strip() != "":
+        pdf.set_font(font_name, 'B' if has_font else '', 10)
+        pdf.set_fill_color(245, 245, 245)
+        pdf.cell(190, 8, "GHI CHÚ KÈM THEO", border=1, ln=True, align="L", fill=True)
+        pdf.set_font(font_name, "", 10)
+        pdf.multi_cell(190, 8, ghi_chu, border=1, align="L")
+        pdf.ln(5)
+
+    pdf.ln(5)
     pdf.set_font(font_name, "", 11)
     pdf.cell(95, 6, "Người Lập Phiếu", align='C')
     pdf.cell(95, 6, "Đại Diện Giao Hàng", ln=True, align='C')
@@ -779,7 +788,7 @@ with tab2:
                 with col_tt1:
                     trang_thai_tt = st.selectbox("Trạng thái thanh toán", ["Chưa thanh toán", "Đã thanh toán"])
                 with col_tt2:
-                    ghi_chu = st.text_input("📝 Ghi chú đơn nhập:")
+                    ghi_chu = st.text_area("📝 Ghi chú (sẽ in thành bảng riêng bên dưới):")
                 
                 loai_xuat_nhap = st.radio(
                     "Định dạng xuất file:", 
@@ -994,6 +1003,7 @@ with tab2:
 with tab_kh:
     st.subheader("👤 Theo Dõi & Thu Hồi Công Nợ Khách Hàng / Đại Lý")
     try:
+        # Tải danh sách đơn xuất bán chưa thanh toán hết (kể cả có trả 1 phần)
         df_kh_no = pd.read_sql("SELECT id, ngay_thao_tac, khach_hang, ten_nl, so_luong, don_gia, thanh_tien, COALESCE(tien_da_thu, 0) as tien_da_thu, ghi_chu FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac='Xuất Bán' AND trang_thai_tt='Chưa thanh toán' ORDER BY khach_hang, id ASC", conn)
         
         if not df_kh_no.empty:
