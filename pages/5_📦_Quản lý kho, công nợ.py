@@ -116,7 +116,7 @@ def don_dep_lich_su_chi():
         conn.rollback()
 
 # ==========================================
-# HÀM TẠO PHIẾU XUẤT KHO / PHIẾU CHI / PHIẾU ĐỐI SOÁT PDF
+# HÀM TẠO PHIẾU PDF
 # ==========================================
 def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf = FPDF()
@@ -414,6 +414,84 @@ def generate_doi_soat_ncc_pdf(ten_ncc, tong_no, df_no):
         out = pdf.output(dest='S')
         return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
+def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, ngay_nhap):
+    pdf = FPDF()
+    pdf.add_page()
+    has_font = os.path.exists(FONT_FILE)
+    if has_font:
+        pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+        pdf.add_font("Roboto", "B", FONT_FILE, uni=True) 
+        font_name = "Roboto"
+    else: font_name = "Helvetica"
+
+    start_y, start_x = 12, 65  
+    try:
+        if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
+        elif os.path.exists("logo.png"): pdf.image("logo.png", x=15, y=start_y, w=40)
+        else:
+            pdf.set_font(font_name, 'B', 18)
+            pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    except:
+        pdf.set_font(font_name, 'B', 18)
+        pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    
+    pdf.set_font(font_name, size=10)
+    pdf.set_xy(start_x, start_y + 2)
+    pdf.multi_cell(0, 5, "775 Võ Hữu Lợi, Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM")
+    pdf.set_xy(start_x, pdf.get_y() + 1)
+    pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
+    pdf.ln(12)
+
+    pdf.set_font(font_name, 'B' if has_font else '', 16)
+    pdf.cell(0, 10, "PHIẾU NHẬP KHO", ln=True, align="C")
+    
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(0, 6, f"Mã Phiếu: {ma_phieu}   |   Ngày nhập: {ngay_nhap}", ln=True, align="C")
+    pdf.ln(5)
+    
+    pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
+    if ghi_chu:
+        pdf.cell(0, 8, f"Ghi chú: {ghi_chu}", ln=True)
+    pdf.ln(3)
+    
+    if not df_items.empty:
+        pdf.set_font(font_name, 'B' if has_font else '', 10)
+        pdf.set_fill_color(230, 230, 230)
+        pdf.cell(15, 10, "STT", border=1, align="C", fill=True)
+        pdf.cell(85, 10, "Tên Vật Tư", border=1, align="C", fill=True)
+        pdf.cell(20, 10, "SL", border=1, align="C", fill=True)
+        pdf.cell(35, 10, "Đơn Giá", border=1, align="C", fill=True)
+        pdf.cell(35, 10, "Thành Tiền", border=1, ln=True, align="C", fill=True)
+
+        pdf.set_font(font_name, "", 10)
+        stt = 1
+        for _, row in df_items.iterrows():
+            vt = str(row.get("Vật Tư", ""))
+            sl = row.get("Số Lượng", 0)
+            dg = row.get("Đơn Giá", 0)
+            tt = row.get("Thành Tiền", 0)
+            
+            pdf.cell(15, 8, str(stt), border=1, align="C")
+            pdf.cell(85, 8, vt, border=1, align="L")
+            pdf.cell(20, 8, format_vn(sl), border=1, align="C")
+            pdf.cell(35, 8, format_vn(dg), border=1, align="R")
+            pdf.cell(35, 8, format_vn(tt), border=1, ln=True, align="R")
+            stt += 1
+            
+        pdf.set_font(font_name, 'B' if has_font else '', 11)
+        pdf.cell(155, 10, "TỔNG CỘNG:", border=1, align="R")
+        pdf.cell(35, 10, format_vn(tong_tien) + " đ", border=1, ln=True, align="R")
+
+    pdf.ln(10)
+    pdf.set_font(font_name, "", 11)
+    pdf.cell(95, 6, "Người Lập Phiếu", align='C')
+    pdf.cell(95, 6, "Đại Diện Giao Hàng", ln=True, align='C')
+    
+    try: return bytes(pdf.output())
+    except:
+        out = pdf.output(dest='S')
+        return out.encode('latin-1') if isinstance(out, str) else bytes(out)
+
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
@@ -646,10 +724,140 @@ with tab1:
     except Exception as e: st.error(f"Lỗi truy xuất dữ liệu: {e}")
 
 with tab2:
-    chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📥 1. Nhập NVL, NCC", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)"], horizontal=True)
+    chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📝 0. Tạo Đơn Nhập Hàng", "📥 1. Nhập NVL, NCC", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)"], horizontal=True)
     st.markdown("---")
 
-    if "3. Xuất Kho" in chuyem_muc:
+    if "0. Tạo Đơn Nhập Hàng" in chuyem_muc:
+        st.markdown("#### 📝 Lập Phiếu Nhập Kho (Nhiều Vật Tư)")
+        
+        if 'gio_nhap_kho' not in st.session_state:
+            st.session_state.gio_nhap_kho = []
+
+        try:
+            df_ncc = pd.read_sql("SELECT ten_ncc FROM public.dm_ncc", conn)
+            danh_sach_ncc = df_ncc['ten_ncc'].tolist() if not df_ncc.empty else []
+            
+            df_nl_ton = pd.read_sql("SELECT ten_nl FROM public.dm_nguyen_lieu", conn)
+            danh_sach_nl = df_nl_ton['ten_nl'].tolist() if not df_nl_ton.empty else []
+            
+            ncc_chon = st.selectbox("🏢 Chọn Nhà Cung Cấp:", ["-- Chọn NCC --"] + danh_sach_ncc)
+            
+            with st.form("form_them_sp_nhap"):
+                c1, c2, c3 = st.columns([2, 1, 1])
+                nl_chon = c1.selectbox("📦 Chọn Vật Tư", ["-- Chọn Vật Tư --"] + danh_sach_nl)
+                sl_nhap = c2.number_input("Số lượng", min_value=1.0, step=1.0)
+                gia_nhap = c3.number_input("Đơn giá (VNĐ)", min_value=0.0, step=1000.0)
+                
+                if st.form_submit_button("➕ Thêm vào phiếu nhập"):
+                    if nl_chon != "-- Chọn Vật Tư --":
+                        st.session_state.gio_nhap_kho.append({
+                            "Vật Tư": nl_chon,
+                            "Số Lượng": sl_nhap,
+                            "Đơn Giá": gia_nhap,
+                            "Thành Tiền": sl_nhap * gia_nhap
+                        })
+                        st.rerun()
+                    else:
+                        st.warning("Vui lòng chọn vật tư!")
+            
+            if st.session_state.gio_nhap_kho:
+                df_gio = pd.DataFrame(st.session_state.gio_nhap_kho)
+                df_gio.insert(0, "Xóa", False)
+                
+                st.write("**Danh sách vật tư trong phiếu nhập hiện tại:**")
+                edited_gio = st.data_editor(
+                    df_gio,
+                    column_config={
+                        "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
+                        "Vật Tư": st.column_config.TextColumn(disabled=True),
+                        "Số Lượng": st.column_config.NumberColumn("Số Lượng", min_value=1.0),
+                        "Đơn Giá": st.column_config.NumberColumn("Đơn Giá", min_value=0.0),
+                        "Thành Tiền": st.column_config.NumberColumn(disabled=True)
+                    },
+                    hide_index=True, use_container_width=True
+                )
+                
+                if edited_gio['Xóa'].any():
+                    df_valid = edited_gio[edited_gio['Xóa'] == False].drop(columns=['Xóa'])
+                    df_valid['Thành Tiền'] = df_valid['Số Lượng'] * df_valid['Đơn Giá']
+                    st.session_state.gio_nhap_kho = df_valid.to_dict('records')
+                    st.rerun()
+                
+                edited_gio['Thành Tiền'] = edited_gio['Số Lượng'] * edited_gio['Đơn Giá']
+                st.session_state.gio_nhap_kho = edited_gio.drop(columns=['Xóa']).to_dict('records')
+                
+                tong_tien = float(edited_gio['Thành Tiền'].sum())
+                st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien)} VNĐ")
+                
+                col_tt1, col_tt2 = st.columns(2)
+                with col_tt1:
+                    trang_thai_tt = st.selectbox("Trạng thái thanh toán", ["Chưa thanh toán", "Đã thanh toán"])
+                with col_tt2:
+                    ghi_chu = st.text_input("📝 Ghi chú đơn nhập:")
+                
+                loai_xuat_nhap = st.radio(
+                    "Định dạng xuất file:", 
+                    ["Chỉ xuất PDF", "Chỉ xuất Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
+                    horizontal=True, index=1
+                )
+                
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    if st.button("💾 LƯU KHO & TẠO PHIẾU", type="primary", use_container_width=True):
+                        if ncc_chon == "-- Chọn NCC --":
+                            st.error("⚠️ Vui lòng chọn Nhà Cung Cấp!")
+                        else:
+                            ma_phieu_nhap = f"PN_{int(time.time())}"
+                            ngay_nhap_str = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                            
+                            df_luu = pd.DataFrame(st.session_state.gio_nhap_kho)
+                            
+                            for _, row in df_luu.iterrows():
+                                vt = row['Vật Tư']
+                                sl = row['Số Lượng']
+                                dg = row['Đơn Giá']
+                                tt = row['Thành Tiền']
+                                gc_chi_tiet = f"Phiếu {ma_phieu_nhap} - {ghi_chu}" if ghi_chu else f"Phiếu {ma_phieu_nhap}"
+                                
+                                c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl, vt))
+                                
+                                c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
+                                             (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, nha_cung_cap, trang_thai_tt) 
+                                             VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s, %s, %s)""", 
+                                          (ngay_nhap_str, vt, sl, dg, tt, gc_chi_tiet, ncc_chon, trang_thai_tt))
+                            
+                            conn.commit()
+                            
+                            pdf_nhap = generate_phieu_nhap_pdf(ma_phieu_nhap, ncc_chon, df_luu, tong_tien, ghi_chu, ngay_nhap_str)
+                            st.session_state['pdf_phieu_nhap'] = pdf_nhap
+                            st.session_state['ten_phieu_nhap'] = f"{ma_phieu_nhap}_{ncc_chon}.pdf"
+                            
+                            img_nhap = convert_pdf_to_png(pdf_nhap)
+                            if img_nhap:
+                                st.session_state['img_phieu_nhap'] = img_nhap
+                                
+                            st.session_state.gio_nhap_kho = []
+                            st.success("✅ Đã lưu kho và tạo phiếu thành công! Hãy tải file bên dưới.")
+                
+                with col_b2:
+                    if st.button("🗑️ Xóa Phiếu Nháp", use_container_width=True):
+                        st.session_state.gio_nhap_kho = []
+                        st.rerun()
+                
+                if 'pdf_phieu_nhap' in st.session_state:
+                    st.markdown("---")
+                    dl1, dl2 = st.columns(2)
+                    if "PDF" in loai_xuat_nhap or "Cả" in loai_xuat_nhap:
+                        with dl1:
+                            st.download_button("🖨️ TẢI PHIẾU (PDF)", data=st.session_state['pdf_phieu_nhap'], file_name=st.session_state['ten_phieu_nhap'], mime="application/pdf", type="primary", use_container_width=True)
+                    if ("Ảnh" in loai_xuat_nhap or "Cả" in loai_xuat_nhap) and st.session_state.get('img_phieu_nhap'):
+                        with dl2:
+                            st.download_button("🖼️ TẢI PHIẾU (ẢNH)", data=st.session_state['img_phieu_nhap'], file_name=st.session_state['ten_phieu_nhap'].replace('.pdf','.png'), mime="image/png", type="primary", use_container_width=True)
+                            
+        except Exception as e:
+            st.error(f"Lỗi: {e}")
+
+    elif "3. Xuất Kho" in chuyem_muc:
         st.markdown("#### 🚚 Quản Lý Xuất Kho & Thu Hồi Đơn")
         try:
             df_dh = pd.read_sql("SELECT id, ma_don, ten_kh, ngay_tao, trang_thai, chi_tiet FROM public.don_hang ORDER BY id DESC", conn)
@@ -661,7 +869,6 @@ with tab2:
                 ma_don_chon = don_chon_str.split("] ")[1].split(" - ")[0]
                 don_info = df_dh[df_dh['ma_don'] == ma_don_chon].iloc[0]
                 
-                # Logic xác định trạng thái thanh toán mặc định dựa trên Khách hàng
                 ten_khach_hang_hien_tai = don_info['ten_kh']
                 la_dai_ly = "đại lý" in ten_khach_hang_hien_tai.lower()
                 trang_thai_tt_xuat = st.selectbox(
@@ -682,13 +889,12 @@ with tab2:
                             for item in items:
                                 ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
                                 sl = float(item.get('Số Lượng', 0))
-                                don_gia_sp = float(item.get('Đơn Giá', item.get('Giá', 0))) # Lấy giá nếu có
+                                don_gia_sp = float(item.get('Đơn Giá', item.get('Giá', 0)))
                                 thanh_tien_sp = sl * don_gia_sp
                                 
                                 c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
                                 c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
                                 
-                                # Ghi nhận xuất kho kèm Khách hàng và Trạng thái thanh toán
                                 c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
                                              (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, khach_hang, trang_thai_tt, tien_da_thu) 
                                              VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s, %s)""", 
@@ -724,7 +930,7 @@ with tab2:
         except Exception as e: st.error(str(e))
     
     elif "1. Nhập NVL, NCC" in chuyem_muc:
-        st.markdown("#### 📥 Nhập Nguyên Vật Liệu từ Nhà Cung Cấp")
+        st.markdown("#### 📥 Nhập Đơn Lẻ Nguyên Vật Liệu")
         try:
             df_nl_ton = pd.read_sql("SELECT ten_nl, don_vi FROM public.dm_nguyen_lieu", conn)
             try: df_ncc = pd.read_sql("SELECT ten_ncc FROM public.dm_ncc", conn)
