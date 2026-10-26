@@ -285,15 +285,15 @@ with tab1:
             pdf.cell(0, 8, f"Các ngày dự kiến tăng ca: {tc_pdf}", align="C", ln=True)
             pdf.ln(3)
             
-            w_sp = 90
-            w_day = 20
-            w_dt = 35
+            w_sp = 95
+            w_day = 19
+            w_dt = 45
             
             cac_may = pivot_df['may_ep'].unique()
             for may in cac_may:
                 pdf.set_font(font_name, "B" if has_font else "", 10)
-                pdf.set_fill_color(0, 128, 0)
-                pdf.set_text_color(255, 140, 0)
+                pdf.set_fill_color(255, 165, 0) # Màu cam lợt
+                pdf.set_text_color(255, 255, 255) # Chữ màu trắng
                 
                 pdf.cell(w_sp, 8, f"KẾ HOẠCH CHẠY MÁY: {may.upper()}", border=1, fill=True)
                 pdf.cell(w_day, 8, "Thứ 2", border=1, align="C", fill=True)
@@ -311,7 +311,7 @@ with tab1:
                 pdf.set_fill_color(255, 255, 255)
                 
                 for index, row in df_may_nay.iterrows():
-                    pdf.cell(w_sp, 8, str(row['san_pham'])[:45], border=1) 
+                    pdf.cell(w_sp, 8, str(row['san_pham'])[:70], border=1) 
                     pdf.cell(w_day, 8, f"{row['T2']:,.0f}" if row['T2'] > 0 else "-", border=1, align="C")
                     pdf.cell(w_day, 8, f"{row['T3']:,.0f}" if row['T3'] > 0 else "-", border=1, align="C")
                     pdf.cell(w_day, 8, f"{row['T4']:,.0f}" if row['T4'] > 0 else "-", border=1, align="C")
@@ -321,7 +321,7 @@ with tab1:
                     pdf.cell(w_day, 8, f"{row['CN']:,.0f}" if row['CN'] > 0 else "-", border=1, align="C")
                     
                     dt_text = str(row['doi_thung']) if pd.notna(row['doi_thung']) else "Tất cả"
-                    pdf.cell(w_dt, 8, dt_text[:15], border=1, align="C", ln=True)
+                    pdf.cell(w_dt, 8, dt_text[:30], border=1, align="C", ln=True)
                 
                 pdf.ln(5) 
             
