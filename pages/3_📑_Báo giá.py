@@ -262,7 +262,11 @@ with tab1:
     sp_list = df_sp['ten_sp'].tolist() if not df_sp.empty else []
     sp_chon = col_s1.selectbox("Chọn sản phẩm", ["-- Chọn --"] + sp_list, key="t1_chon_sp")
     
+    so_loc_chon = col_s2.number_input("📦 Số Lốc:", min_value=1, step=1, key="t1_sl_loc")
+    
+    tong_so_cai = 0
     quy_cach_loc = 1
+    
     if sp_chon != "-- Chọn --":
         info_sp = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
         try:
@@ -271,33 +275,25 @@ with tab1:
             quy_cach_loc = 1
         if pd.isna(quy_cach_loc) or quy_cach_loc <= 0:
             quy_cach_loc = 1
-        st.info(f"📦 **Quy cách đóng gói của xưởng:** `{quy_cach_loc} SP / Lốc`")
-        
-    sl_chon = col_s2.number_input("Số lượng", min_value=1, step=1, key="t1_sl")
-
-    # KIỂM TRA LẺ LỐC
-    if sp_chon != "-- Chọn --" and quy_cach_loc > 1:
-        so_sp_le = sl_chon % quy_cach_loc
-        so_loc_thuc_te = sl_chon / quy_cach_loc
-        
-        if so_sp_le != 0:
-            loc_duoi = (sl_chon // quy_cach_loc) * quy_cach_loc
-            loc_tren = loc_duoi + quy_cach_loc
             
-            st.warning(f"⚠️ **KHÁCH ĐẶT BỊ LẺ LỐC!** (Đang lẻ {so_sp_le} sản phẩm so với quy cách {quy_cach_loc} SP/lốc).")
-            st.markdown(f"💡 **GỢI Ý CHỐT SALE:** Tư vấn khách lấy **{loc_duoi} SP** hoặc **{loc_tren} SP** để chẵn lốc giao hàng.")
-        else:
-            st.success(f"✅ **CHẴN LỐC:** Vừa tròn {int(so_loc_thuc_te)} lốc.")
+        tong_so_cai = so_loc_chon * quy_cach_loc
+        
+        st.info(f"👉 **Hệ thống tự tính:** {so_loc_chon} lốc (Quy cách đóng gói: **{quy_cach_loc} cái/lốc**) = **Xuất {tong_so_cai} cái**")
+        st.success("✅ Số lượng đã đảm bảo chẵn lốc.")
             
     if st.button("Thêm vào danh sách", type="secondary"):
-        if sp_chon != "-- Chọn --":
+        if sp_chon == "-- Chọn --":
+            st.error("⚠️ Vui lòng chọn sản phẩm!")
+        elif tong_so_cai == 0:
+            st.error("⚠️ Vui lòng nhập Số Lốc hợp lệ!")
+        else:
             info = df_sp[df_sp['ten_sp'] == sp_chon].iloc[0]
             gia_cty_goc = info.get('gia_khach_le', 0)
             
             st.session_state.gio_bao_gia.append({
                 "Mã SP": info['ma_sp'], 
                 "Tên SP": sp_chon, 
-                "Số Lượng": sl_chon, 
+                "Số Lượng": tong_so_cai, 
                 "Giá công ty": gia_cty_goc,  
                 "Đơn Giá": 0 
             })
@@ -321,7 +317,7 @@ with tab1:
             st.rerun()
             
         df_curr = pd.DataFrame(st.session_state.gio_bao_gia)
-        st.info("💡 **Mẹo Pro:** Nếu số lượng đổi làm thay đổi mốc, hãy bấm nút 🔄 TÍNH LẠI phía trên. Hoặc bạn có thể **nhấp đúp** vào cột Đơn Giá để sửa tay!")
+        st.info("💡 **Mẹo Pro:** Cột Số Lượng hiển thị là tổng số cái. Nếu số lượng đổi làm thay đổi mốc, hãy bấm nút 🔄 TÍNH LẠI phía trên. Hoặc bạn có thể **nhấp đúp** vào cột Đơn Giá để sửa tay!")
         
         df_curr['Thành Tiền'] = df_curr['Số Lượng'] * df_curr['Đơn Giá']
         
@@ -331,7 +327,7 @@ with tab1:
                 "Mã SP": st.column_config.TextColumn("Mã SP", disabled=True),
                 "Tên SP": st.column_config.TextColumn("Tên SP", disabled=True),
                 "Giá công ty": st.column_config.NumberColumn("Giá công ty (Gốc Danh mục)", disabled=True),
-                "Số Lượng": st.column_config.NumberColumn("Số Lượng", min_value=1, step=1),
+                "Số Lượng": st.column_config.NumberColumn("Số lượng cái (Tổng)", min_value=1, step=1, disabled=True),
                 "Đơn Giá": st.column_config.NumberColumn("Đơn Giá (Sau CK)", min_value=0, step=1000),
                 "Thành Tiền": st.column_config.NumberColumn("Thành Tiền", disabled=True)
             },
