@@ -4,7 +4,25 @@ from datetime import date, datetime, timedelta, timezone
 import time
 from fpdf import FPDF
 import os
+import urllib.request
 from db_utils import get_connection, check_password
+
+# ==========================================
+# CẤU HÌNH MÚI GIỜ & FONT CHỮ (FIX LỖI UNICODE)
+# ==========================================
+VN_TZ = timezone(timedelta(hours=7))
+def lay_gio_vn():
+    return datetime.now(VN_TZ)
+
+FONT_FILE = "Roboto-Regular.ttf"
+FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf"
+
+@st.cache_resource
+def download_font():
+    if not os.path.exists(FONT_FILE):
+        try: urllib.request.urlretrieve(FONT_URL, FONT_FILE)
+        except: pass
+download_font()
 
 # ==========================================
 # KHỞI TẠO THƯ VIỆN CHUYỂN PDF SANG ẢNH
@@ -28,13 +46,6 @@ def convert_pdf_to_png(pdf_bytes):
     except Exception as e:
         st.error(f"Lỗi khi chuyển đổi ảnh: {e}")
         return None
-
-# ==========================================
-# CẤU HÌNH MÚI GIỜ VIỆT NAM (UTC+7)
-# ==========================================
-VN_TZ = timezone(timedelta(hours=7))
-def lay_gio_vn():
-    return datetime.now(VN_TZ)
 
 st.set_page_config(page_title="Quản Lý Sản Xuất", page_icon="🏭", layout="wide")
 
@@ -309,9 +320,9 @@ with tab2:
                 pdf.add_page()
                 
                 has_font = False
-                if os.path.exists("Roboto-Regular.ttf"):
-                    pdf.add_font("Roboto", "", "Roboto-Regular.ttf", uni=True)
-                    pdf.add_font("Roboto", "B", "Roboto-Regular.ttf", uni=True)
+                if os.path.exists(FONT_FILE):
+                    pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+                    pdf.add_font("Roboto", "B", FONT_FILE, uni=True)
                     font_name = "Roboto"
                     has_font = True
                 else: font_name = "Helvetica"
@@ -328,7 +339,7 @@ with tab2:
                 pdf.cell(0, 8, f"Các ngày dự kiến tăng ca: {tc_pdf}", align="C", ln=True)
                 pdf.ln(3)
                 
-                # Cấu hình chiều rộng cột mới tối ưu lấp đầy A4 Ngang (~277mm) để không bị mất chữ
+                # Cấu hình chiều rộng cột
                 w_sp = 82
                 w_day = 20
                 w_dt = 55
@@ -358,7 +369,6 @@ with tab2:
                     pdf.set_fill_color(255, 255, 255)
                     
                     for index, row in df_may_nay.iterrows():
-                        # Cột Tên sản phẩm được giới hạn 40 ký tự để tránh tràn ô
                         pdf.cell(w_sp, 8, str(row['san_pham'])[:40], border=1) 
                         
                         pdf.cell(w_day, 8, f"{row['T2']:,.0f}" if row['T2'] > 0 else "-", border=1, align="C")
@@ -370,13 +380,15 @@ with tab2:
                         pdf.cell(w_day, 8, f"{row['CN']:,.0f}" if row['CN'] > 0 else "-", border=1, align="C")
                         
                         dt_text = str(row['doi_thung']) if pd.notna(row['doi_thung']) else "Tất cả"
-                        # Tăng giới hạn cắt chữ lên 28 ký tự để hiển thị đủ tên nhân viên
                         pdf.cell(w_dt, 8, dt_text[:28], border=1, align="C", ln=True)
                     
                     pdf.ln(5) 
                 
-                try: pdf_bytes = bytes(pdf.output())
-                except: pdf_bytes = pdf.output(dest='S').encode('latin-1')
+                try: 
+                    pdf_bytes = bytes(pdf.output())
+                except: 
+                    # Dự phòng khi xuất lỗi, loại bỏ ký tự không tương thích
+                    pdf_bytes = pdf.output(dest='S').encode('latin-1', 'replace')
 
                 # CHUYỂN ĐỔI PDF THÀNH ẢNH TRƯỚC KHI TẢI XUỐNG
                 img_bytes = convert_pdf_to_png(pdf_bytes)
