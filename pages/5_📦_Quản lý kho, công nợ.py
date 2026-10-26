@@ -414,7 +414,7 @@ def generate_doi_soat_ncc_pdf(ten_ncc, tong_no, df_no):
         out = pdf.output(dest='S')
         return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
-def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, ngay_nhap):
+def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, ghi_chu, ngay_nhap):
     pdf = FPDF()
     pdf.add_page()
     has_font = os.path.exists(FONT_FILE)
@@ -458,29 +458,22 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
         pdf.set_font(font_name, 'B' if has_font else '', 10)
         pdf.set_fill_color(230, 230, 230)
         pdf.cell(15, 10, "STT", border=1, align="C", fill=True)
-        pdf.cell(85, 10, "Tên Vật Tư", border=1, align="C", fill=True)
-        pdf.cell(20, 10, "SL", border=1, align="C", fill=True)
-        pdf.cell(35, 10, "Đơn Giá", border=1, align="C", fill=True)
-        pdf.cell(35, 10, "Thành Tiền", border=1, ln=True, align="C", fill=True)
+        pdf.cell(100, 10, "Tên Vật Tư", border=1, align="C", fill=True)
+        pdf.cell(40, 10, "Số Lượng", border=1, align="C", fill=True)
+        pdf.cell(35, 10, "Phân Loại", border=1, ln=True, align="C", fill=True)
 
         pdf.set_font(font_name, "", 10)
         stt = 1
         for _, row in df_items.iterrows():
             vt = str(row.get("Vật Tư", ""))
             sl = row.get("Số Lượng", 0)
-            dg = row.get("Đơn Giá", 0)
-            tt = row.get("Thành Tiền", 0)
+            pl = str(row.get("Phân Loại", ""))
             
             pdf.cell(15, 8, str(stt), border=1, align="C")
-            pdf.cell(85, 8, vt, border=1, align="L")
-            pdf.cell(20, 8, format_vn(sl), border=1, align="C")
-            pdf.cell(35, 8, format_vn(dg), border=1, align="R")
-            pdf.cell(35, 8, format_vn(tt), border=1, ln=True, align="R")
+            pdf.cell(100, 8, vt, border=1, align="L")
+            pdf.cell(40, 8, format_vn(sl), border=1, align="C")
+            pdf.cell(35, 8, pl, border=1, ln=True, align="C")
             stt += 1
-            
-        pdf.set_font(font_name, 'B' if has_font else '', 11)
-        pdf.cell(155, 10, "TỔNG CỘNG:", border=1, align="R")
-        pdf.cell(35, 10, format_vn(tong_tien) + " đ", border=1, ln=True, align="R")
 
     pdf.ln(10)
     pdf.set_font(font_name, "", 11)
@@ -746,15 +739,14 @@ with tab2:
                 c1, c2, c3 = st.columns([2, 1, 1])
                 nl_chon = c1.selectbox("📦 Chọn Vật Tư", ["-- Chọn Vật Tư --"] + danh_sach_nl)
                 sl_nhap = c2.number_input("Số lượng", min_value=1.0, step=1.0)
-                gia_nhap = c3.number_input("Đơn giá (VNĐ)", min_value=0.0, step=1000.0)
+                phan_loai = c3.selectbox("Phân loại nhập", ["Kg", "Bịch", "Cái"])
                 
                 if st.form_submit_button("➕ Thêm vào phiếu nhập"):
                     if nl_chon != "-- Chọn Vật Tư --":
                         st.session_state.gio_nhap_kho.append({
                             "Vật Tư": nl_chon,
                             "Số Lượng": sl_nhap,
-                            "Đơn Giá": gia_nhap,
-                            "Thành Tiền": sl_nhap * gia_nhap
+                            "Phân Loại": phan_loai
                         })
                         st.rerun()
                     else:
@@ -771,23 +763,17 @@ with tab2:
                         "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                         "Vật Tư": st.column_config.TextColumn(disabled=True),
                         "Số Lượng": st.column_config.NumberColumn("Số Lượng", min_value=1.0),
-                        "Đơn Giá": st.column_config.NumberColumn("Đơn Giá", min_value=0.0),
-                        "Thành Tiền": st.column_config.NumberColumn(disabled=True)
+                        "Phân Loại": st.column_config.SelectboxColumn("Phân Loại", options=["Kg", "Bịch", "Cái"])
                     },
                     hide_index=True, use_container_width=True
                 )
                 
                 if edited_gio['Xóa'].any():
                     df_valid = edited_gio[edited_gio['Xóa'] == False].drop(columns=['Xóa'])
-                    df_valid['Thành Tiền'] = df_valid['Số Lượng'] * df_valid['Đơn Giá']
                     st.session_state.gio_nhap_kho = df_valid.to_dict('records')
                     st.rerun()
                 
-                edited_gio['Thành Tiền'] = edited_gio['Số Lượng'] * edited_gio['Đơn Giá']
                 st.session_state.gio_nhap_kho = edited_gio.drop(columns=['Xóa']).to_dict('records')
-                
-                tong_tien = float(edited_gio['Thành Tiền'].sum())
-                st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien)} VNĐ")
                 
                 col_tt1, col_tt2 = st.columns(2)
                 with col_tt1:
@@ -815,20 +801,19 @@ with tab2:
                             for _, row in df_luu.iterrows():
                                 vt = row['Vật Tư']
                                 sl = row['Số Lượng']
-                                dg = row['Đơn Giá']
-                                tt = row['Thành Tiền']
-                                gc_chi_tiet = f"Phiếu {ma_phieu_nhap} - {ghi_chu}" if ghi_chu else f"Phiếu {ma_phieu_nhap}"
+                                pl = row['Phân Loại']
+                                gc_chi_tiet = f"Phiếu {ma_phieu_nhap} - Phân loại: {pl} - {ghi_chu}" if ghi_chu else f"Phiếu {ma_phieu_nhap} - Phân loại: {pl}"
                                 
                                 c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl, vt))
                                 
                                 c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
                                              (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, nha_cung_cap, trang_thai_tt) 
                                              VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s, %s, %s)""", 
-                                          (ngay_nhap_str, vt, sl, dg, tt, gc_chi_tiet, ncc_chon, trang_thai_tt))
+                                          (ngay_nhap_str, vt, sl, 0, 0, gc_chi_tiet, ncc_chon, trang_thai_tt))
                             
                             conn.commit()
                             
-                            pdf_nhap = generate_phieu_nhap_pdf(ma_phieu_nhap, ncc_chon, df_luu, tong_tien, ghi_chu, ngay_nhap_str)
+                            pdf_nhap = generate_phieu_nhap_pdf(ma_phieu_nhap, ncc_chon, df_luu, ghi_chu, ngay_nhap_str)
                             st.session_state['pdf_phieu_nhap'] = pdf_nhap
                             st.session_state['ten_phieu_nhap'] = f"{ma_phieu_nhap}_{ncc_chon}.pdf"
                             
@@ -1009,7 +994,6 @@ with tab2:
 with tab_kh:
     st.subheader("👤 Theo Dõi & Thu Hồi Công Nợ Khách Hàng / Đại Lý")
     try:
-        # Tải danh sách đơn xuất bán chưa thanh toán hết (kể cả có trả 1 phần)
         df_kh_no = pd.read_sql("SELECT id, ngay_thao_tac, khach_hang, ten_nl, so_luong, don_gia, thanh_tien, COALESCE(tien_da_thu, 0) as tien_da_thu, ghi_chu FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac='Xuất Bán' AND trang_thai_tt='Chưa thanh toán' ORDER BY khach_hang, id ASC", conn)
         
         if not df_kh_no.empty:
