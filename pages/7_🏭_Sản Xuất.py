@@ -89,9 +89,10 @@ try: df_may = pd.read_sql("SELECT ten_may FROM public.dm_may_ep", conn)
 except: df_may = pd.DataFrame(columns=['ten_may'])
 list_may = df_may['ten_may'].tolist() if not df_may.empty else ["Vui lòng thêm máy ở Tab 3"]
 
+# Lấy danh sách nhân viên từ bảng nhan_vien có bộ phận đóng gói
 try:
-    df_ns = pd.read_sql("SELECT ho_ten FROM public.nhan_su WHERE bo_phan ILIKE '%đóng gói%'", conn)
-    list_nv_dong_goi = df_ns['ho_ten'].tolist() if not df_ns.empty else []
+    df_ns = pd.read_sql("SELECT ten_nv FROM public.nhan_vien WHERE bo_phan ILIKE '%đóng gói%'", conn)
+    list_nv_dong_goi = df_ns['ten_nv'].tolist() if not df_ns.empty else []
 except:
     list_nv_dong_goi = []
 list_doi_thung = ["Tất cả"] + list_nv_dong_goi
