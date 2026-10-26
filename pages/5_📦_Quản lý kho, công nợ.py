@@ -69,6 +69,10 @@ try:
     c.execute('''CREATE TABLE IF NOT EXISTS public.dm_nguyen_lieu (
                     id SERIAL PRIMARY KEY, ma_nl TEXT UNIQUE, ten_nl TEXT UNIQUE, don_vi TEXT, ton_kho REAL DEFAULT 0
                 )''')
+    
+    # Bổ sung cột don_gia cho Nguyên Vật Liệu
+    c.execute("ALTER TABLE public.dm_nguyen_lieu ADD COLUMN IF NOT EXISTS don_gia REAL DEFAULT 0")
+
     c.execute('''CREATE TABLE IF NOT EXISTS public.ls_nhap_xuat_kho (
                     id SERIAL PRIMARY KEY, ngay_thao_tac TEXT, loai_thao_tac TEXT, ten_nl TEXT, 
                     so_luong REAL, don_gia REAL DEFAULT 0, thanh_tien REAL DEFAULT 0, ghi_chu TEXT
@@ -450,16 +454,17 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
     pdf.ln(5)
     
     pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
+    if ghi_chu:
+        pdf.cell(0, 8, f"Ghi chú: {ghi_chu}", ln=True)
     pdf.ln(3)
     
     if not df_items.empty:
         pdf.set_font(font_name, 'B' if has_font else '', 10)
         pdf.set_fill_color(230, 230, 230)
-        pdf.cell(10, 10, "STT", border=1, align="C", fill=True)
-        pdf.cell(75, 10, "Tên Vật Tư", border=1, align="C", fill=True)
+        pdf.cell(15, 10, "STT", border=1, align="C", fill=True)
+        pdf.cell(85, 10, "Tên Vật Tư", border=1, align="C", fill=True)
         pdf.cell(20, 10, "SL", border=1, align="C", fill=True)
-        pdf.cell(20, 10, "Loại", border=1, align="C", fill=True)
-        pdf.cell(30, 10, "Đơn Giá", border=1, align="C", fill=True)
+        pdf.cell(35, 10, "Đơn Giá", border=1, align="C", fill=True)
         pdf.cell(35, 10, "Thành Tiền", border=1, ln=True, align="C", fill=True)
 
         pdf.set_font(font_name, "", 10)
@@ -467,15 +472,13 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
         for _, row in df_items.iterrows():
             vt = str(row.get("Vật Tư", ""))
             sl = row.get("Số Lượng", 0)
-            pl = str(row.get("Phân Loại", ""))
             dg = row.get("Đơn Giá", 0)
             tt = row.get("Thành Tiền", 0)
             
-            pdf.cell(10, 8, str(stt), border=1, align="C")
-            pdf.cell(75, 8, vt, border=1, align="L")
+            pdf.cell(15, 8, str(stt), border=1, align="C")
+            pdf.cell(85, 8, vt, border=1, align="L")
             pdf.cell(20, 8, format_vn(sl), border=1, align="C")
-            pdf.cell(20, 8, pl, border=1, align="C")
-            pdf.cell(30, 8, format_vn(dg), border=1, align="R")
+            pdf.cell(35, 8, format_vn(dg), border=1, align="R")
             pdf.cell(35, 8, format_vn(tt), border=1, ln=True, align="R")
             stt += 1
             
@@ -483,18 +486,7 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
         pdf.cell(155, 10, "TỔNG CỘNG:", border=1, align="R")
         pdf.cell(35, 10, format_vn(tong_tien) + " đ", border=1, ln=True, align="R")
 
-    pdf.ln(5)
-    
-    # BẢNG GHI CHÚ
-    if ghi_chu and ghi_chu.strip() != "":
-        pdf.set_font(font_name, 'B' if has_font else '', 10)
-        pdf.set_fill_color(245, 245, 245)
-        pdf.cell(190, 8, "GHI CHÚ KÈM THEO", border=1, ln=True, align="L", fill=True)
-        pdf.set_font(font_name, "", 10)
-        pdf.multi_cell(190, 8, ghi_chu, border=1, align="L")
-        pdf.ln(5)
-
-    pdf.ln(5)
+    pdf.ln(10)
     pdf.set_font(font_name, "", 11)
     pdf.cell(95, 6, "Người Lập Phiếu", align='C')
     pdf.cell(95, 6, "Đại Diện Giao Hàng", ln=True, align='C')
@@ -669,71 +661,109 @@ with tab1:
     st.markdown("---")
     st.subheader("➕ Thêm Nguyên Vật Liệu Mới")
     with st.form("form_them_nl", clear_on_submit=True):
-        c1, c2, c3 = st.columns([1, 2, 1])
+        c1, c2, c3, c4 = st.columns([1, 2, 1, 1.5])
         with c1: ma_nl = st.text_input("Mã Vật Tư")
         with c2: ten_nl = st.text_input("Tên Vật Tư (*)")
         with c3: don_vi = st.selectbox("Đơn vị", ["Kg", "Gram", "Cái", "Thùng", "Cuộn", "Mét", "Lít", "Bộ"])
+        with c4: don_gia_nl = st.number_input("Đơn giá mặc định (VNĐ)", min_value=0.0, step=1000.0)
+        
         if st.form_submit_button("💾 Lưu NVL Mới"):
             if ten_nl:
                 try:
-                    c.execute("INSERT INTO public.dm_nguyen_lieu (ma_nl, ten_nl, don_vi) VALUES (%s, %s, %s)", (ma_nl or f"VT{int(time.time())}", ten_nl.strip(), don_vi))
+                    c.execute("INSERT INTO public.dm_nguyen_lieu (ma_nl, ten_nl, don_vi, don_gia) VALUES (%s, %s, %s, %s)", 
+                              (ma_nl or f"VT{int(time.time())}", ten_nl.strip(), don_vi, don_gia_nl))
                     conn.commit(); st.success("✅ Đã thêm!"); time.sleep(1); st.rerun()
                 except: st.error("⚠️ Lỗi: Trùng tên hoặc mã vật tư!")
             else: st.warning("Vui lòng nhập Tên Vật Tư!")
 
     st.markdown("---")
-    st.subheader("📄 Danh Sách Nguyên Vật Liệu")
-    try:
-        df_nl = pd.read_sql("SELECT id, ma_nl, ten_nl, don_vi FROM public.dm_nguyen_lieu ORDER BY id DESC", conn)
-        if not df_nl.empty:
-            df_nl = df_nl.fillna({"ma_nl": "", "ten_nl": "", "don_vi": ""})
-            edited_nl = st.data_editor(
-                df_nl,
-                column_config={
-                    "id": None,
-                    "ma_nl": st.column_config.TextColumn("Mã NVL"),
-                    "ten_nl": st.column_config.TextColumn("Tên Nguyên Vật Liệu"),
-                    "don_vi": st.column_config.TextColumn("Đơn Vị"),
-                },
-                hide_index=True, use_container_width=True, key="editor_nl"
-            )
+    st.subheader("📄 Danh Mục Quản Lý (NVL & NCC)")
+    
+    col_ds_nl, col_ds_ncc = st.columns([2, 1])
+    
+    with col_ds_nl:
+        st.markdown("**📦 Danh Sách Nguyên Vật Liệu**")
+        try:
+            df_nl = pd.read_sql("SELECT id, ma_nl, ten_nl, don_vi, don_gia FROM public.dm_nguyen_lieu ORDER BY id DESC", conn)
+            if not df_nl.empty:
+                df_nl = df_nl.fillna({"ma_nl": "", "ten_nl": "", "don_vi": "", "don_gia": 0.0})
+                edited_nl = st.data_editor(
+                    df_nl,
+                    column_config={
+                        "id": None,
+                        "ma_nl": st.column_config.TextColumn("Mã NVL"),
+                        "ten_nl": st.column_config.TextColumn("Tên Nguyên Vật Liệu"),
+                        "don_vi": st.column_config.TextColumn("Đơn Vị"),
+                        "don_gia": st.column_config.NumberColumn("Đơn Giá (VNĐ)", format="%.0f")
+                    },
+                    hide_index=True, use_container_width=True, key="editor_nl"
+                )
 
-            diff_mask = (edited_nl['ma_nl'] != df_nl['ma_nl']) | (edited_nl['ten_nl'] != df_nl['ten_nl']) | (edited_nl['don_vi'] != df_nl['don_vi'])
+                diff_mask = (edited_nl['ma_nl'] != df_nl['ma_nl']) | (edited_nl['ten_nl'] != df_nl['ten_nl']) | (edited_nl['don_vi'] != df_nl['don_vi']) | (edited_nl['don_gia'] != df_nl['don_gia'])
 
-            if diff_mask.any():
-                st.warning("⚠️ CHÚ Ý: Bạn vừa chỉnh sửa thông tin vật tư trên bảng. Bạn có muốn lưu lại những thay đổi này không?")
-                col_luu1, col_luu2 = st.columns(2)
-                with col_luu1:
-                    if st.button("💾 ĐỒNG Ý LƯU THAY ĐỔI", type="primary", use_container_width=True):
+                if diff_mask.any():
+                    st.warning("⚠️ CHÚ Ý: Bạn vừa chỉnh sửa thông tin vật tư. Bấm lưu để cập nhật.")
+                    if st.button("💾 LƯU THAY ĐỔI NVL", type="primary", use_container_width=True):
                         changed_rows = edited_nl[diff_mask]
                         try:
-                            count = 0
                             for _, row in changed_rows.iterrows():
-                                c.execute("UPDATE public.dm_nguyen_lieu SET ma_nl=%s, ten_nl=%s, don_vi=%s WHERE id=%s",
-                                          (str(row['ma_nl']).strip(), str(row['ten_nl']).strip(), str(row['don_vi']).strip(), int(row['id'])))
-                                count += 1
+                                c.execute("UPDATE public.dm_nguyen_lieu SET ma_nl=%s, ten_nl=%s, don_vi=%s, don_gia=%s WHERE id=%s",
+                                          (str(row['ma_nl']).strip(), str(row['ten_nl']).strip(), str(row['don_vi']).strip(), float(row['don_gia']), int(row['id'])))
                             conn.commit()
-                            st.success(f"✅ Đã cập nhật thành công {count} vật tư!"); time.sleep(1.5); st.rerun()
+                            st.success(f"✅ Đã cập nhật thành công!"); time.sleep(1); st.rerun()
                         except Exception as e:
                             conn.rollback()
                             st.error(f"Lỗi cập nhật: {e}")
-                with col_luu2:
-                    if st.button("❌ HỦY BỎ", use_container_width=True): st.rerun()
-            
-            st.markdown("---")
-            col_xoa1, col_xoa2 = st.columns([3, 1])
-            with col_xoa1: nl_can_xoa = st.selectbox("Chọn NVL cần xóa:", ["-- Chọn --"] + df_nl['ten_nl'].tolist())
-            with col_xoa2:
-                st.write(""); st.write("")
-                if st.button("🚨 Xóa Vĩnh Viễn", type="primary", use_container_width=True):
+                
+                st.write("")
+                nl_can_xoa = st.selectbox("Chọn NVL cần xóa:", ["-- Chọn --"] + df_nl['ten_nl'].tolist())
+                if st.button("🚨 Xóa NVL Vĩnh Viễn", use_container_width=True):
                     if nl_can_xoa != "-- Chọn --":
                         try:
                             c.execute("DELETE FROM public.dm_nguyen_lieu WHERE ten_nl=%s", (nl_can_xoa,))
                             conn.commit(); st.success(f"✅ Đã xóa: {nl_can_xoa}"); time.sleep(1); st.rerun()
                         except Exception as e:
                             conn.rollback(); st.error(f"Lỗi: {e}")
-        else: st.info("Kho NVL đang trống.")
-    except Exception as e: st.error(f"Lỗi truy xuất dữ liệu: {e}")
+            else: st.info("Kho NVL đang trống.")
+        except Exception as e: st.error(f"Lỗi: {e}")
+        
+    with col_ds_ncc:
+        st.markdown("**🏢 Danh Sách Nhà Cung Cấp**")
+        try:
+            df_ncc_list = pd.read_sql("SELECT id, ten_ncc FROM public.dm_ncc ORDER BY id DESC", conn)
+            if not df_ncc_list.empty:
+                edited_ncc = st.data_editor(
+                    df_ncc_list,
+                    column_config={
+                        "id": None,
+                        "ten_ncc": st.column_config.TextColumn("Tên Nhà Cung Cấp")
+                    },
+                    hide_index=True, use_container_width=True, key="editor_ncc_list"
+                )
+                
+                diff_ncc = (edited_ncc['ten_ncc'] != df_ncc_list['ten_ncc'])
+                if diff_ncc.any():
+                    st.warning("⚠️ Bấm lưu để đổi tên NCC.")
+                    if st.button("💾 LƯU ĐỔI TÊN NCC", type="primary", use_container_width=True):
+                        try:
+                            for _, r in edited_ncc[diff_ncc].iterrows():
+                                c.execute("UPDATE public.dm_ncc SET ten_ncc=%s WHERE id=%s", (str(r['ten_ncc']).strip(), int(r['id'])))
+                            conn.commit()
+                            st.success("✅ Đã cập nhật!"); time.sleep(1); st.rerun()
+                        except Exception as e:
+                            conn.rollback(); st.error("Lỗi cập nhật hoặc tên đã tồn tại!")
+
+                st.write("")
+                ncc_can_xoa = st.selectbox("Chọn NCC cần xóa:", ["-- Chọn --"] + df_ncc_list['ten_ncc'].tolist())
+                if st.button("🚨 Xóa NCC Vĩnh Viễn", use_container_width=True):
+                    if ncc_can_xoa != "-- Chọn --":
+                        try:
+                            c.execute("DELETE FROM public.dm_ncc WHERE ten_ncc=%s", (ncc_can_xoa,))
+                            conn.commit(); st.success(f"✅ Đã xóa: {ncc_can_xoa}"); time.sleep(1); st.rerun()
+                        except Exception as e:
+                            conn.rollback(); st.error(f"Lỗi: {e}")
+            else: st.info("Chưa có Nhà cung cấp nào.")
+        except Exception as e: st.error(f"Lỗi: {e}")
 
 with tab2:
     chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📝 0. Tạo Đơn Nhập Hàng", "📥 1. Nhập NVL, NCC", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)"], horizontal=True)
