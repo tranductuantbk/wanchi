@@ -328,17 +328,17 @@ with tab2:
                 pdf.cell(0, 8, f"Các ngày dự kiến tăng ca: {tc_pdf}", align="C", ln=True)
                 pdf.ln(3)
                 
-                # Cấu hình chiều rộng cột mới tối ưu lấp đầy A4 Ngang (~277mm)
-                w_sp = 90
+                # Cấu hình chiều rộng cột mới tối ưu lấp đầy A4 Ngang (~277mm) để không bị mất chữ
+                w_sp = 82
                 w_day = 20
-                w_dt = 35
+                w_dt = 55
                 
                 cac_may = pivot_df['may_ep'].unique()
                 for may in cac_may:
                     # In Header của bảng với màu sắc
                     pdf.set_font(font_name, "B" if has_font else "", 10)
-                    pdf.set_fill_color(0, 128, 0) # Màu nền xanh lá
-                    pdf.set_text_color(255, 140, 0) # Màu chữ cam
+                    pdf.set_fill_color(255, 165, 0) # Màu nền cam lợt
+                    pdf.set_text_color(255, 255, 255) # Màu chữ trắng
                     
                     pdf.cell(w_sp, 8, f"KẾ HOẠCH CHẠY MÁY: {may.upper()}", border=1, fill=True)
                     
@@ -358,8 +358,8 @@ with tab2:
                     pdf.set_fill_color(255, 255, 255)
                     
                     for index, row in df_may_nay.iterrows():
-                        # Cột Tên sản phẩm được giới hạn 45 ký tự để tránh tràn ô
-                        pdf.cell(w_sp, 8, str(row['san_pham'])[:45], border=1) 
+                        # Cột Tên sản phẩm được giới hạn 40 ký tự để tránh tràn ô
+                        pdf.cell(w_sp, 8, str(row['san_pham'])[:40], border=1) 
                         
                         pdf.cell(w_day, 8, f"{row['T2']:,.0f}" if row['T2'] > 0 else "-", border=1, align="C")
                         pdf.cell(w_day, 8, f"{row['T3']:,.0f}" if row['T3'] > 0 else "-", border=1, align="C")
@@ -370,7 +370,8 @@ with tab2:
                         pdf.cell(w_day, 8, f"{row['CN']:,.0f}" if row['CN'] > 0 else "-", border=1, align="C")
                         
                         dt_text = str(row['doi_thung']) if pd.notna(row['doi_thung']) else "Tất cả"
-                        pdf.cell(w_dt, 8, dt_text[:15], border=1, align="C", ln=True)
+                        # Tăng giới hạn cắt chữ lên 28 ký tự để hiển thị đủ tên nhân viên
+                        pdf.cell(w_dt, 8, dt_text[:28], border=1, align="C", ln=True)
                     
                     pdf.ln(5) 
                 
