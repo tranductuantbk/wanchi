@@ -75,6 +75,11 @@ try:
                 )''')
     c.execute("ALTER TABLE public.dm_san_pham ADD COLUMN IF NOT EXISTS ton_kho REAL DEFAULT 0")
     c.execute("ALTER TABLE public.dm_san_pham_ome ADD COLUMN IF NOT EXISTS ton_kho REAL DEFAULT 0")
+    
+    # Đảm bảo có cột quy cách lốc để tránh lỗi khi Báo cáo tồn kho truy xuất
+    c.execute("ALTER TABLE public.dm_san_pham ADD COLUMN IF NOT EXISTS quy_cach_loc REAL DEFAULT 1")
+    c.execute("ALTER TABLE public.dm_san_pham_ome ADD COLUMN IF NOT EXISTS quy_cach_loc REAL DEFAULT 1")
+    
     c.execute("ALTER TABLE public.don_hang ADD COLUMN IF NOT EXISTS trang_thai TEXT DEFAULT 'Chờ xuất kho'")
     
     # BẢNG VÀ CỘT MỚI CHO NHÀ CUNG CẤP & THANH TOÁN
@@ -924,35 +929,48 @@ with tab_kh:
     except Exception as e: st.error(f"Lỗi: {e}")
 
 with tab3:
-    st.info("💡 **Mẹo:** Bạn có thể chỉnh sửa trực tiếp số liệu ở cột **Tồn Kho (Sửa được)**. Sau khi sửa, hãy bấm nút Lưu xuất hiện bên dưới bảng để cập nhật.")
+    st.info("💡 **Mẹo:** Bạn có thể chỉnh sửa trực tiếp số liệu ở cột **Tồn Kho theo Lốc (Sửa được)**. Sau khi sửa, hãy bấm nút Lưu xuất hiện bên dưới bảng để tự động tính và cập nhật số Cái.")
     
     st.subheader("📦 Tồn Kho Thành Phẩm")
     try:
-        df_tc = pd.read_sql("SELECT id, ten_sp, ton_kho, 'chuẩn' as loai FROM public.dm_san_pham", conn)
-        df_to = pd.read_sql("SELECT id, ten_sp, ton_kho, 'ome' as loai FROM public.dm_san_pham_ome", conn)
+        # Lấy thêm cột quy_cach_loc để phục vụ quy đổi lốc <-> cái
+        df_tc = pd.read_sql("SELECT id, ten_sp, ton_kho, COALESCE(quy_cach_loc, 1) as quy_cach_loc, 'chuẩn' as loai FROM public.dm_san_pham", conn)
+        df_to = pd.read_sql("SELECT id, ten_sp, ton_kho, COALESCE(quy_cach_loc, 1) as quy_cach_loc, 'ome' as loai FROM public.dm_san_pham_ome", conn)
+        
         df_tp = pd.concat([df_tc, df_to]).dropna(subset=['id']).reset_index(drop=True)
-        df_tp['ton_kho'] = df_tp['ton_kho'].fillna(0.0) 
+        df_tp['ton_kho'] = df_tp['ton_kho'].fillna(0.0)
+        df_tp['quy_cach_loc'] = df_tp['quy_cach_loc'].fillna(1.0)
+        
+        # Tạo các cột hiển thị: Lốc và Cái
+        df_tp['ton_kho_loc'] = df_tp['ton_kho'] / df_tp['quy_cach_loc']
+        df_tp['ton_kho_cai'] = df_tp['ton_kho']
         
         edited_tp = st.data_editor(
             df_tp,
             column_config={
                 "id": None,
                 "loai": None,
+                "quy_cach_loc": None,
+                "ton_kho": None, # Ẩn cột tồn kho gốc
                 "ten_sp": st.column_config.TextColumn("Tên Sản Phẩm", disabled=True),
-                "ton_kho": st.column_config.NumberColumn("Tồn Kho (Sửa được)")
+                "ton_kho_loc": st.column_config.NumberColumn("Tồn Kho theo Lốc (Sửa được)", format="%.2f"),
+                "ton_kho_cai": st.column_config.NumberColumn("Số Lượng (Cái) - Hiện tại", disabled=True, format="%.0f")
             },
             hide_index=True, use_container_width=True, key="edit_ton_sp"
         )
         
-        diff_tp = (edited_tp['ton_kho'] != df_tp['ton_kho'])
+        diff_tp = (edited_tp['ton_kho_loc'] != df_tp['ton_kho_loc'])
         if diff_tp.any():
+            st.warning("⚠️ Số lượng lốc đã thay đổi. Bấm LƯU để cập nhật số Cái tương ứng vào hệ thống.")
             if st.button("💾 LƯU TỒN KHO THÀNH PHẨM", type="primary", use_container_width=True):
                 changed_tp = edited_tp[diff_tp]
                 for _, row in changed_tp.iterrows():
                     bang_update = "public.dm_san_pham" if row['loai'] == 'chuẩn' else "public.dm_san_pham_ome"
-                    c.execute(f"UPDATE {bang_update} SET ton_kho=%s WHERE id=%s", (float(row['ton_kho']), int(row['id'])))
+                    # Tự động tính số cái = số lốc nhập vào * quy cách lốc
+                    so_cai_moi = float(row['ton_kho_loc']) * float(row['quy_cach_loc'])
+                    c.execute(f"UPDATE {bang_update} SET ton_kho=%s WHERE id=%s", (so_cai_moi, int(row['id'])))
                 conn.commit()
-                st.success("✅ Đã cập nhật tồn kho Thành phẩm!"); time.sleep(1); st.rerun()
+                st.success("✅ Đã tính toán và cập nhật tồn kho Thành phẩm!"); time.sleep(1.5); st.rerun()
     except Exception as e:
         st.error(f"Lỗi truy xuất tồn kho: {e}")
 
