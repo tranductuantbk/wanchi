@@ -311,11 +311,12 @@ with tab2:
                 has_font = False
                 if os.path.exists("Roboto-Regular.ttf"):
                     pdf.add_font("Roboto", "", "Roboto-Regular.ttf", uni=True)
+                    pdf.add_font("Roboto", "B", "Roboto-Regular.ttf", uni=True)
                     font_name = "Roboto"
                     has_font = True
                 else: font_name = "Helvetica"
                     
-                pdf.set_font(font_name, "", 16)
+                pdf.set_font(font_name, "B" if has_font else "", 16)
                 pdf.set_text_color(180, 0, 0) 
                 pdf.cell(0, 10, "KẾ HOẠCH SẢN XUẤT", align="C", ln=True)
                 pdf.set_font(font_name, "", 12)
@@ -327,36 +328,49 @@ with tab2:
                 pdf.cell(0, 8, f"Các ngày dự kiến tăng ca: {tc_pdf}", align="C", ln=True)
                 pdf.ln(3)
                 
+                # Cấu hình chiều rộng cột mới tối ưu lấp đầy A4 Ngang (~277mm)
+                w_sp = 90
+                w_day = 20
+                w_dt = 35
+                
                 cac_may = pivot_df['may_ep'].unique()
                 for may in cac_may:
-                    pdf.set_font(font_name, "", 11)
-                    pdf.set_fill_color(240, 240, 240)
-                    pdf.cell(50, 8, f"KẾ HOẠCH CHẠY MÁY: {may.upper()}", border=1, fill=True)
+                    # In Header của bảng với màu sắc
+                    pdf.set_font(font_name, "B" if has_font else "", 10)
+                    pdf.set_fill_color(0, 128, 0) # Màu nền xanh lá
+                    pdf.set_text_color(255, 140, 0) # Màu chữ cam
                     
-                    pdf.cell(20, 8, "Thứ 2", border=1, align="C", fill=True)
-                    pdf.cell(20, 8, "Thứ 3", border=1, align="C", fill=True)
-                    pdf.cell(20, 8, "Thứ 4", border=1, align="C", fill=True)
-                    pdf.cell(20, 8, "Thứ 5", border=1, align="C", fill=True)
-                    pdf.cell(20, 8, "Thứ 6", border=1, align="C", fill=True)
-                    pdf.cell(20, 8, "Thứ 7", border=1, align="C", fill=True)
-                    pdf.cell(20, 8, "CN", border=1, align="C", fill=True)
-                    pdf.cell(27, 8, "Đổi Thùng", border=1, align="C", fill=True, ln=True)
+                    pdf.cell(w_sp, 8, f"KẾ HOẠCH CHẠY MÁY: {may.upper()}", border=1, fill=True)
                     
+                    pdf.cell(w_day, 8, "Thứ 2", border=1, align="C", fill=True)
+                    pdf.cell(w_day, 8, "Thứ 3", border=1, align="C", fill=True)
+                    pdf.cell(w_day, 8, "Thứ 4", border=1, align="C", fill=True)
+                    pdf.cell(w_day, 8, "Thứ 5", border=1, align="C", fill=True)
+                    pdf.cell(w_day, 8, "Thứ 6", border=1, align="C", fill=True)
+                    pdf.cell(w_day, 8, "Thứ 7", border=1, align="C", fill=True)
+                    pdf.cell(w_day, 8, "CN", border=1, align="C", fill=True)
+                    pdf.cell(w_dt, 8, "Đổi Thùng", border=1, align="C", fill=True, ln=True)
+                    
+                    # Trả lại màu chữ đen và màu nền mặc định cho dữ liệu
                     df_may_nay = pivot_df[pivot_df['may_ep'] == may]
                     pdf.set_font(font_name, "", 10)
+                    pdf.set_text_color(0, 0, 0)
+                    pdf.set_fill_color(255, 255, 255)
                     
                     for index, row in df_may_nay.iterrows():
-                        pdf.cell(50, 8, row['san_pham'][:30], border=1) 
-                        pdf.cell(20, 8, f"{row['T2']:,.0f}" if row['T2'] > 0 else "-", border=1, align="C")
-                        pdf.cell(20, 8, f"{row['T3']:,.0f}" if row['T3'] > 0 else "-", border=1, align="C")
-                        pdf.cell(20, 8, f"{row['T4']:,.0f}" if row['T4'] > 0 else "-", border=1, align="C")
-                        pdf.cell(20, 8, f"{row['T5']:,.0f}" if row['T5'] > 0 else "-", border=1, align="C")
-                        pdf.cell(20, 8, f"{row['T6']:,.0f}" if row['T6'] > 0 else "-", border=1, align="C")
-                        pdf.cell(20, 8, f"{row['T7']:,.0f}" if row['T7'] > 0 else "-", border=1, align="C")
-                        pdf.cell(20, 8, f"{row['CN']:,.0f}" if row['CN'] > 0 else "-", border=1, align="C")
+                        # Cột Tên sản phẩm được giới hạn 45 ký tự để tránh tràn ô
+                        pdf.cell(w_sp, 8, str(row['san_pham'])[:45], border=1) 
+                        
+                        pdf.cell(w_day, 8, f"{row['T2']:,.0f}" if row['T2'] > 0 else "-", border=1, align="C")
+                        pdf.cell(w_day, 8, f"{row['T3']:,.0f}" if row['T3'] > 0 else "-", border=1, align="C")
+                        pdf.cell(w_day, 8, f"{row['T4']:,.0f}" if row['T4'] > 0 else "-", border=1, align="C")
+                        pdf.cell(w_day, 8, f"{row['T5']:,.0f}" if row['T5'] > 0 else "-", border=1, align="C")
+                        pdf.cell(w_day, 8, f"{row['T6']:,.0f}" if row['T6'] > 0 else "-", border=1, align="C")
+                        pdf.cell(w_day, 8, f"{row['T7']:,.0f}" if row['T7'] > 0 else "-", border=1, align="C")
+                        pdf.cell(w_day, 8, f"{row['CN']:,.0f}" if row['CN'] > 0 else "-", border=1, align="C")
                         
                         dt_text = str(row['doi_thung']) if pd.notna(row['doi_thung']) else "Tất cả"
-                        pdf.cell(27, 8, dt_text[:12], border=1, align="C", ln=True)
+                        pdf.cell(w_dt, 8, dt_text[:15], border=1, align="C", ln=True)
                     
                     pdf.ln(5) 
                 
