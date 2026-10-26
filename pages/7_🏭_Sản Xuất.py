@@ -98,7 +98,7 @@ if not list_sp: list_sp = ["-- Chưa có Sản Phẩm --"]
 
 try: df_may = pd.read_sql("SELECT ten_may FROM public.dm_may_ep", conn)
 except: df_may = pd.DataFrame(columns=['ten_may'])
-list_may = df_may['ten_may'].tolist() if not df_may.empty else ["Vui lòng thêm máy ở Tab 3"]
+list_may = df_may['ten_may'].tolist() if not df_may.empty else ["Vui lòng thêm máy ở Tab 2"]
 
 # Lấy danh sách nhân viên từ bảng nhan_vien có bộ phận đóng gói
 try:
@@ -109,12 +109,12 @@ except:
 list_doi_thung = ["Tất cả"] + list_nv_dong_goi
 
 # ==========================================
-# GIAO DIỆN 3 TABS 
+# GIAO DIỆN 2 TABS 
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📅 Lên Kế Hoạch (Dạng Bảng)", "🖨️ In Kế Hoạch (Ảnh)", "⚙️ Quản Lý Máy Ép"])
+tab1, tab3 = st.tabs(["📅 Quản Lý Kế Hoạch & Tải Ảnh", "⚙️ Quản Lý Máy Ép"])
 
 # ------------------------------------------
-# TAB 1: BẢNG TÍNH EXCEL LÊN KẾ HOẠCH
+# TAB 1: BẢNG TÍNH EXCEL LÊN KẾ HOẠCH & XUẤT ẢNH
 # ------------------------------------------
 with tab1:
     st.subheader("KẾ HOẠCH SẢN XUẤT (Ma trận Excel)")
@@ -130,12 +130,6 @@ with tab1:
     
     tuan_iso = start_of_week.isocalendar()
     tuan_str = f"{tuan_iso[0]}-W{tuan_iso[1]:02d}"
-    
-    # QUẢN LÝ TRẠNG THÁI CHỈNH SỬA
-    if 'edit_plan_week' not in st.session_state:
-        st.session_state['edit_plan_week'] = None
-        
-    is_editing = (st.session_state['edit_plan_week'] == tuan_str)
 
     col_t1, col_t2 = st.columns([1, 1])
     col_t1.markdown(f"**Từ ngày:** `{date_cols[0]}/{start_of_week.year}` &nbsp;&nbsp;➔&nbsp;&nbsp; **đến:** `{date_cols[-1]}/{dates[-1].year}`")
@@ -153,20 +147,12 @@ with tab1:
     tang_ca_list = col_t2.multiselect(
         "🌙 Lịch tăng ca tuần này (Nhấp để chọn):", 
         options=danh_sach_thu, 
-        default=tc_default, 
-        disabled=not is_editing
+        default=tc_default
     )
     tang_ca_str = ", ".join(tang_ca_list) 
     
     st.markdown("---")
-    
-    # NÚT BẬT CHẾ ĐỘ SỬA
-    if not is_editing:
-        if st.button("✏️ CHỈNH SỬA BẢN KẾ HOẠCH NÀY", type="primary"):
-            st.session_state['edit_plan_week'] = tuan_str
-            st.rerun()
-    else:
-        st.warning("🛠️ **HỆ THỐNG ĐÃ MỞ KHÓA:** Bạn có thể chỉnh sửa bảng bên dưới. Kéo xuống dưới cùng để bấm LƯU LẠI.")
+    st.info("💡 **Ghi chú:** Bảng luôn ở chế độ sẵn sàng cập nhật. Hãy nhập dữ liệu, sau đó bấm nút LƯU KẾ HOẠCH ở dưới cùng.")
 
     try:
         df_week = pd.read_sql(f"SELECT ngay, may_ep, san_pham, so_luong, doi_thung FROM public.ke_hoach_sx_ngay WHERE ngay >= '{db_dates[0]}' AND ngay <= '{db_dates[-1]}'", conn)
@@ -175,8 +161,8 @@ with tab1:
 
     edited_dfs = {}
     
-    # 3. VẼ BẢNG EXCEL CHO TỪNG MÁY
-    if list_may == ["Vui lòng thêm máy ở Tab 3"]:
+    # 2. VẼ BẢNG EXCEL CHO TỪNG MÁY
+    if list_may == ["Vui lòng thêm máy ở Tab 2"]:
         st.warning("⚠️ Chưa có Máy Ép nào. Vui lòng sang Tab Cài Đặt (⚙️) để thêm máy trước!")
     else:
         for may in list_may:
@@ -203,7 +189,7 @@ with tab1:
                         except: pass
                     records.append(row)
                     
-            if is_editing and len(records) == 0:
+            if len(records) == 0:
                 empty_row = {"Sản Phẩm": None}
                 for d in date_cols: empty_row[d] = None
                 empty_row["Đổi Thùng"] = "Tất cả"
@@ -216,195 +202,147 @@ with tab1:
                 col_cfg[d] = st.column_config.NumberColumn(d, min_value=0.0, format="%g", width="small")
             col_cfg["Đổi Thùng"] = st.column_config.SelectboxColumn("Đổi Thùng", options=list_doi_thung, default="Tất cả", width="medium")
                 
-            if is_editing:
-                edited_dfs[may] = st.data_editor(
-                    df_table, num_rows="dynamic", column_config=col_cfg, 
-                    hide_index=True, key=f"ed_{may}_{tuan_str}", use_container_width=True
-                )
-            else:
-                if not df_table.empty: df_table = df_table.dropna(subset=['Sản Phẩm'])
-                
-                if df_table.empty:
-                    st.info(f"Chưa có phân việc cho {may}")
-                else:
-                    st.dataframe(
-                        df_table, column_config=col_cfg, 
-                        hide_index=True, use_container_width=True
-                    )
+            edited_dfs[may] = st.data_editor(
+                df_table, num_rows="dynamic", column_config=col_cfg, 
+                hide_index=True, key=f"ed_{may}_{tuan_str}", use_container_width=True
+            )
 
-        # 4. NÚT CHỐT LƯU KHI CHỈNH SỬA XONG
-        if is_editing:
-            st.markdown("---")
-            col_btn1, col_btn2 = st.columns([2, 1])
-            with col_btn1:
-                if st.button("💾 LƯU LẠI KHI CHỈNH SỬA XONG", type="primary", use_container_width=True):
-                    try:
-                        # Lưu ghi chú tăng ca
-                        c.execute("INSERT INTO public.ke_hoach_tang_ca (tuan, ghi_chu) VALUES (%s, %s) ON CONFLICT (tuan) DO UPDATE SET ghi_chu=EXCLUDED.ghi_chu", (tuan_str, tang_ca_str))
-                        
-                        c.execute("DELETE FROM public.ke_hoach_sx_ngay WHERE ngay >= %s AND ngay <= %s", (db_dates[0], db_dates[-1]))
-                        
-                        for may, edf in edited_dfs.items():
-                            for _, row in edf.iterrows():
-                                sp = row.get("Sản Phẩm")
-                                if not sp or pd.isna(sp) or sp == "-- Chưa có Sản Phẩm --": continue
-                                
-                                dt_val = row.get("Đổi Thùng", "Tất cả")
-                                
-                                for i, d_col in enumerate(date_cols):
-                                    sl = row.get(d_col)
-                                    if pd.notna(sl) and sl > 0:
-                                        c.execute("""INSERT INTO public.ke_hoach_sx_ngay 
-                                                     (ngay, tuan, may_ep, san_pham, so_luong, doi_thung) 
-                                                     VALUES (%s, %s, %s, %s, %s, %s)""",
-                                                  (db_dates[i], tuan_str, may, sp, float(sl), dt_val))
-                        conn.commit()
-                        st.success("✅ Đã lưu toàn bộ kế hoạch vào hệ thống thành công!")
-                        st.session_state['edit_plan_week'] = None
-                        time.sleep(1.5); st.rerun()
-                    except Exception as e:
-                        conn.rollback()
-                        st.error(f"Lỗi khi lưu Database: {e}")
-            
-            with col_btn2:
-                if st.button("❌ Hủy chỉnh sửa", use_container_width=True):
-                    st.session_state['edit_plan_week'] = None
-                    st.rerun()
-
-# ------------------------------------------
-# TAB 2: IN KẾ HOẠCH (ẢNH)
-# ------------------------------------------
-with tab2:
-    st.subheader("🖨️ Xuất File Ảnh Kế Hoạch Sản Xuất")
-    
-    try: list_tuan_co_san = pd.read_sql("SELECT DISTINCT tuan FROM public.ke_hoach_sx_ngay", conn)['tuan'].tolist()
-    except: list_tuan_co_san = []
-    
-    if list_tuan_co_san:
-        chon_tuan_in = st.selectbox("Chọn Tuần cần in:", list_tuan_co_san, index=len(list_tuan_co_san)-1, key="in_tuan")
-        df_in = pd.read_sql(f"SELECT ngay, may_ep, san_pham, so_luong, doi_thung FROM public.ke_hoach_sx_ngay WHERE tuan = '{chon_tuan_in}'", conn)
+        # 3. NÚT CHỐT LƯU VÀ XUẤT ẢNH
+        st.markdown("---")
+        col_btn1, col_btn2 = st.columns([1, 1])
         
+        with col_btn1:
+            if st.button("💾 LƯU KẾ HOẠCH", type="primary", use_container_width=True):
+                try:
+                    c.execute("INSERT INTO public.ke_hoach_tang_ca (tuan, ghi_chu) VALUES (%s, %s) ON CONFLICT (tuan) DO UPDATE SET ghi_chu=EXCLUDED.ghi_chu", (tuan_str, tang_ca_str))
+                    c.execute("DELETE FROM public.ke_hoach_sx_ngay WHERE ngay >= %s AND ngay <= %s", (db_dates[0], db_dates[-1]))
+                    
+                    for may, edf in edited_dfs.items():
+                        for _, row in edf.iterrows():
+                            sp = row.get("Sản Phẩm")
+                            if not sp or pd.isna(sp) or sp == "-- Chưa có Sản Phẩm --": continue
+                            
+                            dt_val = row.get("Đổi Thùng", "Tất cả")
+                            
+                            for i, d_col in enumerate(date_cols):
+                                sl = row.get(d_col)
+                                if pd.notna(sl) and sl > 0:
+                                    c.execute("""INSERT INTO public.ke_hoach_sx_ngay 
+                                                 (ngay, tuan, may_ep, san_pham, so_luong, doi_thung) 
+                                                 VALUES (%s, %s, %s, %s, %s, %s)""",
+                                              (db_dates[i], tuan_str, may, sp, float(sl), dt_val))
+                    conn.commit()
+                    st.success("✅ Đã lưu toàn bộ kế hoạch vào hệ thống thành công!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"Lỗi khi lưu Database: {e}")
+
+        # TỰ ĐỘNG TẠO ẢNH NẾU ĐÃ CÓ DỮ LIỆU
+        df_in = pd.read_sql(f"SELECT ngay, may_ep, san_pham, so_luong, doi_thung FROM public.ke_hoach_sx_ngay WHERE tuan = '{tuan_str}'", conn)
         if not df_in.empty:
             df_in['ngay_dt'] = pd.to_datetime(df_in['ngay'])
             df_in['thu'] = df_in['ngay_dt'].dt.weekday.map({0:'T2', 1:'T3', 2:'T4', 3:'T5', 4:'T6', 5:'T7', 6:'CN'})
             
-            ngay_min = df_in['ngay_dt'].min()
-            tu_ngay_str = (ngay_min - timedelta(days=ngay_min.weekday())).strftime("%d/%m/%Y")
-            den_ngay_str = (ngay_min + timedelta(days=6 - ngay_min.weekday())).strftime("%d/%m/%Y")
+            tu_ngay_str = start_of_week.strftime("%d/%m/%Y")
+            den_ngay_str = dates[-1].strftime("%d/%m/%Y")
 
             pivot_df = df_in.pivot_table(index=['may_ep', 'san_pham'], columns='thu', values='so_luong', aggfunc='sum').fillna(0).reset_index()
             for col in ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']:
                 if col not in pivot_df.columns: pivot_df[col] = 0.0
 
-            # Lấy thông tin đổi thùng
             df_dt = df_in.groupby(['may_ep', 'san_pham'])['doi_thung'].first().reset_index()
             pivot_df = pd.merge(pivot_df, df_dt, on=['may_ep', 'san_pham'], how='left')
             pivot_df['doi_thung'] = pivot_df['doi_thung'].fillna('Tất cả')
 
-            # Lấy thông tin Tăng ca để in
             try:
-                c.execute("SELECT ghi_chu FROM public.ke_hoach_tang_ca WHERE tuan=%s", (chon_tuan_in,))
+                c.execute("SELECT ghi_chu FROM public.ke_hoach_tang_ca WHERE tuan=%s", (tuan_str,))
                 tc_res_pdf = c.fetchone()
                 tc_pdf = tc_res_pdf[0] if tc_res_pdf and tc_res_pdf[0] else "Không có"
             except: tc_pdf = "Không có"
 
-            st.markdown(f"**Bản xem trước: Từ {tu_ngay_str} đến {den_ngay_str}**")
-            st.markdown(f"*Lịch tăng ca: {tc_pdf}*")
+            # TẠO PDF NGẦM ĐỂ XUẤT ẢNH
+            pdf = FPDF(orientation='L', format='A4') 
+            pdf.add_page()
             
-            hien_thi_df = pivot_df[['may_ep', 'san_pham', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN', 'doi_thung']]
-            hien_thi_df.columns = ['Máy Ép', 'Sản Phẩm', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật', 'Đổi Thùng']
-            st.dataframe(hien_thi_df, use_container_width=True, hide_index=True)
-
-            if st.button("🖨️ Tạo File Ảnh (Khổ A4 Ngang)", type="primary"):
-                pdf = FPDF(orientation='L', format='A4') 
-                pdf.add_page()
+            has_font = False
+            if os.path.exists("Roboto-Regular.ttf"):
+                pdf.add_font("Roboto", "", "Roboto-Regular.ttf", uni=True)
+                pdf.add_font("Roboto", "B", "Roboto-Regular.ttf", uni=True)
+                font_name = "Roboto"
+                has_font = True
+            else: font_name = "Helvetica"
                 
-                has_font = False
-                if os.path.exists(FONT_FILE):
-                    pdf.add_font("Roboto", "", FONT_FILE, uni=True)
-                    pdf.add_font("Roboto", "B", FONT_FILE, uni=True)
-                    font_name = "Roboto"
-                    has_font = True
-                else: font_name = "Helvetica"
-                    
-                pdf.set_font(font_name, "B" if has_font else "", 16)
-                pdf.set_text_color(180, 0, 0) 
-                pdf.cell(0, 10, "KẾ HOẠCH SẢN XUẤT", align="C", ln=True)
-                pdf.set_font(font_name, "", 12)
+            pdf.set_font(font_name, "B" if has_font else "", 16)
+            pdf.set_text_color(180, 0, 0) 
+            pdf.cell(0, 10, "KẾ HOẠCH SẢN XUẤT", align="C", ln=True)
+            pdf.set_font(font_name, "", 12)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 6, f"Từ ngày: {tu_ngay_str}    đến: {den_ngay_str}", align="C", ln=True)
+            
+            pdf.set_font(font_name, "", 11)
+            pdf.cell(0, 8, f"Các ngày dự kiến tăng ca: {tc_pdf}", align="C", ln=True)
+            pdf.ln(3)
+            
+            w_sp = 90
+            w_day = 20
+            w_dt = 35
+            
+            cac_may = pivot_df['may_ep'].unique()
+            for may in cac_may:
+                pdf.set_font(font_name, "B" if has_font else "", 10)
+                pdf.set_fill_color(0, 128, 0)
+                pdf.set_text_color(255, 140, 0)
+                
+                pdf.cell(w_sp, 8, f"KẾ HOẠCH CHẠY MÁY: {may.upper()}", border=1, fill=True)
+                pdf.cell(w_day, 8, "Thứ 2", border=1, align="C", fill=True)
+                pdf.cell(w_day, 8, "Thứ 3", border=1, align="C", fill=True)
+                pdf.cell(w_day, 8, "Thứ 4", border=1, align="C", fill=True)
+                pdf.cell(w_day, 8, "Thứ 5", border=1, align="C", fill=True)
+                pdf.cell(w_day, 8, "Thứ 6", border=1, align="C", fill=True)
+                pdf.cell(w_day, 8, "Thứ 7", border=1, align="C", fill=True)
+                pdf.cell(w_day, 8, "CN", border=1, align="C", fill=True)
+                pdf.cell(w_dt, 8, "Đổi Thùng", border=1, align="C", fill=True, ln=True)
+                
+                df_may_nay = pivot_df[pivot_df['may_ep'] == may]
+                pdf.set_font(font_name, "", 10)
                 pdf.set_text_color(0, 0, 0)
-                pdf.cell(0, 6, f"Từ ngày: {tu_ngay_str}    đến: {den_ngay_str}", align="C", ln=True)
+                pdf.set_fill_color(255, 255, 255)
                 
-                # IN DÒNG TĂNG CA
-                pdf.set_font(font_name, "", 11)
-                pdf.cell(0, 8, f"Các ngày dự kiến tăng ca: {tc_pdf}", align="C", ln=True)
-                pdf.ln(3)
+                for index, row in df_may_nay.iterrows():
+                    pdf.cell(w_sp, 8, str(row['san_pham'])[:45], border=1) 
+                    pdf.cell(w_day, 8, f"{row['T2']:,.0f}" if row['T2'] > 0 else "-", border=1, align="C")
+                    pdf.cell(w_day, 8, f"{row['T3']:,.0f}" if row['T3'] > 0 else "-", border=1, align="C")
+                    pdf.cell(w_day, 8, f"{row['T4']:,.0f}" if row['T4'] > 0 else "-", border=1, align="C")
+                    pdf.cell(w_day, 8, f"{row['T5']:,.0f}" if row['T5'] > 0 else "-", border=1, align="C")
+                    pdf.cell(w_day, 8, f"{row['T6']:,.0f}" if row['T6'] > 0 else "-", border=1, align="C")
+                    pdf.cell(w_day, 8, f"{row['T7']:,.0f}" if row['T7'] > 0 else "-", border=1, align="C")
+                    pdf.cell(w_day, 8, f"{row['CN']:,.0f}" if row['CN'] > 0 else "-", border=1, align="C")
+                    
+                    dt_text = str(row['doi_thung']) if pd.notna(row['doi_thung']) else "Tất cả"
+                    pdf.cell(w_dt, 8, dt_text[:15], border=1, align="C", ln=True)
                 
-                # Cấu hình chiều rộng cột
-                w_sp = 82
-                w_day = 20
-                w_dt = 55
-                
-                cac_may = pivot_df['may_ep'].unique()
-                for may in cac_may:
-                    # In Header của bảng với màu sắc
-                    pdf.set_font(font_name, "B" if has_font else "", 10)
-                    pdf.set_fill_color(255, 165, 0) # Màu nền cam lợt
-                    pdf.set_text_color(255, 255, 255) # Màu chữ trắng
-                    
-                    pdf.cell(w_sp, 8, f"KẾ HOẠCH CHẠY MÁY: {may.upper()}", border=1, fill=True)
-                    
-                    pdf.cell(w_day, 8, "Thứ 2", border=1, align="C", fill=True)
-                    pdf.cell(w_day, 8, "Thứ 3", border=1, align="C", fill=True)
-                    pdf.cell(w_day, 8, "Thứ 4", border=1, align="C", fill=True)
-                    pdf.cell(w_day, 8, "Thứ 5", border=1, align="C", fill=True)
-                    pdf.cell(w_day, 8, "Thứ 6", border=1, align="C", fill=True)
-                    pdf.cell(w_day, 8, "Thứ 7", border=1, align="C", fill=True)
-                    pdf.cell(w_day, 8, "CN", border=1, align="C", fill=True)
-                    pdf.cell(w_dt, 8, "Đổi Thùng", border=1, align="C", fill=True, ln=True)
-                    
-                    # Trả lại màu chữ đen và màu nền mặc định cho dữ liệu
-                    df_may_nay = pivot_df[pivot_df['may_ep'] == may]
-                    pdf.set_font(font_name, "", 10)
-                    pdf.set_text_color(0, 0, 0)
-                    pdf.set_fill_color(255, 255, 255)
-                    
-                    for index, row in df_may_nay.iterrows():
-                        pdf.cell(w_sp, 8, str(row['san_pham'])[:40], border=1) 
-                        
-                        pdf.cell(w_day, 8, f"{row['T2']:,.0f}" if row['T2'] > 0 else "-", border=1, align="C")
-                        pdf.cell(w_day, 8, f"{row['T3']:,.0f}" if row['T3'] > 0 else "-", border=1, align="C")
-                        pdf.cell(w_day, 8, f"{row['T4']:,.0f}" if row['T4'] > 0 else "-", border=1, align="C")
-                        pdf.cell(w_day, 8, f"{row['T5']:,.0f}" if row['T5'] > 0 else "-", border=1, align="C")
-                        pdf.cell(w_day, 8, f"{row['T6']:,.0f}" if row['T6'] > 0 else "-", border=1, align="C")
-                        pdf.cell(w_day, 8, f"{row['T7']:,.0f}" if row['T7'] > 0 else "-", border=1, align="C")
-                        pdf.cell(w_day, 8, f"{row['CN']:,.0f}" if row['CN'] > 0 else "-", border=1, align="C")
-                        
-                        dt_text = str(row['doi_thung']) if pd.notna(row['doi_thung']) else "Tất cả"
-                        pdf.cell(w_dt, 8, dt_text[:28], border=1, align="C", ln=True)
-                    
-                    pdf.ln(5) 
-                
-                try: 
-                    pdf_bytes = bytes(pdf.output())
-                except: 
-                    # Dự phòng khi xuất lỗi, loại bỏ ký tự không tương thích
-                    pdf_bytes = pdf.output(dest='S').encode('latin-1', 'replace')
+                pdf.ln(5) 
+            
+            try: pdf_bytes = bytes(pdf.output())
+            except: pdf_bytes = pdf.output(dest='S').encode('latin-1')
 
-                # CHUYỂN ĐỔI PDF THÀNH ẢNH TRƯỚC KHI TẢI XUỐNG
-                img_bytes = convert_pdf_to_png(pdf_bytes)
-                if img_bytes:
+            img_bytes = convert_pdf_to_png(pdf_bytes)
+            
+            if img_bytes:
+                with col_btn2:
                     st.download_button(
-                        label="🖼️ TẢI XUỐNG BẢN IN (ẢNH)",
+                        label="🖼️ TẢI BẢN KẾ HOẠCH (ẢNH)",
                         data=img_bytes,
-                        file_name=f"Ke_Hoach_San_Xuat_{chon_tuan_in}.png",
+                        file_name=f"Ke_Hoach_San_Xuat_{tuan_str}.png",
                         mime="image/png",
-                        type="primary"
+                        type="primary",
+                        use_container_width=True
                     )
-    else:
-        st.info("Chưa có dữ liệu kế hoạch.")
 
 # ------------------------------------------
-# TAB 3: QUẢN LÝ DANH MỤC MÁY ÉP
+# TAB 2: QUẢN LÝ DANH MỤC MÁY ÉP
 # ------------------------------------------
 with tab3:
     st.subheader("Cài Đặt Danh Sách Máy Ép")
