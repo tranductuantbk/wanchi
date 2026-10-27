@@ -484,8 +484,6 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
     pdf.ln(5)
     
     pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
-    if ghi_chu:
-        pdf.cell(0, 8, f"Ghi chú: {ghi_chu}", ln=True)
     pdf.ln(3)
     
     if not df_items.empty:
@@ -515,6 +513,16 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
         pdf.set_font(font_name, 'B' if has_font else '', 11)
         pdf.cell(155, 10, "TỔNG CỘNG:", border=1, align="R")
         pdf.cell(35, 10, format_vn(tong_tien) + " đ", border=1, ln=True, align="R")
+
+    # Thêm bảng ghi chú riêng
+    pdf.ln(8)
+    pdf.set_font(font_name, 'B' if has_font else '', 11)
+    pdf.cell(0, 6, "Ghi chú (Note):", ln=True)
+    pdf.set_font(font_name, "", 11)
+    if ghi_chu:
+        pdf.multi_cell(0, 8, str(ghi_chu), border=1, align="L")
+    else:
+        pdf.cell(0, 25, "", border=1, ln=True)
 
     pdf.ln(10)
     pdf.set_font(font_name, "", 11)
