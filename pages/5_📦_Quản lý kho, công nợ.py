@@ -122,7 +122,7 @@ def don_dep_lich_su_chi():
 # ==========================================
 # HÀM TẠO PHIẾU PDF
 # ==========================================
-def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
+def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh, conn):
     pdf = FPDF()
     pdf.add_page()
     
@@ -144,26 +144,38 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf.set_font(font_name, "B" if has_font else "", 10)
     pdf.set_fill_color(230, 230, 230)
     pdf.cell(10, 10, "STT", 1, 0, "C", True)
-    pdf.cell(110, 10, "Tên Sản Phẩm", 1, 0, "C", True)
-    pdf.cell(35, 10, "Số Lượng", 1, 0, "C", True)
-    pdf.cell(35, 10, "Đơn Vị", 1, 1, "C", True)
+    pdf.cell(75, 10, "Tên Sản Phẩm", 1, 0, "C", True)
+    pdf.cell(35, 10, "Số Lượng (Lốc)", 1, 0, "C", True)
+    pdf.cell(35, 10, "Số Lượng (Cái)", 1, 0, "C", True)
+    pdf.cell(35, 10, "Số Bao", 1, 1, "C", True)
 
     pdf.set_font(font_name, "", 10)
-    tong_sl = 0
+    c_pdf = conn.cursor()
     for i, row in df_items.iterrows():
         ten = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
-        sl = float(row.get('Số Lượng', 0))
-        tong_sl += sl
+        sl_loc = float(row.get('Số Lượng', 0))
+        
+        # Tự động lấy Quy cách lốc từ CSDL để nhân ra số cái
+        quy_cach = 1.0
+        try:
+            c_pdf.execute("SELECT quy_cach_loc FROM public.dm_san_pham WHERE ten_sp = %s", (ten,))
+            res = c_pdf.fetchone()
+            if res: quy_cach = float(res[0])
+            else:
+                c_pdf.execute("SELECT quy_cach_loc FROM public.dm_san_pham_ome WHERE ten_sp = %s", (ten,))
+                res2 = c_pdf.fetchone()
+                if res2: quy_cach = float(res2[0])
+        except:
+            pass
+            
+        sl_cai = sl_loc * quy_cach
+        so_bao = str(row.get('Số Bao', ''))
+
         pdf.cell(10, 8, str(i+1), 1, 0, "C")
-        pdf.cell(110, 8, ten, 1, 0, "L")
-        pdf.cell(35, 8, format_vn(sl), 1, 0, "C")
-        pdf.cell(35, 8, "Cái/Bộ", 1, 1, "C")
-    
-    # Thêm dòng Tổng Cộng
-    pdf.set_font(font_name, "B" if has_font else "", 10)
-    pdf.cell(120, 8, "TỔNG CỘNG:", 1, 0, "R")
-    pdf.cell(35, 8, format_vn(tong_sl), 1, 0, "C")
-    pdf.cell(35, 8, "", 1, 1, "C")
+        pdf.cell(75, 8, ten, 1, 0, "L")
+        pdf.cell(35, 8, format_vn(sl_loc), 1, 0, "C")
+        pdf.cell(35, 8, format_vn(sl_cai), 1, 0, "C")
+        pdf.cell(35, 8, so_bao, 1, 1, "C")
     
     # Bảng Ghi chú trống cho nhân viên viết
     pdf.ln(8)
@@ -472,6 +484,8 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
     pdf.ln(5)
     
     pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
+    if ghi_chu:
+        pdf.cell(0, 8, f"Ghi chú: {ghi_chu}", ln=True)
     pdf.ln(3)
     
     if not df_items.empty:
@@ -501,14 +515,6 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
         pdf.set_font(font_name, 'B' if has_font else '', 11)
         pdf.cell(155, 10, "TỔNG CỘNG:", border=1, align="R")
         pdf.cell(35, 10, format_vn(tong_tien) + " đ", border=1, ln=True, align="R")
-
-    # Tạo bảng ghi chú riêng
-    if ghi_chu:
-        pdf.ln(5)
-        pdf.set_font(font_name, 'B' if has_font else '', 11)
-        pdf.cell(0, 8, "Ghi chú:", ln=True)
-        pdf.set_font(font_name, "", 10)
-        pdf.multi_cell(0, 8, ghi_chu, border=1)
 
     pdf.ln(10)
     pdf.set_font(font_name, "", 11)
@@ -940,20 +946,39 @@ with tab2:
                 don_info = df_dh[df_dh['ma_don'] == ma_don_chon].iloc[0]
                 
                 ten_khach_hang_hien_tai = don_info['ten_kh']
-                
-                # Cập nhật: Mặc định luôn là "Chưa thanh toán" (index=0)
+                la_dai_ly = "đại lý" in ten_khach_hang_hien_tai.lower()
                 trang_thai_tt_xuat = st.selectbox(
                     "Trạng thái thanh toán Đơn hàng", 
                     ["Chưa thanh toán", "Đã thanh toán"], 
-                    index=0 
+                    index=0 if la_dai_ly else 1
                 )
                 
                 items = json.loads(don_info['chi_tiet'])
                 df_items = pd.DataFrame(items)
-                st.dataframe(df_items, use_container_width=True, hide_index=True)
+                
+                # Bổ sung cột "Số Bao" cho phép người dùng nhập trực tiếp trên giao diện
+                df_items.insert(len(df_items.columns), "Số Bao", "")
+                
+                st.write("Bảng chi tiết hàng hóa (Bạn có thể nhập thêm Số Bao ở cột cuối cùng):")
+                edited_df_items = st.data_editor(
+                    df_items, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    column_config={
+                        "Tên Sản Phẩm": st.column_config.TextColumn(disabled=True),
+                        "Tên Sản Phẩm OME": st.column_config.TextColumn(disabled=True),
+                        "Số Lượng": st.column_config.NumberColumn("Số Lượng (Lốc)", disabled=True),
+                        "Đơn Giá": st.column_config.NumberColumn(disabled=True),
+                        "Giá": st.column_config.NumberColumn(disabled=True),
+                        "Thành Tiền": st.column_config.NumberColumn(disabled=True),
+                        "Ghi Chú": st.column_config.TextColumn(disabled=True),
+                        "Số Bao": st.column_config.TextColumn("Số Bao (Nhập tay)")
+                    }
+                )
+                
+                c_btn1, c_btn2, c_btn3 = st.columns([2, 2, 2])
                 
                 if don_info['trang_thai'] in ['Chờ xuất kho', 'Mới tạo']:
-                    c_btn1, c_btn2 = st.columns([2, 2])
                     with c_btn1:
                         if st.button("📦 XÁC NHẬN XUẤT KHO", type="primary", use_container_width=True):
                             for item in items:
@@ -966,9 +991,9 @@ with tab2:
                                 c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
                                 
                                 c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
-                                             (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, khach_hang, trang_thai_tt, tien_da_thu) 
-                                             VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s, %s)""", 
-                                          (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, -sl, don_gia_sp, thanh_tien_sp, f"Đơn {ma_don_chon}", ten_khach_hang_hien_tai, trang_thai_tt_xuat, 0))
+                                             (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, khach_hang, trang_thai_tt) 
+                                             VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s)""", 
+                                          (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, -sl, don_gia_sp, thanh_tien_sp, f"Đơn {ma_don_chon}", ten_khach_hang_hien_tai, trang_thai_tt_xuat))
                                 
                             c.execute("UPDATE public.don_hang SET trang_thai = 'Đã xuất kho' WHERE ma_don = %s", (ma_don_chon,))
                             conn.commit(); st.success("Đã xuất kho và lưu công nợ!"); time.sleep(1.5); st.rerun()
@@ -990,7 +1015,7 @@ with tab2:
                     
                     c_dl1, c_dl2, c_btn_thu = st.columns([1, 1, 1])
                     
-                    pdf_bytes = generate_phieu_xuat_pdf(df_items, ma_don_chon, don_info['ten_kh'])
+                    pdf_bytes = generate_phieu_xuat_pdf(edited_df_items, ma_don_chon, don_info['ten_kh'], conn)
                     img_bytes = convert_pdf_to_png(pdf_bytes)
 
                     if "PDF" in loai_xuat_xk or "Cả" in loai_xuat_xk:
@@ -1017,7 +1042,7 @@ with tab2:
         except Exception as e: st.error(str(e))
     
     elif "1. Nhập NVL, NCC" in chuyem_muc:
-        st.markdown("#### 📥 Nhập Đơn Lẻ Nguyên Vật Liệu")
+        st.markdown("#### 📥 Nhập Nguyên Vật Liệu từ Nhà Cung Cấp")
         try:
             df_nl_ton = pd.read_sql("SELECT ten_nl, don_vi FROM public.dm_nguyen_lieu", conn)
             try: df_ncc = pd.read_sql("SELECT ten_ncc FROM public.dm_ncc", conn)
