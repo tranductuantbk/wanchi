@@ -129,10 +129,11 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     has_font = os.path.exists(FONT_FILE)
     if has_font:
         pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+        pdf.add_font("Roboto", "B", FONT_FILE, uni=True)
         font_name = "Roboto"
     else: font_name = "Helvetica"
 
-    pdf.set_font(font_name, "", 16)
+    pdf.set_font(font_name, "B" if has_font else "", 16)
     pdf.cell(0, 10, "PHIẾU XUẤT KHO HÀNG HÓA", ln=True, align="C")
     pdf.set_font(font_name, "", 10)
     pdf.cell(0, 6, f"Mã đơn: {ma_don}", ln=True, align="C")
@@ -140,21 +141,38 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf.cell(0, 6, f"Ngày xuất: {lay_gio_vn().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
     pdf.ln(10)
 
+    pdf.set_font(font_name, "B" if has_font else "", 10)
     pdf.set_fill_color(230, 230, 230)
     pdf.cell(10, 10, "STT", 1, 0, "C", True)
     pdf.cell(110, 10, "Tên Sản Phẩm", 1, 0, "C", True)
     pdf.cell(35, 10, "Số Lượng", 1, 0, "C", True)
     pdf.cell(35, 10, "Đơn Vị", 1, 1, "C", True)
 
+    pdf.set_font(font_name, "", 10)
+    tong_sl = 0
     for i, row in df_items.iterrows():
         ten = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
-        sl = row.get('Số Lượng', 0)
+        sl = float(row.get('Số Lượng', 0))
+        tong_sl += sl
         pdf.cell(10, 8, str(i+1), 1, 0, "C")
         pdf.cell(110, 8, ten, 1, 0, "L")
         pdf.cell(35, 8, format_vn(sl), 1, 0, "C")
         pdf.cell(35, 8, "Cái/Bộ", 1, 1, "C")
     
+    # Thêm dòng Tổng Cộng
+    pdf.set_font(font_name, "B" if has_font else "", 10)
+    pdf.cell(120, 8, "TỔNG CỘNG:", 1, 0, "R")
+    pdf.cell(35, 8, format_vn(tong_sl), 1, 0, "C")
+    pdf.cell(35, 8, "", 1, 1, "C")
+    
+    # Bảng Ghi chú trống cho nhân viên viết
+    pdf.ln(8)
+    pdf.set_font(font_name, 'B' if has_font else '', 11)
+    pdf.cell(0, 6, "Ghi chú (Note):", ln=True)
+    pdf.cell(0, 25, "", border=1, ln=True)
+
     pdf.ln(10)
+    pdf.set_font(font_name, "", 11)
     pdf.cell(95, 6, "Người lập phiếu", 0, 0, "C")
     pdf.cell(95, 6, "Người nhận hàng", 0, 1, "C")
     
@@ -454,8 +472,6 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
     pdf.ln(5)
     
     pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
-    if ghi_chu:
-        pdf.cell(0, 8, f"Ghi chú: {ghi_chu}", ln=True)
     pdf.ln(3)
     
     if not df_items.empty:
@@ -485,6 +501,14 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
         pdf.set_font(font_name, 'B' if has_font else '', 11)
         pdf.cell(155, 10, "TỔNG CỘNG:", border=1, align="R")
         pdf.cell(35, 10, format_vn(tong_tien) + " đ", border=1, ln=True, align="R")
+
+    # Tạo bảng ghi chú riêng
+    if ghi_chu:
+        pdf.ln(5)
+        pdf.set_font(font_name, 'B' if has_font else '', 11)
+        pdf.cell(0, 8, "Ghi chú:", ln=True)
+        pdf.set_font(font_name, "", 10)
+        pdf.multi_cell(0, 8, ghi_chu, border=1)
 
     pdf.ln(10)
     pdf.set_font(font_name, "", 11)
@@ -916,20 +940,20 @@ with tab2:
                 don_info = df_dh[df_dh['ma_don'] == ma_don_chon].iloc[0]
                 
                 ten_khach_hang_hien_tai = don_info['ten_kh']
-                la_dai_ly = "đại lý" in ten_khach_hang_hien_tai.lower()
+                
+                # Cập nhật: Mặc định luôn là "Chưa thanh toán" (index=0)
                 trang_thai_tt_xuat = st.selectbox(
                     "Trạng thái thanh toán Đơn hàng", 
                     ["Chưa thanh toán", "Đã thanh toán"], 
-                    index=0 if la_dai_ly else 1
+                    index=0 
                 )
                 
                 items = json.loads(don_info['chi_tiet'])
                 df_items = pd.DataFrame(items)
                 st.dataframe(df_items, use_container_width=True, hide_index=True)
                 
-                c_btn1, c_btn2 = st.columns([2, 2])
-                
                 if don_info['trang_thai'] in ['Chờ xuất kho', 'Mới tạo']:
+                    c_btn1, c_btn2 = st.columns([2, 2])
                     with c_btn1:
                         if st.button("📦 XÁC NHẬN XUẤT KHO", type="primary", use_container_width=True):
                             for item in items:
@@ -955,11 +979,28 @@ with tab2:
                             conn.commit(); st.warning("Đã hủy đơn."); time.sleep(1); st.rerun()
 
                 elif don_info['trang_thai'] == 'Đã xuất kho':
-                    with c_btn1:
-                        pdf_bytes = generate_phieu_xuat_pdf(df_items, ma_don_chon, don_info['ten_kh'])
-                        st.download_button("🖨️ IN PHIẾU XUẤT (PDF)", pdf_bytes, f"PhieuXuat_{ma_don_chon}.pdf", "application/pdf", use_container_width=True)
+                    st.markdown("**📁 Tùy chọn in Phiếu Xuất Kho:**")
+                    loai_xuat_xk = st.radio(
+                        "Định dạng xuất Phiếu Xuất:", 
+                        ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
+                        horizontal=True, 
+                        index=1,
+                        key=f"radio_xk_{ma_don_chon}"
+                    )
                     
-                    with c_btn2:
+                    c_dl1, c_dl2, c_btn_thu = st.columns([1, 1, 1])
+                    
+                    pdf_bytes = generate_phieu_xuat_pdf(df_items, ma_don_chon, don_info['ten_kh'])
+                    img_bytes = convert_pdf_to_png(pdf_bytes)
+
+                    if "PDF" in loai_xuat_xk or "Cả" in loai_xuat_xk:
+                        with c_dl1:
+                            st.download_button("🖨️ TẢI PHIẾU (PDF)", pdf_bytes, f"PhieuXuat_{ma_don_chon}.pdf", "application/pdf", use_container_width=True)
+                    if ("Ảnh" in loai_xuat_xk or "Cả" in loai_xuat_xk) and img_bytes:
+                        with c_dl2:
+                            st.download_button("🖼️ TẢI PHIẾU (ẢNH)", img_bytes, f"PhieuXuat_{ma_don_chon}.png", "image/png", use_container_width=True)
+                    
+                    with c_btn_thu:
                         if st.button("🔄 THU HỒI ĐƠN (Trả hàng)", use_container_width=True):
                             for item in items:
                                 ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
