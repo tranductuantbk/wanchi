@@ -122,7 +122,7 @@ def don_dep_lich_su_chi():
 # ==========================================
 # HÀM TẠO PHIẾU PDF
 # ==========================================
-def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
+def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh, conn):
     pdf = FPDF()
     pdf.add_page()
     
@@ -144,26 +144,37 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf.set_font(font_name, "B" if has_font else "", 10)
     pdf.set_fill_color(230, 230, 230)
     pdf.cell(10, 10, "STT", 1, 0, "C", True)
-    pdf.cell(110, 10, "Tên Sản Phẩm", 1, 0, "C", True)
-    pdf.cell(35, 10, "Số Lượng", 1, 0, "C", True)
-    pdf.cell(35, 10, "Đơn Vị", 1, 1, "C", True)
+    pdf.cell(85, 10, "Tên Sản Phẩm", 1, 0, "C", True)
+    pdf.cell(30, 10, "Số Lượng (Lốc)", 1, 0, "C", True)
+    pdf.cell(25, 10, "Đơn Vị", 1, 0, "C", True)
+    pdf.cell(40, 10, "Số Lượng (Cái)", 1, 1, "C", True)
 
     pdf.set_font(font_name, "", 10)
-    tong_sl = 0
+    c_pdf = conn.cursor()
     for i, row in df_items.iterrows():
         ten = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
-        sl = float(row.get('Số Lượng', 0))
-        tong_sl += sl
+        sl_loc = float(row.get('Số Lượng', 0))
+        
+        # Tự động lấy Quy cách lốc từ CSDL để nhân ra số cái
+        quy_cach = 1.0
+        try:
+            c_pdf.execute("SELECT quy_cach_loc FROM public.dm_san_pham WHERE ten_sp = %s", (ten,))
+            res = c_pdf.fetchone()
+            if res: quy_cach = float(res[0])
+            else:
+                c_pdf.execute("SELECT quy_cach_loc FROM public.dm_san_pham_ome WHERE ten_sp = %s", (ten,))
+                res2 = c_pdf.fetchone()
+                if res2: quy_cach = float(res2[0])
+        except:
+            pass
+            
+        sl_cai = sl_loc * quy_cach
+
         pdf.cell(10, 8, str(i+1), 1, 0, "C")
-        pdf.cell(110, 8, ten, 1, 0, "L")
-        pdf.cell(35, 8, format_vn(sl), 1, 0, "C")
-        pdf.cell(35, 8, "Cái/Bộ", 1, 1, "C")
-    
-    # Thêm dòng Tổng Cộng
-    pdf.set_font(font_name, "B" if has_font else "", 10)
-    pdf.cell(120, 8, "TỔNG CỘNG:", 1, 0, "R")
-    pdf.cell(35, 8, format_vn(tong_sl), 1, 0, "C")
-    pdf.cell(35, 8, "", 1, 1, "C")
+        pdf.cell(85, 8, ten, 1, 0, "L")
+        pdf.cell(30, 8, format_vn(sl_loc), 1, 0, "C")
+        pdf.cell(25, 8, "Lốc", 1, 0, "C")
+        pdf.cell(40, 8, format_vn(sl_cai), 1, 1, "C")
     
     # Bảng Ghi chú trống cho nhân viên viết
     pdf.ln(8)
@@ -472,6 +483,8 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
     pdf.ln(5)
     
     pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
+    if ghi_chu:
+        pdf.cell(0, 8, f"Ghi chú: {ghi_chu}", ln=True)
     pdf.ln(3)
     
     if not df_items.empty:
@@ -501,14 +514,6 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
         pdf.set_font(font_name, 'B' if has_font else '', 11)
         pdf.cell(155, 10, "TỔNG CỘNG:", border=1, align="R")
         pdf.cell(35, 10, format_vn(tong_tien) + " đ", border=1, ln=True, align="R")
-
-    # Tạo bảng ghi chú riêng
-    if ghi_chu:
-        pdf.ln(5)
-        pdf.set_font(font_name, 'B' if has_font else '', 11)
-        pdf.cell(0, 8, "Ghi chú:", ln=True)
-        pdf.set_font(font_name, "", 10)
-        pdf.multi_cell(0, 8, ghi_chu, border=1)
 
     pdf.ln(10)
     pdf.set_font(font_name, "", 11)
@@ -990,7 +995,7 @@ with tab2:
                     
                     c_dl1, c_dl2, c_btn_thu = st.columns([1, 1, 1])
                     
-                    pdf_bytes = generate_phieu_xuat_pdf(df_items, ma_don_chon, don_info['ten_kh'])
+                    pdf_bytes = generate_phieu_xuat_pdf(df_items, ma_don_chon, don_info['ten_kh'], conn)
                     img_bytes = convert_pdf_to_png(pdf_bytes)
 
                     if "PDF" in loai_xuat_xk or "Cả" in loai_xuat_xk:
