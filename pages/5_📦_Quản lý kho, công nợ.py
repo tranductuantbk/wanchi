@@ -133,13 +133,38 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh, conn):
         font_name = "Roboto"
     else: font_name = "Helvetica"
 
+    # Logo & Header WANCHI
+    start_y, start_x = 12, 65  
+    try:
+        if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
+        elif os.path.exists("logo.png"): pdf.image("logo.png", x=15, y=start_y, w=40)
+        else:
+            pdf.set_font(font_name, 'B', 18)
+            pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    except:
+        pdf.set_font(font_name, 'B', 18)
+        pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
+    
+    pdf.set_font(font_name, size=10)
+    pdf.set_xy(start_x, start_y + 2)
+    pdf.multi_cell(0, 5, "775 Võ Hữu Lợi, Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM")
+    pdf.set_xy(start_x, pdf.get_y() + 1)
+    pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
+    pdf.ln(12)
+
+    # Tiêu đề giữ nguyên là PHIẾU XUẤT KHO HÀNG HÓA
     pdf.set_font(font_name, "B" if has_font else "", 16)
     pdf.cell(0, 10, "PHIẾU XUẤT KHO HÀNG HÓA", ln=True, align="C")
+    
     pdf.set_font(font_name, "", 10)
-    pdf.cell(0, 6, f"Mã đơn: {ma_don}", ln=True, align="C")
-    pdf.cell(0, 6, f"Khách hàng: {ten_kh}", ln=True, align="C")
-    pdf.cell(0, 6, f"Ngày xuất: {lay_gio_vn().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
-    pdf.ln(10)
+    ngay_xuat = lay_gio_vn().strftime('%d/%m/%Y')
+    pdf.cell(0, 6, f"Mã Đơn: {ma_don}   |   Ngày: {ngay_xuat}", ln=True, align="C")
+    pdf.ln(5)
+    
+    # Căn lề trái cho Khách hàng & SĐT
+    pdf.cell(0, 6, f"Khách hàng: {ten_kh}", ln=True, align="L")
+    pdf.cell(0, 6, f"Điện thoại:", ln=True, align="L")
+    pdf.ln(5)
 
     pdf.set_font(font_name, "B" if has_font else "", 10)
     pdf.set_fill_color(230, 230, 230)
@@ -955,10 +980,12 @@ with tab2:
                 
                 ten_khach_hang_hien_tai = don_info['ten_kh']
                 la_dai_ly = "đại lý" in ten_khach_hang_hien_tai.lower()
+                
+                # Mặc định chọn "Chưa thanh toán" (index=0) cho mọi đơn xuất kho
                 trang_thai_tt_xuat = st.selectbox(
                     "Trạng thái thanh toán Đơn hàng", 
                     ["Chưa thanh toán", "Đã thanh toán"], 
-                    index=0 if la_dai_ly else 1
+                    index=0
                 )
                 
                 items = json.loads(don_info['chi_tiet'])
