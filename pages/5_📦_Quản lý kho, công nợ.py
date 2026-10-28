@@ -69,12 +69,21 @@ try:
     c.execute('''CREATE TABLE IF NOT EXISTS public.dm_nguyen_lieu (
                     id SERIAL PRIMARY KEY, ma_nl TEXT UNIQUE, ten_nl TEXT UNIQUE, don_vi TEXT, ton_kho REAL DEFAULT 0
                 )''')
+    
+    # Bổ sung cột don_gia cho Nguyên Vật Liệu
+    c.execute("ALTER TABLE public.dm_nguyen_lieu ADD COLUMN IF NOT EXISTS don_gia REAL DEFAULT 0")
+
     c.execute('''CREATE TABLE IF NOT EXISTS public.ls_nhap_xuat_kho (
                     id SERIAL PRIMARY KEY, ngay_thao_tac TEXT, loai_thao_tac TEXT, ten_nl TEXT, 
                     so_luong REAL, don_gia REAL DEFAULT 0, thanh_tien REAL DEFAULT 0, ghi_chu TEXT
                 )''')
     c.execute("ALTER TABLE public.dm_san_pham ADD COLUMN IF NOT EXISTS ton_kho REAL DEFAULT 0")
     c.execute("ALTER TABLE public.dm_san_pham_ome ADD COLUMN IF NOT EXISTS ton_kho REAL DEFAULT 0")
+    
+    # Đảm bảo có cột quy cách lốc để tránh lỗi khi Báo cáo tồn kho truy xuất
+    c.execute("ALTER TABLE public.dm_san_pham ADD COLUMN IF NOT EXISTS quy_cach_loc REAL DEFAULT 1")
+    c.execute("ALTER TABLE public.dm_san_pham_ome ADD COLUMN IF NOT EXISTS quy_cach_loc REAL DEFAULT 1")
+    
     c.execute("ALTER TABLE public.don_hang ADD COLUMN IF NOT EXISTS trang_thai TEXT DEFAULT 'Chờ xuất kho'")
     
     # BẢNG VÀ CỘT MỚI CHO NHÀ CUNG CẤP & THANH TOÁN
@@ -124,6 +133,7 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
         font_name = "Roboto"
     else: font_name = "Helvetica"
 
+    # Logo & Header
     start_y, start_x = 12, 65  
     try:
         if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
@@ -142,24 +152,29 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh):
     pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
     pdf.ln(12)
 
+    # Tiêu đề & Thông tin đơn hàng
     pdf.set_font(font_name, "B" if has_font else "", 16)
     pdf.cell(0, 10, "PHIẾU XUẤT KHO HÀNG HÓA", ln=True, align="C")
-    
     pdf.set_font(font_name, "", 10)
+    
     ngay_xuat = lay_gio_vn().strftime('%d/%m/%Y')
     pdf.cell(0, 6, f"Mã Đơn: {ma_don}   |   Ngày: {ngay_xuat}", ln=True, align="C")
     pdf.ln(5)
-
+    
+    # Căn lề trái cho tên khách hàng và SĐT
     pdf.cell(0, 6, f"Khách hàng: {ten_kh}", ln=True, align="L")
-    pdf.cell(0, 6, "Điện thoại:", ln=True, align="L")
+    pdf.cell(0, 6, f"Điện thoại:", ln=True, align="L")
     pdf.ln(5)
 
+    # Bảng dữ liệu
+    pdf.set_font(font_name, "B" if has_font else "", 10)
     pdf.set_fill_color(230, 230, 230)
     pdf.cell(10, 10, "STT", 1, 0, "C", True)
     pdf.cell(110, 10, "Tên Sản Phẩm", 1, 0, "C", True)
     pdf.cell(35, 10, "Số Lượng", 1, 0, "C", True)
     pdf.cell(35, 10, "Đơn Vị", 1, 1, "C", True)
 
+    pdf.set_font(font_name, "", 10)
     for i, row in df_items.iterrows():
         ten = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
         sl = row.get('Số Lượng', 0)
@@ -432,92 +447,6 @@ def generate_doi_soat_ncc_pdf(ten_ncc, tong_no, df_no):
         out = pdf.output(dest='S')
         return out.encode('latin-1') if isinstance(out, str) else bytes(out)
 
-def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, ngay_nhap):
-    pdf = FPDF()
-    pdf.add_page()
-    has_font = os.path.exists(FONT_FILE)
-    if has_font:
-        pdf.add_font("Roboto", "", FONT_FILE, uni=True)
-        pdf.add_font("Roboto", "B", FONT_FILE, uni=True) 
-        font_name = "Roboto"
-    else: font_name = "Helvetica"
-
-    start_y, start_x = 12, 65  
-    try:
-        if os.path.exists("logo.jpg"): pdf.image("logo.jpg", x=15, y=start_y, w=40)
-        elif os.path.exists("logo.png"): pdf.image("logo.png", x=15, y=start_y, w=40)
-        else:
-            pdf.set_font(font_name, 'B', 18)
-            pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
-    except:
-        pdf.set_font(font_name, 'B', 18)
-        pdf.set_xy(15, start_y + 3); pdf.cell(40, 10, "WANCHI", align="C")
-    
-    pdf.set_font(font_name, size=10)
-    pdf.set_xy(start_x, start_y + 2)
-    pdf.multi_cell(0, 5, "775 Võ Hữu Lợi, Xã Lê Minh Xuân, Huyện Bình Chánh, TP.HCM")
-    pdf.set_xy(start_x, pdf.get_y() + 1)
-    pdf.cell(0, 5, "SĐT: 0902.580.828 - 0937.572.577", ln=True)
-    pdf.ln(12)
-
-    pdf.set_font(font_name, 'B' if has_font else '', 16)
-    pdf.cell(0, 10, "PHIẾU NHẬP KHO", ln=True, align="C")
-    
-    pdf.set_font(font_name, "", 11)
-    pdf.cell(0, 6, f"Mã Phiếu: {ma_phieu}   |   Ngày nhập: {ngay_nhap}", ln=True, align="C")
-    pdf.ln(5)
-    
-    pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
-    pdf.ln(3)
-    
-    if not df_items.empty:
-        pdf.set_font(font_name, 'B' if has_font else '', 10)
-        pdf.set_fill_color(230, 230, 230)
-        pdf.cell(15, 10, "STT", border=1, align="C", fill=True)
-        pdf.cell(85, 10, "Tên Vật Tư", border=1, align="C", fill=True)
-        pdf.cell(20, 10, "SL", border=1, align="C", fill=True)
-        pdf.cell(35, 10, "Đơn Giá", border=1, align="C", fill=True)
-        pdf.cell(35, 10, "Thành Tiền", border=1, ln=True, align="C", fill=True)
-
-        pdf.set_font(font_name, "", 10)
-        stt = 1
-        for _, row in df_items.iterrows():
-            vt = str(row.get("Vật Tư", ""))
-            sl = row.get("Số Lượng", 0)
-            dg = row.get("Đơn Giá", 0)
-            tt = row.get("Thành Tiền", 0)
-            
-            pdf.cell(15, 8, str(stt), border=1, align="C")
-            pdf.cell(85, 8, vt, border=1, align="L")
-            pdf.cell(20, 8, format_vn(sl), border=1, align="C")
-            pdf.cell(35, 8, format_vn(dg), border=1, align="R")
-            pdf.cell(35, 8, format_vn(tt), border=1, ln=True, align="R")
-            stt += 1
-            
-        pdf.set_font(font_name, 'B' if has_font else '', 11)
-        pdf.cell(155, 10, "TỔNG CỘNG:", border=1, align="R")
-        pdf.cell(35, 10, format_vn(tong_tien) + " đ", border=1, ln=True, align="R")
-
-    # Thêm bảng ghi chú riêng
-    pdf.ln(8)
-    pdf.set_font(font_name, 'B' if has_font else '', 11)
-    pdf.cell(0, 6, "Ghi chú (Note):", ln=True)
-    pdf.set_font(font_name, "", 11)
-    if ghi_chu:
-        pdf.multi_cell(0, 8, str(ghi_chu), border=1, align="L")
-    else:
-        pdf.cell(0, 25, "", border=1, ln=True)
-
-    pdf.ln(10)
-    pdf.set_font(font_name, "", 11)
-    pdf.cell(95, 6, "Người Lập Phiếu", align='C')
-    pdf.cell(95, 6, "Đại Diện Giao Hàng", ln=True, align='C')
-    
-    try: return bytes(pdf.output())
-    except:
-        out = pdf.output(dest='S')
-        return out.encode('latin-1') if isinstance(out, str) else bytes(out)
-
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
@@ -765,9 +694,11 @@ with tab2:
                 ma_don_chon = don_chon_str.split("] ")[1].split(" - ")[0]
                 don_info = df_dh[df_dh['ma_don'] == ma_don_chon].iloc[0]
                 
+                # Logic xác định trạng thái thanh toán mặc định dựa trên Khách hàng
                 ten_khach_hang_hien_tai = don_info['ten_kh']
+                la_dai_ly = "đại lý" in ten_khach_hang_hien_tai.lower()
                 
-                # SỬA LẠI: Mặc định luôn là "Chưa thanh toán" (index=0) cho tất cả các đơn
+                # Mặc định chọn Chưa thanh toán (index = 0) cho mọi trường hợp
                 trang_thai_tt_xuat = st.selectbox(
                     "Trạng thái thanh toán Đơn hàng", 
                     ["Chưa thanh toán", "Đã thanh toán"], 
