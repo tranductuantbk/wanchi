@@ -170,10 +170,11 @@ with tab1:
                     try:
                         ngay_hd = date.today().strftime("%Y-%m-%d")
                         # Lưu vào theo dõi công nợ (dùng logic tự động tính qua tỷ lệ 0.95 ở tab 2)
+                        # Ép kiểu tong_tien_chot về float Python chuẩn
                         c.execute("""INSERT INTO hoa_don 
                                      (ngay, ma_don, so_phieu, ten_kh, tong_tien, da_thu, con_no, import_thue, ghi_chu) 
                                      VALUES (%s, %s, %s, %s, %s, 0, 0, 'Không', '')""",
-                                  (ngay_hd, ma_don_chot, ma_don_chot, ten_kh_input, tong_tien_chot))
+                                  (ngay_hd, ma_don_chot, ma_don_chot, ten_kh_input, float(tong_tien_chot)))
                         conn.commit()
                         st.success(f"🎉 Đã lưu thành công hóa đơn [{ma_don_chot}] vào Bảng Theo Dõi!")
                     except Exception as e:
