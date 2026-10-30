@@ -80,13 +80,15 @@ with tab1:
     st.markdown("---")
     st.subheader("2. Bảng Hóa Đơn / Import Thuế")
     
-    # Lấy danh sách sản phẩm và giá công ty làm mặc định
+    # Lấy danh sách sản phẩm, giá công ty và tự động lấy MÃ VẬT TƯ
     try:
-        df_sp = pd.read_sql("SELECT ten_sp, gia_khach_le FROM dm_san_pham", conn)
+        df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_khach_le FROM dm_san_pham", conn)
         dict_gia = dict(zip(df_sp['ten_sp'], df_sp['gia_khach_le']))
+        dict_ma = dict(zip(df_sp['ten_sp'], df_sp['ma_sp']))
         danh_sach_sp = df_sp['ten_sp'].tolist()
     except Exception:
         dict_gia = {}
+        dict_ma = {}
         danh_sach_sp = []
 
     if 'bang_hoa_don' not in st.session_state:
@@ -101,16 +103,16 @@ with tab1:
         if st.form_submit_button("➕ Thêm vào bảng Hóa đơn"):
             if sp_chon != "-- Chọn Sản Phẩm --":
                 st.session_state.bang_hoa_don.append({
-                    "Mã vt": "",
+                    "Mã vt": dict_ma.get(sp_chon, ""),  # Tự động chèn Mã vật tư
                     "Tên vt": sp_chon,
                     "Đvt": "Cái",
                     "Số lượng": sl_chon,
-                    "Giá ngoại tệ": "",
-                    "Tiền ngoại tệ": "",
-                    "%CK": "",
-                    "Chiết khấu": "",
-                    "Thuế suất": "",
-                    "Thuế": ""
+                    "Giá ngoại tệ": None,  # Sửa thành None để Excel nhận diện là ô trống hoàn toàn
+                    "Tiền ngoại tệ": None,
+                    "%CK": None,
+                    "Chiết khấu": None,
+                    "Thuế suất": None,
+                    "Thuế": None
                 })
                 st.rerun()
 
@@ -119,15 +121,16 @@ with tab1:
         df_bang = pd.DataFrame(st.session_state.bang_hoa_don)
         df_bang.insert(0, "Xóa", False)
         
-        # Tự động tính toán Giá và Tiền theo tùy chọn Chế độ
+        # Tự động tính toán Giá và Tiền theo tùy chọn Chế độ và làm tròn số
         gia_list = []
         tien_list = []
         for _, row in df_bang.iterrows():
             sp = row['Tên vt']
             gia_goc = dict_gia.get(sp, 0)
             gia_tinh = gia_goc / 0.95 if chon_che_do == "Chia 0.95" else gia_goc
+            gia_tinh = round(float(gia_tinh), 0)  # Làm tròn chẵn để kế toán không bị lỗi số thập phân
             gia_list.append(gia_tinh)
-            tien_list.append(gia_tinh * row['Số lượng'])
+            tien_list.append(round(gia_tinh * row['Số lượng'], 0))
             
         df_bang['Giá'] = gia_list
         df_bang['Tiền'] = tien_list
@@ -145,7 +148,8 @@ with tab1:
                 "Giá": st.column_config.NumberColumn("Giá", format="%.0f", disabled=True),
                 "Tiền": st.column_config.NumberColumn("Tiền", format="%.0f", disabled=True),
                 "Tên vt": st.column_config.TextColumn(disabled=True),
-                "Đvt": st.column_config.TextColumn(disabled=True)
+                "Đvt": st.column_config.TextColumn(disabled=True),
+                "Mã vt": st.column_config.TextColumn()
             },
             hide_index=True, use_container_width=True
         )
@@ -275,8 +279,7 @@ with tab2:
             # Logic tính toán nợ theo thuế
             tien_no_ban_dau = (tong_tien_hd / 0.95) - tong_tien_hd
             
-            # Cấn trừ số tiền tương ứng các hóa đơn đã tick thanh toán (Quy đổi phần nợ thuế của hóa đơn đó)
-            # Tổng nợ thực tế = Tổng nợ ban đầu - (Nợ thuế của các đơn đã thanh toán)
+            # Cấn trừ số tiền tương ứng các hóa đơn đã tick thanh toán
             tien_no_thue_da_tra = 0
             don_da_thanh_toan = df_hien_thi_no[df_hien_thi_no['da_thu'] == df_hien_thi_no['tong_tien']]
             
@@ -323,6 +326,12 @@ with tab3:
             st.warning(f"⚠️ Không tìm thấy dữ liệu sản phẩm cho Mã Đơn {ma_don_import}")
         else:
             try:
+                # Lấy bản đồ Mã vật tư để gán vào Excel
+                try:
+                    df_sp_tab3 = pd.read_sql("SELECT ma_sp, ten_sp FROM dm_san_pham", conn)
+                    dict_ma_tab3 = dict(zip(df_sp_tab3['ten_sp'], df_sp_tab3['ma_sp']))
+                except: dict_ma_tab3 = {}
+                
                 items_import = json.loads(df_dh_import.iloc[0]['chi_tiet'])
                 df_items_thue = pd.DataFrame(items_import)
 
@@ -333,34 +342,37 @@ with tab3:
                 else:
                     sp_col_thue = df_items_thue.columns[0] 
 
-                df_items_thue = df_items_thue.rename(columns={sp_col_thue: 'ten_sp', 'Số Lượng': 'so_luong', 'Đơn Giá': 'don_gia', 'Thành Tiền': 'doanh_thu'})
+                df_items_thue = df_items_thue.rename(columns={sp_col_thue: 'ten_sp', 'Số Lượng': 'so_luong', 'Đơn Giá': 'don_gia'})
                 if 'Đơn Giá OME' in df_items_thue.columns:
                     df_items_thue['don_gia'] = df_items_thue['Đơn Giá OME']
 
                 if chon_che_do_thue == "Chia 0.95":
-                    df_items_thue['don_gia_thue'] = df_items_thue['don_gia'].astype(float) / 0.95
+                    df_items_thue['don_gia_thue'] = (df_items_thue['don_gia'].astype(float) / 0.95).round(0)
                 else:
-                    df_items_thue['don_gia_thue'] = df_items_thue['don_gia'].astype(float)
+                    df_items_thue['don_gia_thue'] = df_items_thue['don_gia'].astype(float).round(0)
                 
-                df_items_thue['tien_thue'] = df_items_thue['so_luong'].astype(float) * df_items_thue['don_gia_thue']
+                df_items_thue['tien_thue'] = (df_items_thue['so_luong'].astype(float) * df_items_thue['don_gia_thue']).round(0)
                 tong_tien_import = df_items_thue['tien_thue'].sum()
 
                 with col_p2:
                     st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền: {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
+                
+                # Tự động map mã vật tư
+                ma_vt_list = [dict_ma_tab3.get(ten, "") for ten in df_items_thue['ten_sp']]
 
                 df_import_thue = pd.DataFrame({
-                    "Mã vt": "",
+                    "Mã vt": ma_vt_list,
                     "Tên vt": df_items_thue.get('ten_sp', ""),
                     "Đvt": "Cái",
                     "Số lượng": df_items_thue.get('so_luong', 0),
                     "Giá": df_items_thue.get('don_gia_thue', 0),
                     "Tiền": df_items_thue.get('tien_thue', 0),
-                    "Giá ngoại tệ": "",
-                    "Tiền ngoại tệ": "",
-                    "%CK": "",
-                    "Chiết khấu": "",
-                    "Thuế suất": "",
-                    "Thuế": ""
+                    "Giá ngoại tệ": None,
+                    "Tiền ngoại tệ": None,
+                    "%CK": None,
+                    "Chiết khấu": None,
+                    "Thuế suất": None,
+                    "Thuế": None
                 })
 
                 st.dataframe(
