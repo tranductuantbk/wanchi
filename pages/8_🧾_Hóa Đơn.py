@@ -62,9 +62,16 @@ tab1, tab2, tab3 = st.tabs(["📝 Tạo hóa đơn đại lý", "📊 Bảng the
 with tab1:
     st.subheader("1. Khai Báo Khách Hàng & Chế Độ Giá")
     
+    # Lấy danh sách Đại lý từ CSDL
+    try:
+        df_kh_list = pd.read_sql("SELECT ten_kh FROM dm_khach_hang WHERE nhom_kh = 'Đại lý'", conn)
+        danh_sach_dai_ly = ["-- Chọn Đại Lý --"] + df_kh_list['ten_kh'].tolist()
+    except:
+        danh_sach_dai_ly = ["-- Chọn Đại Lý --"]
+    
     col_kh1, col_kh2, col_kh3 = st.columns([2, 1, 1])
     with col_kh1:
-        ten_kh_input = st.text_input("👤 Nhập Tên Khách Hàng (Đại lý):", placeholder="VD: Đại lý NPP A...").strip()
+        ten_kh_input = st.selectbox("👤 Chọn Tên Đại Lý:", danh_sach_dai_ly)
     with col_kh2:
         ma_don_input = st.text_input("📝 Mã Hóa Đơn (Tự động nếu để trống):", placeholder="VD: HD-001").strip()
     with col_kh3:
@@ -153,13 +160,13 @@ with tab1:
         edited_bang_save = edited_bang.drop(columns=['Xóa', 'Giá', 'Tiền'])
         st.session_state.bang_hoa_don = edited_bang_save.to_dict('records')
         
-        tong_tien_chot = edited_bang['Tiền'].sum()
+        tong_tien_chot = float(edited_bang['Tiền'].sum())
         st.markdown(f"### 💰 TỔNG TIỀN HÓA ĐƠN: **{tong_tien_chot:,.0f} VNĐ**")
 
         st.markdown("---")
         if st.button("💾 LƯU HÓA ĐƠN & TẢI EXCEL IMPORT THUẾ", type="primary"):
-            if not ten_kh_input:
-                st.error("⚠️ Vui lòng nhập Tên Khách Hàng để ghi nhận công nợ!")
+            if ten_kh_input == "-- Chọn Đại Lý --":
+                st.error("⚠️ Vui lòng chọn Tên Đại Lý để ghi nhận công nợ!")
             else:
                 ma_don_chot = ma_don_input if ma_don_input else f"HD-{int(time.time())}"
                 
@@ -170,7 +177,6 @@ with tab1:
                     try:
                         ngay_hd = date.today().strftime("%Y-%m-%d")
                         # Lưu vào theo dõi công nợ (dùng logic tự động tính qua tỷ lệ 0.95 ở tab 2)
-                        # Ép kiểu tong_tien_chot về float Python chuẩn
                         c.execute("""INSERT INTO hoa_don 
                                      (ngay, ma_don, so_phieu, ten_kh, tong_tien, da_thu, con_no, import_thue, ghi_chu) 
                                      VALUES (%s, %s, %s, %s, %s, 0, 0, 'Không', '')""",
@@ -209,41 +215,81 @@ with tab1:
 with tab2:
     st.subheader("Bảng Theo Dõi Hóa Đơn Đại Lý")
     
-    df_hd = pd.read_sql("SELECT id, ngay, COALESCE(ma_don, so_phieu) as ma_don, ten_kh, tong_tien FROM hoa_don ORDER BY id DESC", conn)
+    df_hd = pd.read_sql("SELECT id, ngay, COALESCE(ma_don, so_phieu) as ma_don, ten_kh, tong_tien, da_thu FROM hoa_don ORDER BY id DESC", conn)
     
     if df_hd.empty:
         st.info("Chưa có dữ liệu hóa đơn nào được lưu.")
     else:
-        loc_kh = st.selectbox("🔍 Lọc theo Khách hàng", ["Tất cả"] + df_hd['ten_kh'].unique().tolist())
+        loc_kh = st.selectbox("🔍 Lọc theo Đại lý", ["Tất cả"] + df_hd['ten_kh'].unique().tolist())
 
         df_hien_thi_hd = df_hd.copy()
         if loc_kh != "Tất cả":
             df_hien_thi_hd = df_hien_thi_hd[df_hien_thi_hd['ten_kh'] == loc_kh]
 
-        # Chỉ giữ lại 4 cột theo yêu cầu
-        df_hien_thi_hd = df_hien_thi_hd[['ngay', 'ma_don', 'ten_kh', 'tong_tien']]
-        df_hien_thi_hd.columns = ['Ngày Lập', 'Mã Đơn', 'Khách Hàng', 'Tổng Tiền Hóa Đơn']
+        # Chuẩn bị hiển thị, thêm cột chọn tick để thanh toán
+        df_hien_thi_hd.insert(0, "Chọn", False)
+        
+        # Chỉ giữ lại các cột cần thiết cho bảng theo dõi
+        df_hien_thi_hd = df_hien_thi_hd[['Chọn', 'ngay', 'ma_don', 'ten_kh', 'tong_tien', 'da_thu']]
+        df_hien_thi_hd.columns = ['Chọn', 'Ngày Lập', 'Mã Đơn', 'Khách Hàng', 'Tổng Tiền Hóa Đơn', 'da_thu_hidden']
 
-        st.dataframe(
-            df_hien_thi_hd.style.format({
-                "Tổng Tiền Hóa Đơn": "{:,.0f}"
-            }),
-            use_container_width=True, hide_index=True
+        # Sử dụng Data Editor để có thể tick chọn
+        edited_df = st.data_editor(
+            df_hien_thi_hd.drop(columns=['da_thu_hidden']),
+            column_config={
+                "Chọn": st.column_config.CheckboxColumn("Tick", default=False),
+                "Ngày Lập": st.column_config.TextColumn(disabled=True),
+                "Mã Đơn": st.column_config.TextColumn(disabled=True),
+                "Khách Hàng": st.column_config.TextColumn(disabled=True),
+                "Tổng Tiền Hóa Đơn": st.column_config.NumberColumn(format="%.0f", disabled=True)
+            },
+            use_container_width=True, hide_index=True, key="editor_thanh_toan_hd"
         )
+        
+        # Xử lý Nút Thanh Toán
+        don_chon = edited_df[edited_df['Chọn'] == True]['Mã Đơn'].tolist()
+        if don_chon:
+            if st.button("✅ XÁC NHẬN ĐÃ THANH TOÁN CÁC ĐƠN ĐÃ CHỌN", type="primary"):
+                try:
+                    for ma in don_chon:
+                        c.execute("UPDATE hoa_don SET da_thu = tong_tien WHERE ma_don = %s", (ma,))
+                    conn.commit()
+                    st.success(f"🎉 Đã thanh toán thành công các đơn: {', '.join(don_chon)}")
+                    time.sleep(1.5)
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"Lỗi thanh toán: {e}")
 
-        # Nếu đang lọc 1 Khách hàng cụ thể, hiển thị Bảng Công Nợ Thuế
+        # Hiển thị Bảng Công Nợ Thuế khi lọc theo Đại lý
         if loc_kh != "Tất cả":
             st.markdown("---")
             st.subheader(f"📊 Bảng Chi Tiết Công Nợ - Khách Hàng: **{loc_kh}**")
             
-            tong_tien_hd = df_hien_thi_hd['Tổng Tiền Hóa Đơn'].sum()
-            # Logic tính toán nợ: Tổng tiền / 0.95 - Tổng tiền
-            tien_no = (tong_tien_hd / 0.95) - tong_tien_hd
+            # Lọc lại df đã update để tính nợ
+            df_hien_thi_no = df_hd[df_hd['ten_kh'] == loc_kh]
             
+            tong_tien_hd = df_hien_thi_no['tong_tien'].sum()
+            tong_da_thu = df_hien_thi_no['da_thu'].sum()
+            
+            # Logic tính toán nợ theo thuế
+            tien_no_ban_dau = (tong_tien_hd / 0.95) - tong_tien_hd
+            
+            # Cấn trừ số tiền tương ứng các hóa đơn đã tick thanh toán (Quy đổi phần nợ thuế của hóa đơn đó)
+            # Tổng nợ thực tế = Tổng nợ ban đầu - (Nợ thuế của các đơn đã thanh toán)
+            tien_no_thue_da_tra = 0
+            don_da_thanh_toan = df_hien_thi_no[df_hien_thi_no['da_thu'] == df_hien_thi_no['tong_tien']]
+            
+            if not don_da_thanh_toan.empty:
+                tong_tien_hd_da_tra = don_da_thanh_toan['tong_tien'].sum()
+                tien_no_thue_da_tra = (tong_tien_hd_da_tra / 0.95) - tong_tien_hd_da_tra
+            
+            tien_no_hien_tai = tien_no_ban_dau - tien_no_thue_da_tra
+
             df_summary = pd.DataFrame({
-                "Tên Khách Hàng": [loc_kh],
+                "Tên Đại Lý": [loc_kh],
                 "Tổng Tiền Hóa Đơn": [tong_tien_hd],
-                "Số Tiền Khách Còn Nợ": [tien_no]
+                "Số Tiền Khách Còn Nợ": [tien_no_hien_tai]
             })
             
             st.dataframe(
@@ -253,6 +299,10 @@ with tab2:
                 }),
                 use_container_width=True, hide_index=True
             )
+            
+            if not don_da_thanh_toan.empty:
+                danh_sach_ma_da_tra = don_da_thanh_toan['ma_don'].tolist()
+                st.info(f"✅ Các mã đơn đã thanh toán công nợ: **{', '.join(danh_sach_ma_da_tra)}**")
 
 # ==========================================
 # TAB 3: IMPORT THUẾ WANCHI (CÔNG CỤ PHỤ)
