@@ -110,11 +110,11 @@ except:
 
 # 2. GIÁ VỐN HÀNG BÁN (Lấy tổng của giá vốn trong mục danh sách sản phẩm)
 try:
-    # Lấy danh sách từ điển Giá gốc (Giá Công ty)
-    df_sp = pd.read_sql("SELECT ten_sp, gia_khach_le FROM dm_san_pham", conn)
-    dict_gia_von = dict(zip(df_sp['ten_sp'], df_sp['gia_khach_le']))
+    # Lấy danh sách từ điển Giá Vốn
+    df_sp = pd.read_sql("SELECT ten_sp, gia_von FROM dm_san_pham", conn)
+    dict_gia_von = dict(zip(df_sp['ten_sp'], df_sp['gia_von']))
     
-    # Quét tất cả các đơn hàng đã xuất kho trong tháng để nhân số lượng với giá gốc
+    # Quét tất cả các đơn hàng đã xuất kho trong tháng để nhân số lượng với Giá Vốn
     c.execute("SELECT chi_tiet FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s)", (pattern_ym, pattern_my))
     cac_don_hang = c.fetchall()
     
