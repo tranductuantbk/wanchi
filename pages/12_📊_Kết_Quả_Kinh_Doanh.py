@@ -35,17 +35,21 @@ except Exception as e:
     conn.rollback()
 
 # ==========================================
-# GIAO DIỆN CHỌN THÁNG
+# GIAO DIỆN CHỌN THÁNG (CHỈ HIỂN THỊ 1 NĂM GẦN NHẤT)
 # ==========================================
-# Tạo danh sách các tháng gần đây (từ năm ngoái đến năm sau)
-current_year = date.today().year
-current_month = date.today().month
+today = date.today()
 list_months = []
-for y in range(current_year - 1, current_year + 2):
-    for m in range(1, 13):
-        list_months.append(f"{y}-{m:02d}")
-list_months.sort(reverse=True)
-default_idx = list_months.index(f"{current_year}-{current_month:02d}")
+
+# Tạo danh sách 12 tháng (Tháng hiện tại và 11 tháng trước đó)
+for i in range(12):
+    m = today.month - i
+    y = today.year
+    while m <= 0:
+        m += 12
+        y -= 1
+    list_months.append(f"{y}-{m:02d}")
+
+default_idx = 0 # Mặc định chọn phần tử đầu tiên (Tháng hiện tại)
 
 st.markdown("### 🗓️ Chọn Kỳ Báo Cáo")
 thang_chon = st.selectbox("Lọc dữ liệu theo tháng:", list_months, index=default_idx)
@@ -58,21 +62,13 @@ gia_von = 0.0
 thanh_toan_ncc = 0.0
 chi_phi_tu_nhap = 0.0
 
-# 1. DOANH THU THÁNG (Từ bảng hoa_don / don_hang xuất cho Đại lý/Khách hàng)
+# 1. DOANH THU THÁNG (Từ bảng don_hang xuất cho Đại lý/Khách hàng)
 try:
     c.execute("SELECT SUM(tong_tien) FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND ngay LIKE %s", (f"{thang_chon}-%",))
     dt = c.fetchone()[0]
     doanh_thu = float(dt) if dt else 0.0
 except:
     pass
-
-# Nếu muốn lấy từ hóa đơn đại lý (bảng hoa_don), bỏ block trên và dùng block dưới:
-# try:
-#     c.execute("SELECT SUM(tong_tien) FROM hoa_don WHERE ngay LIKE %s", (f"{thang_chon}-%",))
-#     dt = c.fetchone()[0]
-#     doanh_thu = float(dt) if dt else 0.0
-# except:
-#     pass
 
 # 2. GIÁ VỐN HÀNG BÁN (Tính từ giá công ty trong danh mục sản phẩm)
 try:
