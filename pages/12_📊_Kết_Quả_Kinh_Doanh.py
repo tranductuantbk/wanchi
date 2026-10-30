@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import time
+import json
 from db_utils import get_connection, check_password
 
 st.set_page_config(page_title="Kết Quả Kinh Doanh", page_icon="📊", layout="wide")
@@ -52,31 +53,63 @@ thang_chon = st.selectbox("Lọc dữ liệu theo tháng:", list_months, index=d
 # ==========================================
 # TRÍCH XUẤT DỮ LIỆU TỪ HỆ THỐNG
 # ==========================================
-# 1. DOANH THU THÁNG (Từ bảng hoa_don)
-try:
-    c.execute("SELECT SUM(tong_tien) FROM hoa_don WHERE ngay LIKE %s", (f"{thang_chon}-%",))
-    doanh_thu = c.fetchone()[0]
-    doanh_thu = float(doanh_thu) if doanh_thu else 0.0
-except:
-    doanh_thu = 0.0
-
-# 2. GIÁ VỐN HÀNG BÁN & THANH TOÁN CÔNG NỢ NCC (Từ bảng don_nhap_hang của kho)
+doanh_thu = 0.0
 gia_von = 0.0
 thanh_toan_ncc = 0.0
+chi_phi_tu_nhap = 0.0
+
+# 1. DOANH THU THÁNG (Từ bảng hoa_don / don_hang xuất cho Đại lý/Khách hàng)
+try:
+    c.execute("SELECT SUM(tong_tien) FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND ngay LIKE %s", (f"{thang_chon}-%",))
+    dt = c.fetchone()[0]
+    doanh_thu = float(dt) if dt else 0.0
+except:
+    pass
+
+# Nếu muốn lấy từ hóa đơn đại lý (bảng hoa_don), bỏ block trên và dùng block dưới:
+# try:
+#     c.execute("SELECT SUM(tong_tien) FROM hoa_don WHERE ngay LIKE %s", (f"{thang_chon}-%",))
+#     dt = c.fetchone()[0]
+#     doanh_thu = float(dt) if dt else 0.0
+# except:
+#     pass
+
+# 2. GIÁ VỐN HÀNG BÁN (Tính từ giá công ty trong danh mục sản phẩm)
+try:
+    # Lấy danh sách từ điển Giá gốc (Giá Công ty)
+    df_sp = pd.read_sql("SELECT ten_sp, gia_khach_le FROM dm_san_pham", conn)
+    dict_gia_von = dict(zip(df_sp['ten_sp'], df_sp['gia_khach_le']))
+    
+    # Quét tất cả các đơn hàng đã xuất kho trong tháng để nhân số lượng với giá gốc
+    c.execute("SELECT chi_tiet FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND ngay LIKE %s", (f"{thang_chon}-%",))
+    cac_don_hang = c.fetchall()
+    
+    for row in cac_don_hang:
+        chi_tiet_str = row[0]
+        if chi_tiet_str:
+            items = json.loads(chi_tiet_str)
+            for sp in items:
+                ten_san_pham = sp.get('Tên Sản Phẩm', sp.get('Tên Sản Phẩm OME', ''))
+                so_luong = float(sp.get('Số Lượng', 0))
+                # Lấy giá vốn, nếu không có trong danh mục thì tính là 0
+                gia_von_1_sp = dict_gia_von.get(ten_san_pham, 0)
+                gia_von += gia_von_1_sp * so_luong
+except Exception as e:
+    st.error(f"Lỗi tính giá vốn: {e}")
+
+# 3. THANH TOÁN CÔNG NỢ NCC (Từ bảng don_nhap_hang của kho)
 try:
     df_nhap = pd.read_sql(f"SELECT * FROM don_nhap_hang WHERE ngay LIKE '{thang_chon}-%'", conn)
     if not df_nhap.empty and 'tong_tien' in df_nhap.columns:
-        gia_von = float(df_nhap['tong_tien'].sum())
-        
         # Lọc ra các đơn đã thanh toán công nợ
         if 'trang_thai' in df_nhap.columns:
             thanh_toan_ncc = float(df_nhap[df_nhap['trang_thai'] == 'Đã thanh toán']['tong_tien'].sum())
-        elif 'da_thanh_toan' in df_nhap.columns: # Phòng trường hợp dùng cột da_thanh_toan
+        elif 'da_thanh_toan' in df_nhap.columns: 
             thanh_toan_ncc = float(df_nhap['da_thanh_toan'].sum())
 except:
     pass
 
-# 3. CHI PHÍ TỰ NHẬP (Từ bảng chi_phi_khac)
+# 4. CHI PHÍ TỰ NHẬP (Từ bảng chi_phi_khac)
 try:
     df_cp = pd.read_sql(f"SELECT id, ngay, dien_giai, so_tien FROM chi_phi_khac WHERE ngay LIKE '{thang_chon}-%' ORDER BY id DESC", conn)
     chi_phi_tu_nhap = float(df_cp['so_tien'].sum()) if not df_cp.empty else 0.0
@@ -98,8 +131,8 @@ st.markdown("---")
 st.markdown(f"### 📈 TỔNG QUAN KẾT QUẢ KINH DOANH - {thang_chon}")
 
 col_dt1, col_dt2, col_dt3 = st.columns(3)
-col_dt1.metric("Doanh Thu Tháng", f"{doanh_thu:,.0f} VNĐ")
-col_dt2.metric("Giá Vốn Hàng Bán", f"{gia_von:,.0f} VNĐ")
+col_dt1.metric("Doanh Thu Tháng (Đã xuất kho)", f"{doanh_thu:,.0f} VNĐ")
+col_dt2.metric("Giá Vốn Hàng Bán (Giá gốc SP)", f"{gia_von:,.0f} VNĐ")
 col_dt3.metric("LỢI NHUẬN RÒNG", f"{loi_nhuan_rong:,.0f} VNĐ")
 
 st.markdown("<br>", unsafe_allow_html=True)
