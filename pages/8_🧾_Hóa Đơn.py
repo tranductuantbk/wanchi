@@ -236,7 +236,7 @@ with tab2:
         if loc_kh != "Tất cả":
             df_hien_thi_hd = df_hien_thi_hd[df_hien_thi_hd['ten_kh'] == loc_kh]
 
-        # Chuẩn bị hiển thị, thêm cột chọn tick để thanh toán
+        # Chuẩn bị hiển thị, thêm cột chọn tick để thanh toán hoặc xóa
         df_hien_thi_hd.insert(0, "Chọn", False)
         
         # Chỉ giữ lại các cột cần thiết cho bảng theo dõi
@@ -256,20 +256,34 @@ with tab2:
             use_container_width=True, hide_index=True, key="editor_thanh_toan_hd"
         )
         
-        # Xử lý Nút Thanh Toán
+        # Xử lý Nút Thanh Toán và Nút Xóa
         don_chon = edited_df[edited_df['Chọn'] == True]['Mã Đơn'].tolist()
         if don_chon:
-            if st.button("✅ XÁC NHẬN ĐÃ THANH TOÁN CÁC ĐƠN ĐÃ CHỌN", type="primary"):
-                try:
-                    for ma in don_chon:
-                        c.execute("UPDATE hoa_don SET da_thu = tong_tien WHERE ma_don = %s", (ma,))
-                    conn.commit()
-                    st.success(f"🎉 Đã thanh toán thành công các đơn: {', '.join(don_chon)}")
-                    time.sleep(1.5)
-                    st.rerun()
-                except Exception as e:
-                    conn.rollback()
-                    st.error(f"Lỗi thanh toán: {e}")
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("✅ XÁC NHẬN ĐÃ THANH TOÁN CÁC ĐƠN ĐÃ CHỌN", type="primary", use_container_width=True):
+                    try:
+                        for ma in don_chon:
+                            c.execute("UPDATE hoa_don SET da_thu = tong_tien WHERE ma_don = %s", (ma,))
+                        conn.commit()
+                        st.success(f"🎉 Đã thanh toán thành công các đơn: {', '.join(don_chon)}")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"Lỗi thanh toán: {e}")
+            with col_btn2:
+                if st.button("🗑️ XÓA CÁC ĐƠN ĐÃ CHỌN", type="secondary", use_container_width=True):
+                    try:
+                        for ma in don_chon:
+                            c.execute("DELETE FROM hoa_don WHERE ma_don = %s", (ma,))
+                        conn.commit()
+                        st.success(f"🗑️ Đã xóa thành công các hóa đơn: {', '.join(don_chon)}")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"Lỗi xóa: {e}")
 
         # Hiển thị Bảng Công Nợ Thuế khi lọc theo Đại lý
         if loc_kh != "Tất cả":
