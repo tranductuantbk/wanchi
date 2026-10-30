@@ -35,24 +35,29 @@ except Exception as e:
     conn.rollback()
 
 # ==========================================
-# GIAO DIỆN CHỌN THÁNG (CHỈ HIỂN THỊ 1 NĂM GẦN NHẤT)
+# GIAO DIỆN CHỌN THÁNG (ĐỊNH DẠNG THÁNG/NĂM)
 # ==========================================
 today = date.today()
 list_months = []
 
-# Tạo danh sách 12 tháng (Tháng hiện tại và 11 tháng trước đó)
+# Tạo danh sách 12 tháng (Tháng hiện tại và 11 tháng trước đó) định dạng MM/YYYY
 for i in range(12):
     m = today.month - i
     y = today.year
     while m <= 0:
         m += 12
         y -= 1
-    list_months.append(f"{y}-{m:02d}")
+    list_months.append(f"{m:02d}/{y}")
 
 default_idx = 0 # Mặc định chọn phần tử đầu tiên (Tháng hiện tại)
 
 st.markdown("### 🗓️ Chọn Kỳ Báo Cáo")
-thang_chon = st.selectbox("Lọc dữ liệu theo tháng:", list_months, index=default_idx)
+thang_chon = st.selectbox("Lọc dữ liệu theo tháng/năm:", list_months, index=default_idx)
+
+# Tách tháng và năm để xử lý 2 chuẩn ngày tháng (YYYY-MM-DD và DD/MM/YYYY)
+m_str, y_str = thang_chon.split('/')
+pattern_ym = f"{y_str}-{m_str}-%"
+pattern_my = f"%/{m_str}/{y_str}"
 
 # ==========================================
 # TRÍCH XUẤT DỮ LIỆU TỪ HỆ THỐNG
@@ -64,7 +69,7 @@ chi_phi_tu_nhap = 0.0
 
 # 1. DOANH THU THÁNG (Từ bảng don_hang xuất cho Đại lý/Khách hàng)
 try:
-    c.execute("SELECT SUM(tong_tien) FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND ngay LIKE %s", (f"{thang_chon}-%",))
+    c.execute("SELECT SUM(tong_tien) FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s)", (pattern_ym, pattern_my))
     dt = c.fetchone()[0]
     doanh_thu = float(dt) if dt else 0.0
 except:
@@ -77,7 +82,7 @@ try:
     dict_gia_von = dict(zip(df_sp['ten_sp'], df_sp['gia_khach_le']))
     
     # Quét tất cả các đơn hàng đã xuất kho trong tháng để nhân số lượng với giá gốc
-    c.execute("SELECT chi_tiet FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND ngay LIKE %s", (f"{thang_chon}-%",))
+    c.execute("SELECT chi_tiet FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s)", (pattern_ym, pattern_my))
     cac_don_hang = c.fetchall()
     
     for row in cac_don_hang:
@@ -95,7 +100,7 @@ except Exception as e:
 
 # 3. THANH TOÁN CÔNG NỢ NCC (Từ bảng don_nhap_hang của kho)
 try:
-    df_nhap = pd.read_sql(f"SELECT * FROM don_nhap_hang WHERE ngay LIKE '{thang_chon}-%'", conn)
+    df_nhap = pd.read_sql("SELECT * FROM don_nhap_hang WHERE ngay LIKE %s OR ngay LIKE %s", conn, params=(pattern_ym, pattern_my))
     if not df_nhap.empty and 'tong_tien' in df_nhap.columns:
         # Lọc ra các đơn đã thanh toán công nợ
         if 'trang_thai' in df_nhap.columns:
@@ -107,7 +112,7 @@ except:
 
 # 4. CHI PHÍ TỰ NHẬP (Từ bảng chi_phi_khac)
 try:
-    df_cp = pd.read_sql(f"SELECT id, ngay, dien_giai, so_tien FROM chi_phi_khac WHERE ngay LIKE '{thang_chon}-%' ORDER BY id DESC", conn)
+    df_cp = pd.read_sql("SELECT id, ngay, dien_giai, so_tien FROM chi_phi_khac WHERE ngay LIKE %s OR ngay LIKE %s ORDER BY id DESC", conn, params=(pattern_ym, pattern_my))
     chi_phi_tu_nhap = float(df_cp['so_tien'].sum()) if not df_cp.empty else 0.0
 except:
     df_cp = pd.DataFrame()
@@ -154,7 +159,7 @@ col_form, col_table = st.columns([1, 2])
 with col_form:
     st.markdown("**Thêm chi phí mới**")
     with st.form("form_nhap_chi_phi", clear_on_submit=True):
-        cp_ngay = st.date_input("Ngày phát sinh", date.today())
+        cp_ngay = st.date_input("Ngày phát sinh", date.today(), format="DD/MM/YYYY")
         cp_diengiai = st.text_area("Diễn giải (VD: Tiền điện, nước, rác...)")
         cp_sotien = st.number_input("Số tiền (VNĐ)", min_value=0.0, step=10000.0)
         
