@@ -60,129 +60,147 @@ tab1, tab2, tab3 = st.tabs(["📝 Tạo hóa đơn đại lý", "📊 Bảng the
 # TAB 1: TẠO HÓA ĐƠN ĐẠI LÝ (BẢNG IMPORT THUẾ)
 # ==========================================
 with tab1:
-    st.subheader("1. Chọn Đơn Hàng & Chế Độ Giá")
+    st.subheader("1. Khai Báo Khách Hàng & Chế Độ Giá")
     
-    # Lấy danh sách các đơn hàng chưa được tạo hóa đơn để chọn cho nhanh
-    df_all_dh = pd.read_sql("SELECT d.ma_don, d.ten_kh FROM don_hang d ORDER BY d.id DESC", conn)
-    danh_sach_don = ["-- Chọn Mã Đơn --"]
-    if not df_all_dh.empty:
-        danh_sach_don += df_all_dh['ma_don'].tolist()
-        
-    col_chon1, col_chon2 = st.columns([1, 1])
-    with col_chon1:
-        ma_don_input = st.selectbox("🔍 Chọn Mã Đơn (Thay cho nhập tay):", danh_sach_don)
-    with col_chon2:
-        chon_che_do = st.radio("Chọn phương thức tính giá:", ["Giữ nguyên giá", "Chia 0.95"], index=0, horizontal=True)
+    col_kh1, col_kh2, col_kh3 = st.columns([2, 1, 1])
+    with col_kh1:
+        ten_kh_input = st.text_input("👤 Nhập Tên Khách Hàng (Đại lý):", placeholder="VD: Đại lý NPP A...").strip()
+    with col_kh2:
+        ma_don_input = st.text_input("📝 Mã Hóa Đơn (Tự động nếu để trống):", placeholder="VD: HD-001").strip()
+    with col_kh3:
+        chon_che_do = st.radio("Chọn phương thức tính giá:", ["Giữ nguyên giá", "Chia 0.95"], index=0)
     
-    if ma_don_input != "-- Chọn Mã Đơn --":
-        # Lấy dữ liệu từ bảng don_hang chuẩn xác
-        df_don_hang = pd.read_sql("SELECT ten_kh, tong_tien, chi_tiet FROM don_hang WHERE ma_don = %s", conn, params=(ma_don_input,))
+    st.markdown("---")
+    st.subheader("2. Bảng Hóa Đơn / Import Thuế")
+    
+    # Lấy danh sách sản phẩm và giá công ty làm mặc định
+    try:
+        df_sp = pd.read_sql("SELECT ten_sp, gia_khach_le FROM dm_san_pham", conn)
+        dict_gia = dict(zip(df_sp['ten_sp'], df_sp['gia_khach_le']))
+        danh_sach_sp = df_sp['ten_sp'].tolist()
+    except Exception:
+        dict_gia = {}
+        danh_sach_sp = []
+
+    if 'bang_hoa_don' not in st.session_state:
+        st.session_state.bang_hoa_don = []
+
+    # BỘ NHẬP LIỆU NHANH
+    with st.form("form_them_sp_hd", clear_on_submit=True):
+        c1, c2 = st.columns([3, 1])
+        sp_chon = c1.selectbox("📦 Chọn Tên vt (Sản phẩm)", ["-- Chọn Sản Phẩm --"] + danh_sach_sp)
+        sl_chon = c2.number_input("Số lượng", min_value=1, step=1)
         
-        if df_don_hang.empty:
-            st.warning(f"⚠️ Không tìm thấy chi tiết cho Mã Đơn '{ma_don_input}'.")
-        else:
-            ten_kh = df_don_hang.iloc[0]['ten_kh']
-            chi_tiet_json = df_don_hang.iloc[0]['chi_tiet']
-            tong_tien_chot = 0 
+        if st.form_submit_button("➕ Thêm vào bảng Hóa đơn"):
+            if sp_chon != "-- Chọn Sản Phẩm --":
+                st.session_state.bang_hoa_don.append({
+                    "Mã vt": "",
+                    "Tên vt": sp_chon,
+                    "Đvt": "Cái",
+                    "Số lượng": sl_chon,
+                    "Giá ngoại tệ": "",
+                    "Tiền ngoại tệ": "",
+                    "%CK": "",
+                    "Chiết khấu": "",
+                    "Thuế suất": "",
+                    "Thuế": ""
+                })
+                st.rerun()
 
-            st.markdown("---")
-            st.subheader(f"2. Bảng Import Thuế - Khách Hàng: **{ten_kh}**")
+    # HIỂN THỊ VÀ XỬ LÝ BẢNG DỮ LIỆU
+    if st.session_state.bang_hoa_don:
+        df_bang = pd.DataFrame(st.session_state.bang_hoa_don)
+        df_bang.insert(0, "Xóa", False)
+        
+        # Tự động tính toán Giá và Tiền theo tùy chọn Chế độ
+        gia_list = []
+        tien_list = []
+        for _, row in df_bang.iterrows():
+            sp = row['Tên vt']
+            gia_goc = dict_gia.get(sp, 0)
+            gia_tinh = gia_goc / 0.95 if chon_che_do == "Chia 0.95" else gia_goc
+            gia_list.append(gia_tinh)
+            tien_list.append(gia_tinh * row['Số lượng'])
+            
+        df_bang['Giá'] = gia_list
+        df_bang['Tiền'] = tien_list
+        
+        # Sắp xếp đúng thứ tự cột như mẫu Kế toán
+        cols = ["Xóa", "Mã vt", "Tên vt", "Đvt", "Số lượng", "Giá", "Tiền", "Giá ngoại tệ", "Tiền ngoại tệ", "%CK", "Chiết khấu", "Thuế suất", "Thuế"]
+        df_bang = df_bang[cols]
+        
+        st.write("💡 *Có thể chỉnh sửa Số lượng trực tiếp trong bảng. Tích vào 'Xóa' để loại bỏ sản phẩm khỏi hóa đơn.*")
+        edited_bang = st.data_editor(
+            df_bang,
+            column_config={
+                "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
+                "Số lượng": st.column_config.NumberColumn("Số lượng", min_value=1, step=1),
+                "Giá": st.column_config.NumberColumn("Giá", format="%.0f", disabled=True),
+                "Tiền": st.column_config.NumberColumn("Tiền", format="%.0f", disabled=True),
+                "Tên vt": st.column_config.TextColumn(disabled=True),
+                "Đvt": st.column_config.TextColumn(disabled=True)
+            },
+            hide_index=True, use_container_width=True
+        )
+        
+        # Xử lý xóa
+        if edited_bang['Xóa'].any():
+            df_valid = edited_bang[edited_bang['Xóa'] == False].drop(columns=['Xóa'])
+            st.session_state.bang_hoa_don = df_valid.drop(columns=['Giá', 'Tiền']).to_dict('records')
+            st.rerun()
+            
+        # Cập nhật state nếu sửa số lượng
+        edited_bang_save = edited_bang.drop(columns=['Xóa', 'Giá', 'Tiền'])
+        st.session_state.bang_hoa_don = edited_bang_save.to_dict('records')
+        
+        tong_tien_chot = edited_bang['Tiền'].sum()
+        st.markdown(f"### 💰 TỔNG TIỀN HÓA ĐƠN: **{tong_tien_chot:,.0f} VNĐ**")
 
-            # Rã đông JSON để vẽ bảng
-            if pd.notna(chi_tiet_json) and chi_tiet_json:
-                try:
-                    items = json.loads(chi_tiet_json)
-                    df_items = pd.DataFrame(items)
-                    
-                    # Chuẩn hóa tên cột
-                    if 'Tên Sản Phẩm' in df_items.columns:
-                        sp_col = 'Tên Sản Phẩm'
-                    elif 'Tên Sản Phẩm OME' in df_items.columns:
-                        sp_col = 'Tên Sản Phẩm OME'
-                    else:
-                        sp_col = df_items.columns[0] 
-
-                    df_items = df_items.rename(columns={sp_col: 'ten_sp', 'Số Lượng': 'so_luong', 'Đơn Giá': 'don_gia'})
-                    if 'Đơn Giá OME' in df_items.columns:
-                        df_items['don_gia'] = df_items['Đơn Giá OME']
-
-                    # Logic tính giá
-                    if chon_che_do == "Chia 0.95":
-                        df_items['don_gia_thue'] = df_items['don_gia'].astype(float) / 0.95
-                    else:
-                        df_items['don_gia_thue'] = df_items['don_gia'].astype(float)
-                    
-                    df_items['tien_thue'] = df_items['so_luong'].astype(float) * df_items['don_gia_thue']
-                    tong_tien_chot = df_items['tien_thue'].sum()
-
-                    # Bảng kê chuẩn Import Thuế
-                    df_hien_thi = pd.DataFrame({
-                        "Mã vt": "",
-                        "Tên vt": df_items.get('ten_sp', ""),
-                        "Đvt": "Cái",
-                        "Số lượng": df_items.get('so_luong', 0),
-                        "Giá": df_items.get('don_gia_thue', 0),
-                        "Tiền": df_items.get('tien_thue', 0),
-                        "Giá ngoại tệ": "",
-                        "Tiền ngoại tệ": "",
-                        "%CK": "",
-                        "Chiết khấu": "",
-                        "Thuế suất": "",
-                        "Thuế": ""
-                    })
-                    
-                    st.dataframe(
-                        df_hien_thi.style.format({
-                            "Số lượng": "{:,.0f}", 
-                            "Giá": "{:,.0f}", 
-                            "Tiền": "{:,.0f}"
-                        }, na_rep=""),
-                        use_container_width=True, hide_index=True
-                    )
-                except Exception as e:
-                    st.error(f"Lỗi đọc chi tiết đơn hàng: {e}")
-                    tong_tien_chot = float(df_don_hang.iloc[0]['tong_tien'])
-
-            st.markdown(f"### 💰 TỔNG TIỀN HÓA ĐƠN: **{tong_tien_chot:,.0f} VNĐ**")
-
-            st.markdown("---")
-            if st.button("💾 LƯU HÓA ĐƠN & TẢI EXCEL", type="primary"):
-                check_hd = pd.read_sql("SELECT ma_don FROM hoa_don WHERE ma_don = %s", conn, params=(ma_don_input,))
+        st.markdown("---")
+        if st.button("💾 LƯU HÓA ĐƠN & TẢI EXCEL IMPORT THUẾ", type="primary"):
+            if not ten_kh_input:
+                st.error("⚠️ Vui lòng nhập Tên Khách Hàng để ghi nhận công nợ!")
+            else:
+                ma_don_chot = ma_don_input if ma_don_input else f"HD-{int(time.time())}"
+                
+                check_hd = pd.read_sql("SELECT ma_don FROM hoa_don WHERE ma_don = %s", conn, params=(ma_don_chot,))
                 if not check_hd.empty:
-                    st.error(f"⚠️ Hóa đơn cho Mã Đơn {ma_don_input} đã được lập và lưu trước đó!")
+                    st.error(f"⚠️ Hóa đơn với mã {ma_don_chot} đã tồn tại! Vui lòng chọn mã khác.")
                 else:
                     try:
                         ngay_hd = date.today().strftime("%Y-%m-%d")
-                        # Lưu với các giá trị mặc định cho da_thu, con_no (vì quản lý nợ qua công thức thuế)
+                        # Lưu vào theo dõi công nợ (dùng logic tự động tính qua tỷ lệ 0.95 ở tab 2)
                         c.execute("""INSERT INTO hoa_don 
                                      (ngay, ma_don, so_phieu, ten_kh, tong_tien, da_thu, con_no, import_thue, ghi_chu) 
                                      VALUES (%s, %s, %s, %s, %s, 0, 0, 'Không', '')""",
-                                  (ngay_hd, ma_don_input, ma_don_input, ten_kh, tong_tien_chot))
+                                  (ngay_hd, ma_don_chot, ma_don_chot, ten_kh_input, tong_tien_chot))
                         conn.commit()
-                        st.success(f"🎉 Đã lưu thành công hóa đơn cho Mã Đơn {ma_don_input} vào Bảng Theo Dõi!")
+                        st.success(f"🎉 Đã lưu thành công hóa đơn [{ma_don_chot}] vào Bảng Theo Dõi!")
                     except Exception as e:
                         conn.rollback()
                         st.error(f"Lỗi hệ thống: {e}")
                 
-                # TỰ ĐỘNG TẠO FILE EXCEL TẢI XUỐNG
+                # TẠO FILE EXCEL IMPORT
+                df_export = edited_bang.drop(columns=['Xóa'])
                 try:
                     import openpyxl
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_hien_thi.to_excel(writer, index=False, sheet_name='Import_Thue')
+                        df_export.to_excel(writer, index=False, sheet_name='Import_Thue')
                     excel_data = output.getvalue()
                     
                     st.download_button(
                         label="📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE EXCEL IMPORT THUẾ",
                         data=excel_data,
-                        file_name=f"Import_Thue_{ma_don_input}.xlsx",
+                        file_name=f"Import_Thue_{ma_don_chot}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         type="primary"
                     )
+                    st.session_state.bang_hoa_don = [] # Xóa trống sau khi chốt
                 except ImportError:
                     st.error("⚠️ Đám mây đang thiếu thư viện `openpyxl`. Vui lòng cài đặt!")
-                    csv_data = df_hien_thi.to_csv(index=False).encode('utf-8-sig') 
-                    st.download_button("📥 Tải Tạm File CSV", data=csv_data, file_name=f"Import_Thue_{ma_don_input}.csv", mime="text/csv", type="secondary")
+                    csv_data = df_export.to_csv(index=False).encode('utf-8-sig') 
+                    st.download_button("📥 Tải Tạm File CSV", data=csv_data, file_name=f"Import_Thue_{ma_don_chot}.csv", mime="text/csv", type="secondary")
 
 # ==========================================
 # TAB 2: BẢNG THEO DÕI HÓA ĐƠN ĐẠI LÝ
@@ -244,7 +262,7 @@ with tab3:
     
     col_p1, col_p2 = st.columns([1, 2])
     with col_p1:
-        ma_don_import = st.text_input("📝 Nhập Mã Đơn (VD: DH-0001):", key="import_thue_phieu").strip()
+        ma_don_import = st.text_input("📝 Nhập Mã Đơn (Từ hệ thống kho - VD: DH-0001):", key="import_thue_phieu").strip()
         chon_che_do_thue = st.radio("Chọn phương thức tính giá:", ["Giữ nguyên giá", "Chia 0.95"], index=1, horizontal=True, key="radio_thue")
 
     if ma_don_import:
