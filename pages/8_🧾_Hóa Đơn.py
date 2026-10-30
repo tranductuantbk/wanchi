@@ -102,12 +102,15 @@ with tab1:
         
         if st.form_submit_button("➕ Thêm vào bảng Hóa đơn"):
             if sp_chon != "-- Chọn Sản Phẩm --":
+                # Xử lý tự động thêm "Hộp Nhựa" nếu chưa có
+                ten_vt_hien_thi = sp_chon if str(sp_chon).strip().startswith("Hộp Nhựa") else f"Hộp Nhựa {sp_chon.strip()}"
+                
                 st.session_state.bang_hoa_don.append({
                     "Mã vt": dict_ma.get(sp_chon, ""),  # Tự động chèn Mã vật tư
-                    "Tên vt": sp_chon,
+                    "Tên vt": ten_vt_hien_thi,
                     "Đvt": "Cái",
                     "Số lượng": sl_chon,
-                    "Giá ngoại tệ": None,  # Sửa thành None để Excel nhận diện là ô trống hoàn toàn
+                    "Giá ngoại tệ": None,  # Để None để Excel nhận diện là ô trống hoàn toàn
                     "Tiền ngoại tệ": None,
                     "%CK": None,
                     "Chiết khấu": None,
@@ -126,7 +129,10 @@ with tab1:
         tien_list = []
         for _, row in df_bang.iterrows():
             sp = row['Tên vt']
-            gia_goc = dict_gia.get(sp, 0)
+            # Lọc bỏ "Hộp Nhựa " để tìm về đúng giá gốc trong DB
+            sp_goc = sp[9:] if str(sp).startswith("Hộp Nhựa ") else sp
+            gia_goc = dict_gia.get(sp, dict_gia.get(sp_goc, 0))
+            
             gia_tinh = gia_goc / 0.95 if chon_che_do == "Chia 0.95" else gia_goc
             gia_tinh = round(float(gia_tinh), 0)  # Làm tròn chẵn để kế toán không bị lỗi số thập phân
             gia_list.append(gia_tinh)
@@ -360,9 +366,18 @@ with tab3:
                 # Tự động map mã vật tư
                 ma_vt_list = [dict_ma_tab3.get(ten, "") for ten in df_items_thue['ten_sp']]
 
+                # Tự động thêm "Hộp Nhựa" vào Tên Sản Phẩm nếu chưa có
+                ten_vt_list = []
+                for ten in df_items_thue['ten_sp']:
+                    ten_str = str(ten).strip()
+                    if not ten_str.startswith("Hộp Nhựa"):
+                        ten_vt_list.append(f"Hộp Nhựa {ten_str}")
+                    else:
+                        ten_vt_list.append(ten_str)
+
                 df_import_thue = pd.DataFrame({
                     "Mã vt": ma_vt_list,
-                    "Tên vt": df_items_thue.get('ten_sp', ""),
+                    "Tên vt": ten_vt_list,
                     "Đvt": "Cái",
                     "Số lượng": df_items_thue.get('so_luong', 0),
                     "Giá": df_items_thue.get('don_gia_thue', 0),
