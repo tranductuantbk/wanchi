@@ -178,9 +178,11 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh, conn):
     c_pdf = conn.cursor()
     for i, row in df_items.iterrows():
         ten = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
-        sl_loc = float(row.get('Số Lượng', 0))
         
-        # Tự động lấy Quy cách lốc từ CSDL để nhân ra số cái
+        # Sửa logic: "Số Lượng" trong JSON là Số lượng Cái.
+        # Nếu UI đã tách cột Số Lượng Cái và Số Lượng Lốc thì ưu tiên lấy, nếu không lấy Số Lượng (Cái) chia Quy cách.
+        sl_cai = float(row.get('Số Lượng Cái', row.get('Số Lượng', 0)))
+        
         quy_cach = 1.0
         try:
             c_pdf.execute("SELECT quy_cach_loc FROM public.dm_san_pham WHERE ten_sp = %s", (ten,))
@@ -193,12 +195,16 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh, conn):
         except:
             pass
             
-        sl_cai = sl_loc * quy_cach
+        sl_loc = sl_cai / quy_cach if quy_cach > 0 else 0
         so_bao = str(row.get('Số Bao', ''))
 
         pdf.cell(10, 8, str(i+1), 1, 0, "C")
         pdf.cell(75, 8, ten, 1, 0, "L")
-        pdf.cell(35, 8, format_vn(sl_loc), 1, 0, "C")
+        
+        # Định dạng Số Lốc (xóa đuôi .00 nếu là số chẵn)
+        loc_str = "{:,.2f}".format(sl_loc).rstrip('0').rstrip('.') if sl_loc % 1 != 0 else format_vn(sl_loc)
+        
+        pdf.cell(35, 8, loc_str, 1, 0, "C")
         pdf.cell(35, 8, format_vn(sl_cai), 1, 0, "C")
         pdf.cell(35, 8, so_bao, 1, 1, "C")
     
@@ -991,18 +997,50 @@ with tab2:
                 items = json.loads(don_info['chi_tiet'])
                 df_items = pd.DataFrame(items)
                 
+                # Xử lý để hiển thị đúng Số Lượng Lốc và Số Lượng Cái (từ số lượng gốc của hệ thống)
+                sl_loc_list = []
+                sl_cai_list = []
+                for _, row in df_items.iterrows():
+                    ten_sp = row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', ''))
+                    # Số lượng trong JSON gốc chính là Tổng Số Cái
+                    sl_cai = float(row.get('Số Lượng', 0))
+                    sl_cai_list.append(sl_cai)
+                    
+                    quy_cach = 1.0
+                    try:
+                        c.execute("SELECT quy_cach_loc FROM public.dm_san_pham WHERE ten_sp = %s", (ten_sp,))
+                        res = c.fetchone()
+                        if res: quy_cach = float(res[0])
+                        else:
+                            c.execute("SELECT quy_cach_loc FROM public.dm_san_pham_ome WHERE ten_sp = %s", (ten_sp,))
+                            res2 = c.fetchone()
+                            if res2: quy_cach = float(res2[0])
+                    except: pass
+                    
+                    # Số lốc = Số cái / Quy cách
+                    sl_loc = sl_cai / quy_cach if quy_cach > 0 else 0
+                    sl_loc_list.append(sl_loc)
+                
+                df_items['Số Lượng Lốc'] = sl_loc_list
+                df_items['Số Lượng Cái'] = sl_cai_list
+                
                 # Bổ sung cột "Số Bao" cho phép người dùng nhập trực tiếp trên giao diện
                 df_items.insert(len(df_items.columns), "Số Bao", "")
                 
                 st.write("Bảng chi tiết hàng hóa (Bạn có thể nhập thêm Số Bao ở cột cuối cùng):")
+                
+                # Ẩn cột "Số Lượng" cũ đi cho đỡ rối, dùng 2 cột mới tính
+                df_display = df_items.drop(columns=['Số Lượng'], errors='ignore')
+                
                 edited_df_items = st.data_editor(
-                    df_items, 
+                    df_display, 
                     use_container_width=True, 
                     hide_index=True,
                     column_config={
                         "Tên Sản Phẩm": st.column_config.TextColumn(disabled=True),
                         "Tên Sản Phẩm OME": st.column_config.TextColumn(disabled=True),
-                        "Số Lượng": st.column_config.NumberColumn("Số Lượng (Lốc)", disabled=True),
+                        "Số Lượng Lốc": st.column_config.NumberColumn("Số Lượng (Lốc)", disabled=True, format="%.2f"),
+                        "Số Lượng Cái": st.column_config.NumberColumn("Số Lượng (Cái)", disabled=True, format="%.0f"),
                         "Đơn Giá": st.column_config.NumberColumn(disabled=True),
                         "Giá": st.column_config.NumberColumn(disabled=True),
                         "Thành Tiền": st.column_config.NumberColumn(disabled=True),
@@ -1018,7 +1056,7 @@ with tab2:
                         if st.button("📦 XÁC NHẬN XUẤT KHO", type="primary", use_container_width=True):
                             for item in items:
                                 ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
-                                sl = float(item.get('Số Lượng', 0))
+                                sl = float(item.get('Số Lượng', 0)) # Đây là số lượng cái cần trừ kho
                                 don_gia_sp = float(item.get('Đơn Giá', item.get('Giá', 0)))
                                 thanh_tien_sp = sl * don_gia_sp
                                 
