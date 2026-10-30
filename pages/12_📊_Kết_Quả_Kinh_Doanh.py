@@ -8,7 +8,7 @@ from db_utils import get_connection, check_password
 st.set_page_config(page_title="Kết Quả Kinh Doanh", page_icon="📊", layout="wide")
 
 # ==========================================
-# Ổ KHÓA BẢO VỆ 2 LỚP
+# Ổ KHÓA BẢO VỆ 2 LỚP - PHÂN QUYỀN
 # ==========================================
 role = check_password()
 if not role: st.stop()
@@ -16,7 +16,36 @@ if role == "employee":
     st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: Trang Báo Cáo Kinh Doanh là dữ liệu mật, chỉ dành cho Quản lý.")
     st.stop()
 
+# ==========================================
+# 🔑 KHÓA BẢO VỆ CẤP GIÁM ĐỐC
+# ==========================================
+MAT_KHAU_GIAM_DOC = "tbk1102"
+
+if 'bao_cao_unlocked' not in st.session_state:
+    st.session_state.bao_cao_unlocked = False
+
 st.header("📊 Báo Cáo Kết Quả Kinh Doanh")
+
+if not st.session_state.bao_cao_unlocked:
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_khoa1, col_khoa2, col_khoa3 = st.columns([1, 2, 1])
+    with col_khoa2:
+        st.warning("🔒 **BẢO MẬT CẤP CAO:** Vui lòng nhập Mã PIN Giám Đốc để xem Báo Cáo Tài Chính.")
+        with st.form("form_mat_khau_baocao"):
+            pin_input = st.text_input("Mã PIN / Mật khẩu:", type="password")
+            if st.form_submit_button("🔓 Mở Khóa Báo Cáo", type="primary", use_container_width=True):
+                if pin_input == MAT_KHAU_GIAM_DOC:
+                    st.session_state.bao_cao_unlocked = True
+                    st.rerun()
+                else: 
+                    st.error("❌ Mã PIN không chính xác!")
+    st.stop()
+
+# Nút khóa lại
+if st.button("🔒 Khóa Lại Báo Cáo", key="lock_baocao"):
+    st.session_state.bao_cao_unlocked = False
+    st.rerun()
+
 conn = get_connection()
 c = conn.cursor()
 
@@ -38,26 +67,30 @@ except Exception as e:
 # GIAO DIỆN CHỌN THÁNG (ĐỊNH DẠNG THÁNG/NĂM)
 # ==========================================
 today = date.today()
-list_months = []
+list_months_display = []
+list_months_value = []
 
-# Tạo danh sách 12 tháng (Tháng hiện tại và 11 tháng trước đó) định dạng MM/YYYY
+# Tạo danh sách 12 tháng (Tháng hiện tại và 11 tháng trước đó)
 for i in range(12):
     m = today.month - i
     y = today.year
     while m <= 0:
         m += 12
         y -= 1
-    list_months.append(f"{m:02d}/{y}")
-
-default_idx = 0 # Mặc định chọn phần tử đầu tiên (Tháng hiện tại)
+    list_months_display.append(f"{m:02d}/{y}")
+    list_months_value.append(f"{y}-{m:02d}") # Chuẩn ISO YYYY-MM
 
 st.markdown("### 🗓️ Chọn Kỳ Báo Cáo")
-thang_chon = st.selectbox("Lọc dữ liệu theo tháng/năm:", list_months, index=default_idx)
+thang_chon_display = st.selectbox("Lọc dữ liệu theo tháng/năm:", list_months_display, index=0)
 
-# Tách tháng và năm để xử lý 2 chuẩn ngày tháng (YYYY-MM-DD và DD/MM/YYYY)
-m_str, y_str = thang_chon.split('/')
-pattern_ym = f"{y_str}-{m_str}-%"
-pattern_my = f"%/{m_str}/{y_str}"
+# Lấy giá trị YYYY-MM tương ứng để truy vấn DB chuẩn hơn
+idx = list_months_display.index(thang_chon_display)
+thang_chon_val = list_months_value[idx] 
+m_str, y_str = thang_chon_display.split('/')
+
+# Quét 2 chuẩn ngày tháng phổ biến trong DB
+pattern_ym = f"{thang_chon_val}-%"  # 2026-10-%
+pattern_my = f"%/{m_str}/{y_str}"   # %/10/2026
 
 # ==========================================
 # TRÍCH XUẤT DỮ LIỆU TỪ HỆ THỐNG
@@ -129,7 +162,7 @@ loi_nhuan_thang = loi_nhuan_rong - tong_chi_phi
 # HIỂN THỊ METRICS KẾT QUẢ KINH DOANH
 # ==========================================
 st.markdown("---")
-st.markdown(f"### 📈 TỔNG QUAN KẾT QUẢ KINH DOANH - {thang_chon}")
+st.markdown(f"### 📈 TỔNG QUAN KẾT QUẢ KINH DOANH - {thang_chon_display}")
 
 col_dt1, col_dt2, col_dt3 = st.columns(3)
 col_dt1.metric("Doanh Thu Tháng (Đã xuất kho)", f"{doanh_thu:,.0f} VNĐ")
@@ -166,6 +199,7 @@ with col_form:
         if st.form_submit_button("💾 Lưu Chi Phí", type="primary", use_container_width=True):
             if cp_sotien > 0 and cp_diengiai:
                 try:
+                    # Lưu ngày chuẩn ISO để dễ truy vấn sau này
                     c.execute("INSERT INTO chi_phi_khac (ngay, dien_giai, so_tien) VALUES (%s, %s, %s)",
                               (cp_ngay.strftime("%Y-%m-%d"), cp_diengiai, cp_sotien))
                     conn.commit()
@@ -180,7 +214,7 @@ with col_form:
 
 # Bảng thể hiện
 with col_table:
-    st.markdown(f"**Bảng chi phí đã nhập trong tháng {thang_chon}**")
+    st.markdown(f"**Bảng chi phí đã nhập trong {thang_chon_display}**")
     if not df_cp.empty:
         df_hien_thi = df_cp.copy()
         # Đổi tên cột cho đẹp
@@ -193,4 +227,4 @@ with col_table:
             hide_index=True
         )
     else:
-        st.info(f"Chưa có chi phí tự nhập nào được ghi nhận trong tháng {thang_chon}.")
+        st.info(f"Chưa có chi phí tự nhập nào được ghi nhận trong {thang_chon_display}.")
