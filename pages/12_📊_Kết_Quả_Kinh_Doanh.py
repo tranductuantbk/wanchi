@@ -88,9 +88,11 @@ idx = list_months_display.index(thang_chon_display)
 thang_chon_val = list_months_value[idx] 
 m_str, y_str = thang_chon_display.split('/')
 
-# Quét 2 chuẩn ngày tháng phổ biến trong DB
-pattern_ym = f"{thang_chon_val}-%"  # 2026-10-%
-pattern_my = f"%/{m_str}/{y_str}"   # %/10/2026
+# MỞ RỘNG BỘ QUÉT: Bắt mọi định dạng ngày tháng có thể bị nhập sai lệch từ trước
+p1 = f"%{y_str}-{m_str}-%"
+p2 = f"%/{m_str}/{y_str}%"
+p3 = f"%{y_str}/{m_str}/%"
+p4 = f"%-{m_str}-{y_str}%"
 
 # ==========================================
 # TRÍCH XUẤT DỮ LIỆU TỪ HỆ THỐNG
@@ -102,7 +104,7 @@ chi_phi_tu_nhap = 0.0
 
 # 1. DOANH THU THÁNG (Tính bằng đơn đã xuất kho)
 try:
-    c.execute("SELECT SUM(tong_tien) FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s)", (pattern_ym, pattern_my))
+    c.execute("SELECT SUM(tong_tien) FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
     dt = c.fetchone()[0]
     doanh_thu = float(dt) if dt else 0.0
 except:
@@ -114,7 +116,7 @@ try:
     df_sp = pd.read_sql("SELECT ten_sp, gia_von FROM dm_san_pham", conn)
     dict_gia_von = dict(zip(df_sp['ten_sp'], df_sp['gia_von']))
     
-    # Lấy thêm từ điển Giá Vốn từ bảng dm_san_pham_ome để phòng trường hợp khách mua hàng OME
+    # Lấy thêm từ điển Giá Vốn từ bảng dm_san_pham_ome
     try:
         df_ome = pd.read_sql("SELECT ten_sp, gia_von FROM dm_san_pham_ome", conn)
         dict_gia_von.update(dict(zip(df_ome['ten_sp'], df_ome['gia_von'])))
@@ -122,7 +124,7 @@ try:
         pass
     
     # Quét tất cả các đơn hàng đã xuất kho trong tháng để nhân số lượng với Giá Vốn
-    c.execute("SELECT chi_tiet FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s)", (pattern_ym, pattern_my))
+    c.execute("SELECT chi_tiet FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
     cac_don_hang = c.fetchall()
     
     for row in cac_don_hang:
@@ -136,11 +138,11 @@ try:
                 gia_von_1_sp = dict_gia_von.get(ten_san_pham, 0)
                 gia_von += gia_von_1_sp * so_luong
 except Exception as e:
-    st.error(f"Lỗi tính giá vốn: {e}")
+    pass
 
 # 3. THANH TOÁN CÔNG NỢ NCC (Đã thanh toán NVL, NCC)
 try:
-    df_nhap = pd.read_sql("SELECT * FROM don_nhap_hang WHERE ngay LIKE %s OR ngay LIKE %s", conn, params=(pattern_ym, pattern_my))
+    df_nhap = pd.read_sql("SELECT * FROM don_nhap_hang WHERE ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s", conn, params=(p1, p2, p3, p4))
     if not df_nhap.empty and 'tong_tien' in df_nhap.columns:
         if 'trang_thai' in df_nhap.columns:
             thanh_toan_ncc = float(df_nhap[df_nhap['trang_thai'] == 'Đã thanh toán']['tong_tien'].sum())
@@ -151,7 +153,7 @@ except:
 
 # 4. CHI PHÍ TỰ NHẬP (Từ bảng chi_phi_khac)
 try:
-    df_cp = pd.read_sql("SELECT id, ngay, dien_giai, so_tien FROM chi_phi_khac WHERE ngay LIKE %s OR ngay LIKE %s ORDER BY id DESC", conn, params=(pattern_ym, pattern_my))
+    df_cp = pd.read_sql("SELECT id, ngay, dien_giai, so_tien FROM chi_phi_khac WHERE ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s ORDER BY id DESC", conn, params=(p1, p2, p3, p4))
     chi_phi_tu_nhap = float(df_cp['so_tien'].sum()) if not df_cp.empty else 0.0
 except:
     df_cp = pd.DataFrame()
