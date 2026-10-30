@@ -100,7 +100,7 @@ gia_von = 0.0
 thanh_toan_ncc = 0.0
 chi_phi_tu_nhap = 0.0
 
-# 1. DOANH THU THÁNG (Từ bảng don_hang xuất cho Đại lý/Khách hàng)
+# 1. DOANH THU THÁNG (Tính bằng đơn đã xuất kho)
 try:
     c.execute("SELECT SUM(tong_tien) FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s)", (pattern_ym, pattern_my))
     dt = c.fetchone()[0]
@@ -108,7 +108,7 @@ try:
 except:
     pass
 
-# 2. GIÁ VỐN HÀNG BÁN (Tính từ giá công ty trong danh mục sản phẩm)
+# 2. GIÁ VỐN HÀNG BÁN (Lấy tổng của giá vốn trong mục danh sách sản phẩm)
 try:
     # Lấy danh sách từ điển Giá gốc (Giá Công ty)
     df_sp = pd.read_sql("SELECT ten_sp, gia_khach_le FROM dm_san_pham", conn)
@@ -131,11 +131,10 @@ try:
 except Exception as e:
     st.error(f"Lỗi tính giá vốn: {e}")
 
-# 3. THANH TOÁN CÔNG NỢ NCC (Từ bảng don_nhap_hang của kho)
+# 3. THANH TOÁN CÔNG NỢ NCC (Đã thanh toán NVL, NCC)
 try:
     df_nhap = pd.read_sql("SELECT * FROM don_nhap_hang WHERE ngay LIKE %s OR ngay LIKE %s", conn, params=(pattern_ym, pattern_my))
     if not df_nhap.empty and 'tong_tien' in df_nhap.columns:
-        # Lọc ra các đơn đã thanh toán công nợ
         if 'trang_thai' in df_nhap.columns:
             thanh_toan_ncc = float(df_nhap[df_nhap['trang_thai'] == 'Đã thanh toán']['tong_tien'].sum())
         elif 'da_thanh_toan' in df_nhap.columns: 
@@ -152,11 +151,13 @@ except:
     chi_phi_tu_nhap = 0.0
 
 # ==========================================
-# TÍNH TOÁN CÔNG THỨC KINH DOANH
+# TÍNH TOÁN CÔNG THỨC KINH DOANH MỚI
 # ==========================================
+# Lợi nhuận ròng = Đơn đã xuất kho (Doanh thu) - Giá vốn trong đơn đã xuất kho
 loi_nhuan_rong = doanh_thu - gia_von
-tong_chi_phi = thanh_toan_ncc + chi_phi_tu_nhap
-loi_nhuan_thang = loi_nhuan_rong - tong_chi_phi
+
+# Lợi nhuận tháng = Lợi nhuận ròng - Tiền đã thanh toán NVL/NCC - Chi phí tự nhập
+loi_nhuan_thang = loi_nhuan_rong - thanh_toan_ncc - chi_phi_tu_nhap
 
 # ==========================================
 # HIỂN THỊ METRICS KẾT QUẢ KINH DOANH
@@ -166,14 +167,13 @@ st.markdown(f"### 📈 TỔNG QUAN KẾT QUẢ KINH DOANH - {thang_chon_display}
 
 col_dt1, col_dt2, col_dt3 = st.columns(3)
 col_dt1.metric("Doanh Thu Tháng (Đã xuất kho)", f"{doanh_thu:,.0f} VNĐ")
-col_dt2.metric("Giá Vốn Hàng Bán (Giá gốc SP)", f"{gia_von:,.0f} VNĐ")
+col_dt2.metric("Giá Vốn Hàng Bán (Đã xuất kho)", f"{gia_von:,.0f} VNĐ")
 col_dt3.metric("LỢI NHUẬN RÒNG", f"{loi_nhuan_rong:,.0f} VNĐ")
 
 st.markdown("<br>", unsafe_allow_html=True)
-col_cp1, col_cp2, col_cp3 = st.columns(3)
+col_cp1, col_cp2 = st.columns(2)
 col_cp1.metric("Đã Thanh Toán NCC/NVL", f"{thanh_toan_ncc:,.0f} VNĐ")
 col_cp2.metric("Chi Phí Tự Nhập", f"{chi_phi_tu_nhap:,.0f} VNĐ")
-col_cp3.metric("TỔNG CHI PHÍ", f"{tong_chi_phi:,.0f} VNĐ")
 
 st.markdown("---")
 # Hiển thị màu xanh nếu có lãi, màu đỏ nếu lỗ
