@@ -205,8 +205,7 @@ def lay_cau_hinh_gio():
         'gio_tre': config.get('GIO_TINH_TRE', '07:45'),
         'gio_ve_som': config.get('GIO_VE_SOM', '16:45'),
         'so_lan_tre_toida': int(config.get('SO_LAN_TRE_TOI_DA', 3)),
-        'tien_tham_nien': float(config.get('TIEN_THAM_NIEN_MOI_NAM', 10000)),
-        'tien_thuong_sinh_nhat': float(config.get('THUONG_SINH_NHAT', 300000))
+        'tien_tham_nien': float(config.get('TIEN_THAM_NIEN_MOI_NAM', 10000))
     }
 
 try: df_nv = pd.read_sql("SELECT * FROM public.nhan_vien ORDER BY id DESC", conn)
@@ -323,7 +322,6 @@ if role == "admin":
                     quen_ra_ca = False
                     
                     if not g_ra: 
-                        g_ra = cf['gio_ra'] 
                         quen_ra_ca = True
                         so_lan_quen_ra_ca += 1
                         
@@ -331,28 +329,49 @@ if role == "admin":
                         d = datetime.strptime(ngay_str, "%d/%m/%Y")
                         is_sunday = (d.weekday() == 6)
                         t_in = datetime.strptime(g_vao, "%H:%M")
-                        t_out = datetime.strptime(g_ra, "%H:%M")
                         
-                        ot_start = datetime.strptime(cf['gio_ot'], "%H:%M")
-                        t_tre_muc = datetime.strptime(cf['gio_tre'], "%H:%M")
-                        t_ve_som_muc = datetime.strptime(cf['gio_ve_som'], "%H:%M")
-                        
-                        if t_in > t_tre_muc:
-                            so_lan_tre += 1
-                        
-                        if not quen_ra_ca and t_out < t_ve_som_muc and not co_phep:
-                            so_lan_ve_som += 1
-
                         if quen_ra_ca:
-                            ot_hrs = 0.0
+                            pass # Không tính công chuẩn, không tính tăng ca
                         else:
+                            t_out = datetime.strptime(g_ra, "%H:%M")
+                            ot_start = datetime.strptime(cf['gio_ot'], "%H:%M")
+                            t_tre_muc = datetime.strptime(cf['gio_tre'], "%H:%M")
+                            t_ve_som_muc = datetime.strptime(cf['gio_ve_som'], "%H:%M")
+                            
+                            if t_in > t_tre_muc:
+                                so_lan_tre += 1
+                            
+                            if t_out < t_ve_som_muc and not co_phep:
+                                so_lan_ve_som += 1
+
                             ot_hrs = max(0, (t_out - ot_start).total_seconds() / 3600) if t_out > ot_start else 0
-                        
-                        if is_sunday: 
-                            auto_tc_cn += 8.0 + ot_hrs
-                        else:
-                            auto_ngay_cong += 1.0 
-                            auto_tc_thuong += ot_hrs      
+                            
+                            if co_phep:
+                                # Tính giờ làm thực tế liên tục từ lúc vào đến lúc ra (không có nghỉ trưa)
+                                std_out = min(t_out, ot_start)
+                                hrs = max(0, (std_out - t_in).total_seconds() / 3600)
+                                
+                                # Lấy khoảng thời gian của 1 ca tiêu chuẩn để chia tỷ lệ
+                                try:
+                                    t_vao_ca = datetime.strptime(cf['gio_vao'], "%H:%M")
+                                    tong_gio_ca = max(0, (ot_start - t_vao_ca).total_seconds() / 3600)
+                                except:
+                                    tong_gio_ca = 9.5
+                                if tong_gio_ca <= 0: tong_gio_ca = 9.5
+                                
+                                cong = hrs / tong_gio_ca # Quy ra số ngày công
+                                
+                                if is_sunday: 
+                                    auto_tc_cn += hrs + ot_hrs
+                                else:
+                                    auto_ngay_cong += cong
+                                    auto_tc_thuong += ot_hrs
+                            else:
+                                if is_sunday: 
+                                    auto_tc_cn += 8.0 + ot_hrs
+                                else:
+                                    auto_ngay_cong += 1.0 
+                                    auto_tc_thuong += ot_hrs      
                     except: pass
 
                 st.info(f"📅 Quét được **{len(bang_cong)}** ngày chấm công. Phát hiện **{so_lan_tre}** lần đi trễ, **{so_lan_ve_som}** lần về sớm, và **{so_lan_quen_ra_ca}** lần quên ra ca.")
@@ -392,7 +411,6 @@ if role == "admin":
                         pc_chuc_vu = st.number_input("Phụ cấp Quản lý/KTT (Sửa được)", min_value=0, value=300000, step=50000)
                         
                     thuong_tet = st.checkbox("🎉 Cộng thưởng Tết (Lương CB x 26 ngày)")
-                    thuong_sn = st.checkbox(f"🎂 Cộng thưởng sinh nhật (+{cf['tien_thuong_sinh_nhat']:,.0f} đ)")
                     tam_ung = st.number_input("Tiền tạm ứng tự nhập nếu có", value=0, step=50000)
                     
                     tien_thuong_le = 0
@@ -410,14 +428,11 @@ if role == "admin":
                     except: pass
                     
                     tien_thuong_tet = (l_cb * 26) if thuong_tet else 0
-                    tien_thuong_sn = cf['tien_thuong_sinh_nhat'] if thuong_sn else 0
-                    
                     if thuong_tet: ghi_chu_txt.append("Thưởng Tết (+26 ngày LCB)")
-                    if thuong_sn: ghi_chu_txt.append("Thưởng sinh nhật")
                     
                     if pc_chuc_vu > 0: ghi_chu_txt.append(f"Phụ cấp chức vụ (+{int(pc_chuc_vu/1000)}k)")
                     
-                    thuong = thuong_khac + tien_thuong_le + tien_thuong_tet + pc_chuc_vu + tien_thuong_sn
+                    thuong = thuong_khac + tien_thuong_le + tien_thuong_tet + pc_chuc_vu
                     
                     if so_lan_tre > 0: ghi_chu_txt.append(f"Đi trễ {so_lan_tre} lần")
                     if so_lan_ve_som > 0: ghi_chu_txt.append(f"Về sớm {so_lan_ve_som} lần")
@@ -491,16 +506,10 @@ if role == "admin":
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
                     
                     st.markdown("**3. Cách tính tăng ca & Quên quẹt thẻ (Tự động)**")
-                    st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%
-- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%
-- Quên ra ca = Tính 1 công chuẩn, KHÔNG tính tăng ca, ghi chú báo lỗi.
-*(Hệ thống tự động tính và lưu vào Hồ sơ nhân sự)*")
+                    st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca = KHÔNG tính công chuẩn, KHÔNG tính tăng ca, ghi chú báo lỗi.\n- Sửa giờ có phép = Tính chính xác giờ làm thực tế từ lúc vào đến lúc ra (quy ra ngày công).\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                     
-                    st.markdown("**5. Cách tính thưởng Lễ, Tết & Sinh nhật**")
-                    st.info("- **Lễ 30/4, 1/5, 2/9**: Lương CB + 100.000đ.
-- **Thưởng Tết**: Lương CB x 26 ngày.
-- **Mừng sinh nhật**: 300.000đ.
-*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết và Sinh nhật có nút tích chọn ở phần Tính lương)*")
+                    st.markdown("**5. Cách tính thưởng Lễ & Tết**")
+                    st.info("- **Lễ 30/4, 1/5, 2/9**: Lương CB + 100.000đ.\n- **Thưởng Tết**: Lương CB x 26 ngày.\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết có nút tích chọn ở phần Tính lương)*")
                 with c2:
                     st.markdown("**2. Quy tắc Đi trễ & Về sớm**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
@@ -509,9 +518,6 @@ if role == "admin":
                     
                     st.markdown("**4. Cách tính thâm niên**")
                     tien_tham_nien_moi = st.number_input("Số tiền cộng thêm cho 1 năm làm việc (VNĐ/ngày)", value=int(cf['tien_tham_nien']), step=5000)
-                    
-                    st.markdown("**6. Thưởng Sinh Nhật**")
-                    tien_thuong_sn_moi = st.number_input("Tiền thưởng sinh nhật (VNĐ)", value=int(cf['tien_thuong_sinh_nhat']), step=50000)
                 
                 if st.form_submit_button("💾 LƯU CẤU HÌNH", type="primary", use_container_width=True):
                     queries = [
@@ -521,8 +527,7 @@ if role == "admin":
                         ("GIO_TINH_TRE", gio_tre_moi.strftime("%H:%M")),
                         ("GIO_VE_SOM", gio_ve_som_moi.strftime("%H:%M")),
                         ("SO_LAN_TRE_TOI_DA", str(tre_toida_moi)),
-                        ("TIEN_THAM_NIEN_MOI_NAM", str(tien_tham_nien_moi)),
-                        ("THUONG_SINH_NHAT", str(tien_thuong_sn_moi))
+                        ("TIEN_THAM_NIEN_MOI_NAM", str(tien_tham_nien_moi))
                     ]
                     for key, val in queries:
                         c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES (%s, %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (key, val))
@@ -549,12 +554,12 @@ with container_cham_cong:
         with st.expander("🔑 QUẢN LÝ MÃ CHẤM CÔNG (Dành cho Chủ xưởng)"):
             if ma_ca:
                 tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
-                tg_het_han = tg_tao_dt + timedelta(hours=18)
+                tg_het_han = tg_tao_dt + timedelta(hours=13)
                 st.write(f"Mã hiện tại: **{ma_ca}** (Tạo lúc: {tg_tao_dt.strftime('%H:%M %d/%m')})")
-                if lay_gio_vn() > tg_het_han: st.error("⚠️ Mã này đã hết hạn 18h! Vui lòng tạo mã mới.")
+                if lay_gio_vn() > tg_het_han: st.error("⚠️ Mã này đã hết hạn 13h! Vui lòng tạo mã mới.")
                 else: st.success(f"Mã còn hiệu lực đến: {tg_het_han.strftime('%H:%M %d/%m')}")
             
-            if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 18h)", type="primary"):
+            if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 13h)", type="primary"):
                 moi_ma = str(random.randint(1000, 9999))
                 bay_gio = lay_gio_vn().isoformat()
                 c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('MA_CA_HIEN_TAI', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (moi_ma,))
@@ -614,7 +619,7 @@ with container_cham_cong:
         st.warning("⚠ Chủ xưởng chưa tạo mã ca làm việc. Vui lòng liên hệ Admin!")
     else:
         tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
-        if lay_gio_vn() > (tg_tao_dt + timedelta(hours=18)):
+        if lay_gio_vn() > (tg_tao_dt + timedelta(hours=13)):
             st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
         else:
             col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
