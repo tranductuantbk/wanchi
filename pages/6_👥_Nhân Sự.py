@@ -322,7 +322,6 @@ if role == "admin":
                     quen_ra_ca = False
                     
                     if not g_ra: 
-                        g_ra = cf['gio_ra'] 
                         quen_ra_ca = True
                         so_lan_quen_ra_ca += 1
                         
@@ -330,28 +329,49 @@ if role == "admin":
                         d = datetime.strptime(ngay_str, "%d/%m/%Y")
                         is_sunday = (d.weekday() == 6)
                         t_in = datetime.strptime(g_vao, "%H:%M")
-                        t_out = datetime.strptime(g_ra, "%H:%M")
                         
-                        ot_start = datetime.strptime(cf['gio_ot'], "%H:%M")
-                        t_tre_muc = datetime.strptime(cf['gio_tre'], "%H:%M")
-                        t_ve_som_muc = datetime.strptime(cf['gio_ve_som'], "%H:%M")
-                        
-                        if t_in > t_tre_muc:
-                            so_lan_tre += 1
-                        
-                        if not quen_ra_ca and t_out < t_ve_som_muc and not co_phep:
-                            so_lan_ve_som += 1
-
                         if quen_ra_ca:
-                            ot_hrs = 0.0
+                            pass # Không tính công chuẩn, không tính tăng ca
                         else:
+                            t_out = datetime.strptime(g_ra, "%H:%M")
+                            ot_start = datetime.strptime(cf['gio_ot'], "%H:%M")
+                            t_tre_muc = datetime.strptime(cf['gio_tre'], "%H:%M")
+                            t_ve_som_muc = datetime.strptime(cf['gio_ve_som'], "%H:%M")
+                            
+                            if t_in > t_tre_muc:
+                                so_lan_tre += 1
+                            
+                            if t_out < t_ve_som_muc and not co_phep:
+                                so_lan_ve_som += 1
+
                             ot_hrs = max(0, (t_out - ot_start).total_seconds() / 3600) if t_out > ot_start else 0
-                        
-                        if is_sunday: 
-                            auto_tc_cn += 8.0 + ot_hrs
-                        else:
-                            auto_ngay_cong += 1.0 
-                            auto_tc_thuong += ot_hrs      
+                            
+                            if co_phep:
+                                # Tính giờ làm thực tế liên tục từ lúc vào đến lúc ra (không có nghỉ trưa)
+                                std_out = min(t_out, ot_start)
+                                hrs = max(0, (std_out - t_in).total_seconds() / 3600)
+                                
+                                # Lấy khoảng thời gian của 1 ca tiêu chuẩn để chia tỷ lệ
+                                try:
+                                    t_vao_ca = datetime.strptime(cf['gio_vao'], "%H:%M")
+                                    tong_gio_ca = max(0, (ot_start - t_vao_ca).total_seconds() / 3600)
+                                except:
+                                    tong_gio_ca = 9.5
+                                if tong_gio_ca <= 0: tong_gio_ca = 9.5
+                                
+                                cong = hrs / tong_gio_ca # Quy ra số ngày công
+                                
+                                if is_sunday: 
+                                    auto_tc_cn += hrs + ot_hrs
+                                else:
+                                    auto_ngay_cong += cong
+                                    auto_tc_thuong += ot_hrs
+                            else:
+                                if is_sunday: 
+                                    auto_tc_cn += 8.0 + ot_hrs
+                                else:
+                                    auto_ngay_cong += 1.0 
+                                    auto_tc_thuong += ot_hrs      
                     except: pass
 
                 st.info(f"📅 Quét được **{len(bang_cong)}** ngày chấm công. Phát hiện **{so_lan_tre}** lần đi trễ, **{so_lan_ve_som}** lần về sớm, và **{so_lan_quen_ra_ca}** lần quên ra ca.")
@@ -486,7 +506,7 @@ if role == "admin":
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
                     
                     st.markdown("**3. Cách tính tăng ca & Quên quẹt thẻ (Tự động)**")
-                    st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca = Tính 1 công chuẩn, KHÔNG tính tăng ca.\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
+                    st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca = KHÔNG tính công chuẩn, KHÔNG tính tăng ca, ghi chú báo lỗi.\n- Sửa giờ có phép = Tính chính xác giờ làm thực tế từ lúc vào đến lúc ra (quy ra ngày công).\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                     
                     st.markdown("**5. Cách tính thưởng Lễ & Tết**")
                     st.info("- **Lễ 30/4, 1/5, 2/9**: Lương CB + 100.000đ.\n- **Thưởng Tết**: Lương CB x 30 ngày.\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết có nút tích chọn ở phần Tính lương)*")
