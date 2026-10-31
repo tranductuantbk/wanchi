@@ -410,7 +410,7 @@ if role == "admin":
                     if 'quản lý' in bo_phan_str or 'kỹ thuật trưởng' in bo_phan_str:
                         pc_chuc_vu = st.number_input("Phụ cấp Quản lý/KTT (Sửa được)", min_value=0, value=300000, step=50000)
                         
-                    thuong_tet = st.checkbox("🎉 Cộng thưởng Tết (Lương CB x 30 ngày)")
+                    thuong_tet = st.checkbox("🎉 Cộng thưởng Tết (Lương CB x 26 ngày)")
                     tam_ung = st.number_input("Tiền tạm ứng tự nhập nếu có", value=0, step=50000)
                     
                     tien_thuong_le = 0
@@ -427,8 +427,8 @@ if role == "admin":
                                     ghi_chu_txt.append(f"Lễ {ngay_le} (+LCB & 100k)")
                     except: pass
                     
-                    tien_thuong_tet = (l_cb * 30) if thuong_tet else 0
-                    if thuong_tet: ghi_chu_txt.append("Thưởng Tết (+30 ngày LCB)")
+                    tien_thuong_tet = (l_cb * 26) if thuong_tet else 0
+                    if thuong_tet: ghi_chu_txt.append("Thưởng Tết (+26 ngày LCB)")
                     
                     if pc_chuc_vu > 0: ghi_chu_txt.append(f"Phụ cấp chức vụ (+{int(pc_chuc_vu/1000)}k)")
                     
@@ -509,7 +509,7 @@ if role == "admin":
                     st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca = KHÔNG tính công chuẩn, KHÔNG tính tăng ca, ghi chú báo lỗi.\n- Sửa giờ có phép = Tính chính xác giờ làm thực tế từ lúc vào đến lúc ra (quy ra ngày công).\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                     
                     st.markdown("**5. Cách tính thưởng Lễ & Tết**")
-                    st.info("- **Lễ 30/4, 1/5, 2/9**: Lương CB + 100.000đ.\n- **Thưởng Tết**: Lương CB x 30 ngày.\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết có nút tích chọn ở phần Tính lương)*")
+                    st.info("- **Lễ 30/4, 1/5, 2/9**: Lương CB + 100.000đ.\n- **Thưởng Tết**: Lương CB x 26 ngày.\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết có nút tích chọn ở phần Tính lương)*")
                 with c2:
                     st.markdown("**2. Quy tắc Đi trễ & Về sớm**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
