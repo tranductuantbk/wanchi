@@ -6,9 +6,6 @@ import io
 import zipfile
 from datetime import datetime
 
-# --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Quản Trị Hệ Thống", page_icon="⚙️", layout="wide")
-
 # --- KHÓA BẢO MẬT ĐĂNG NHẬP ---
 if not st.session_state.get("logged_in", False):
     st.warning("🔒 Bạn chưa đăng nhập! Vui lòng quay lại Trang Chủ (Home) để gõ mật khẩu.")
@@ -51,7 +48,6 @@ if not is_connected:
 # KHAI BÁO DANH SÁCH CÁC BẢNG DỮ LIỆU (MODULES)
 # ==========================================
 # Danh sách này chứa tên chính xác của các bảng trên Database Neon
-# Khi thêm module mới sau này, bạn chỉ cần thêm tên bảng vào danh sách này.
 DANH_SACH_BANG = [
     "wanchi_sanpham",    # 1. Tính giá sản xuất
     "wanchi_a",          # 3. Khuôn mẫu - Nguyên vật liệu
