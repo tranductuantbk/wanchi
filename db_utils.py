@@ -1,49 +1,57 @@
 import psycopg2
 import streamlit as st
 
+# ==========================================
+# 🔑 CẤU HÌNH MẬT KHẨU TOÀN HỆ THỐNG
+# ==========================================
+MAT_KHAU_HE_THONG = "wanchi9187"
+
+# ==========================================
+# KẾT NỐI DATABASE
+# ==========================================
 @st.cache_resource
-def init_connection():
-    DATABASE_URL = st.secrets["DATABASE_URL"]
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = True 
-    return conn
-
 def get_connection():
-    conn = init_connection()
+    """
+    Hàm kết nối đến cơ sở dữ liệu PostgreSQL trên Neon.tech.
+    Sử dụng st.secrets để bảo mật mật khẩu khi đưa lên Cloud.
+    """
     try:
-        conn.cursor().execute("SELECT 1")
-    except Exception:
-        st.cache_resource.clear()
-        conn = init_connection()
-    return conn
+        DATABASE_URL = st.secrets["DATABASE_URL"]
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = True 
+        return conn
+    except Exception as e:
+        st.error(f"Lỗi kết nối Cơ sở dữ liệu: {e}")
+        st.stop()
 
+# ==========================================
+# HÀM KIỂM TRA MẬT KHẨU XUYÊN SUỐT CÁC TRANG
+# ==========================================
 def check_password():
+    """Returns `True` if the user had a correct password."""
+
     def password_entered():
-        # Kiểm tra xem nhập mật khẩu của ai
-        if st.session_state["password"] == st.secrets.get("APP_PASSWORD"):
-            st.session_state["role"] = "admin"
-        elif st.session_state["password"] == st.secrets.get("EMP_PASSWORD", "nhanvien123"):
-            st.session_state["role"] = "employee"
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == MAT_KHAU_HE_THONG:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # xóa mật khẩu khỏi session state để bảo mật
         else:
-            st.session_state["role"] = None
-        del st.session_state["password"]
+            st.session_state["password_correct"] = False
 
-    # Nếu đã đăng nhập thành công
-    if st.session_state.get("role"):
-        role = st.session_state["role"]
-        # CHIÊU THỨC GIẤU MENU CHO NHÂN VIÊN
-        if role == "employee":
-            st.markdown("""
-                <style>
-                    [data-testid="stSidebar"] { display: none !important; }
-                    [data-testid="collapsedControl"] { display: none !important; }
-                </style>
-            """, unsafe_allow_html=True)
-        return role
-
-    st.markdown("<h2 style='text-align: center;'>🔒 CỔNG ĐĂNG NHẬP WANCHI</h2>", unsafe_allow_html=True)
-    st.text_input("Nhập mật khẩu truy cập:", type="password", on_change=password_entered, key="password")
-    
-    if "role" in st.session_state and st.session_state["role"] is None:
-        st.error("❌ Mật khẩu không chính xác!")
-    return None
+    if "password_correct" not in st.session_state:
+        # Lần chạy đầu tiên, hiển thị ô nhập mật khẩu
+        st.text_input(
+            "🔑 Nhập mật khẩu hệ thống", type="password", on_change=password_entered, key="password"
+        )
+        return False
+    elif not st.session_state["password_correct"]:
+        # Mật khẩu sai, hiển thị ô nhập lại
+        st.text_input(
+            "🔑 Nhập mật khẩu hệ thống", type="password", on_change=password_entered, key="password"
+        )
+        st.error("😕 Mật khẩu không đúng!")
+        return False
+    else:
+        # Đã đăng nhập thành công, thiết lập biến cờ
+        st.session_state["logged_in"] = True
+        return True
