@@ -22,8 +22,11 @@ st.title("🗄️ TRUNG TÂM QUẢN TRỊ & BẢO VỆ DỮ LIỆU")
 st.markdown("Khu vực này cho phép Quản lý tải về bản sao lưu an toàn của **toàn bộ dữ liệu xưởng** (Kho, Nhân sự, Công nợ, Máy ép...) và phục hồi lại khi có sự cố.")
 st.write("---")
 
-# Lấy kết nối Database
+# Lấy kết nối Database và tự động kết nối lại nếu máy chủ ngủ đông
 conn = get_connection()
+if conn.closed != 0:
+    st.cache_resource.clear()
+    conn = get_connection()
 c = conn.cursor()
 
 # Hàm tự động quét lấy danh sách tất cả các bảng trong Database
