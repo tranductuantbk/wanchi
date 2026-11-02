@@ -29,7 +29,7 @@ st.markdown("Khu vực này cho phép Quản lý tải về bản sao lưu an to
 st.write("---")
 
 # ==========================================
-# KẾT NỐI DATABASE & TẠO BẢNG CẤU HÌNH (NẾU CHƯA CÓ)
+# KẾT NỐI DATABASE & TẠO BẢNG CẤU HÌNH
 # ==========================================
 conn = get_connection()
 if conn.closed != 0:
@@ -112,7 +112,6 @@ with col_backup:
             conn.commit()
             
         st.success("✅ Đã tạo file nén dữ liệu thành công!")
-        time.sleep(1)
         st.rerun()
         
     if "backup_zip" in st.session_state:
