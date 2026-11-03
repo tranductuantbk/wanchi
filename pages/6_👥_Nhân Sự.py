@@ -138,7 +138,7 @@ def generate_payslip_pdf(nv_name, ky_luong, data):
     except: return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# PHÂN QUYỀN HỆ THỐNG
+# PHÂN QUYỀN HỆ THỐNG & LÁ CHẮN BẢO VỆ
 # ==========================================
 is_admin = check_password()
 if not is_admin: 
@@ -147,12 +147,57 @@ if not is_admin:
 if 'dashboard_unlocked' not in st.session_state:
     st.session_state.dashboard_unlocked = False
 
-# --- CƠ CHẾ CHỐNG RỚT MẠNG TỰ ĐỘNG ---
+# ==========================================
+# 🛡️ LÁ CHẮN CHỐNG MẤT DỮ LIỆU (DATABASE GUARD)
+# ==========================================
 conn = get_connection()
-if conn.closed != 0:
+
+def kiem_tra_du_lieu_thuc_te(connection):
+    """Hàm bắn tín hiệu kiểm tra xem Neon có đang ngủ đông không"""
+    try:
+        if connection.closed != 0:
+            return False
+        cur = connection.cursor()
+        cur.execute("SELECT 1") # Lệnh test nhẹ nhất để gọi Neon dậy
+        cur.fetchone()
+        return True
+    except:
+        return False
+
+# Kích hoạt lá chắn
+if not kiem_tra_du_lieu_thuc_te(conn):
+    # Nếu mất kết nối, thử xóa cache và gọi Neon dậy 1 lần
     st.cache_resource.clear()
     conn = get_connection()
+    
+    # Nếu gọi lần 2 vẫn không được -> Đóng băng hệ thống
+    if not kiem_tra_du_lieu_thuc_te(conn):
+        st.error("🚨 LÁ CHẮN BẢO VỆ DỮ LIỆU ĐANG KÍCH HOẠT!")
+        st.warning("⚠️ Mạng yếu hoặc Máy chủ Neon đang ngủ đông khiến dữ liệu xưởng chưa được tải về. Để chống tình trạng ghi đè làm mất dữ liệu cũ, hệ thống tạm thời KHÓA toàn bộ thao tác.")
+        if st.button("🔄 Bấm vào đây để tải lại kết nối", type="primary"):
+            st.rerun()
+        st.stop() # 🛑 Lệnh này sẽ chặn đứng mọi code phía dưới, không cho hiện giao diện
+
 c = conn.cursor()
+# ==========================================
+
+def yeu_cau_pin_giam_doc(tab_key):
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_khoa1, col_khoa2, col_khoa3 = st.columns([1, 2, 1])
+    with col_khoa2:
+        st.warning("🔒 **BẢO MẬT CẤP CAO:** Vui lòng nhập Mã PIN Giám Đốc để mở khóa Tab này.")
+        with st.form(f"form_mat_khau_{tab_key}"):
+            pin_input = st.text_input("Mã PIN / Mật khẩu:", type="password")
+            if st.form_submit_button("🔓 Mở Khóa", type="primary", use_container_width=True):
+                if pin_input == MAT_KHAU_GIAM_DOC:
+                    st.session_state.dashboard_unlocked = True
+                    st.rerun()
+                else: st.error("❌ Mã PIN không chính xác!")
+
+def nut_khoa_lai(tab_key):
+    if st.button("🔒 Khóa Lại Két Sắt", key=f"lock_{tab_key}"):
+        st.session_state.dashboard_unlocked = False
+        st.rerun()
 
 try:
     c.execute('''CREATE TABLE IF NOT EXISTS public.cau_hinh (
