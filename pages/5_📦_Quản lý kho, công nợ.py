@@ -115,6 +115,10 @@ try:
     c.execute("ALTER TABLE public.dm_san_pham ADD COLUMN IF NOT EXISTS quy_cach_loc REAL DEFAULT 1")
     c.execute("ALTER TABLE public.dm_san_pham_ome ADD COLUMN IF NOT EXISTS quy_cach_loc REAL DEFAULT 1")
     
+    # Thêm cột giá đại lý để phục vụ tính toán module Chuyển đơn (Dropship)
+    c.execute("ALTER TABLE public.dm_san_pham ADD COLUMN IF NOT EXISTS gia_dai_ly REAL DEFAULT 0")
+    c.execute("ALTER TABLE public.dm_san_pham_ome ADD COLUMN IF NOT EXISTS gia_dai_ly REAL DEFAULT 0")
+    
     c.execute("ALTER TABLE public.don_hang ADD COLUMN IF NOT EXISTS trang_thai TEXT DEFAULT 'Chờ xuất kho'")
     
     # BẢNG VÀ CỘT MỚI CHO NHÀ CUNG CẤP & THANH TOÁN
@@ -210,8 +214,6 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh, conn):
     for i, row in df_items.iterrows():
         ten = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
         
-        # Sửa logic: "Số Lượng" trong JSON là Số lượng Cái.
-        # Nếu UI đã tách cột Số Lượng Cái và Số Lượng Lốc thì ưu tiên lấy, nếu không lấy Số Lượng (Cái) chia Quy cách.
         sl_cai = float(row.get('Số Lượng Cái', row.get('Số Lượng', 0)))
         
         quy_cach = 1.0
@@ -232,14 +234,12 @@ def generate_phieu_xuat_pdf(df_items, ma_don, ten_kh, conn):
         pdf.cell(10, 8, str(i+1), 1, 0, "C")
         pdf.cell(75, 8, ten, 1, 0, "L")
         
-        # Định dạng Số Lốc (xóa đuôi .00 nếu là số chẵn)
         loc_str = "{:,.2f}".format(sl_loc).rstrip('0').rstrip('.') if sl_loc % 1 != 0 else format_vn(sl_loc)
         
         pdf.cell(35, 8, loc_str, 1, 0, "C")
         pdf.cell(35, 8, format_vn(sl_cai), 1, 0, "C")
         pdf.cell(35, 8, so_bao, 1, 1, "C")
     
-    # Bảng Ghi chú trống cho nhân viên viết
     pdf.ln(8)
     pdf.set_font(font_name, 'B' if has_font else '', 11)
     pdf.cell(0, 6, "Ghi chú (Note):", ln=True)
@@ -542,7 +542,7 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
     pdf.cell(0, 10, "PHIẾU NHẬP KHO", ln=True, align="C")
     
     pdf.set_font(font_name, "", 11)
-    pdf.cell(0, 6, f"Mã Phiếu: {ma_phieu}   |   Ngày nhập: {ngay_nhap}", ln=True, align="C")
+    pdf.cell(0, 6, f"M Mã Phiếu: {ma_phieu}   |   Ngày nhập: {ngay_nhap}", ln=True, align="C")
     pdf.ln(5)
     
     pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
@@ -866,7 +866,7 @@ with tab1:
         except Exception as e: st.error(f"Lỗi: {e}")
 
 with tab2:
-    chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📝 0. Tạo Đơn Nhập Hàng", "📥 1. Nhập NVL, NCC", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)"], horizontal=True)
+    chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📝 0. Tạo Đơn Nhập Hàng", "📥 1. Nhập NVL, NCC", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)", "🔄 4. Chuyển đơn (Đại lý)"], horizontal=True)
     st.markdown("---")
 
     if "0. Tạo Đơn Nhập Hàng" in chuyem_muc:
@@ -1145,6 +1145,98 @@ with tab2:
             else: st.info("Chưa có đơn hàng nào.")
         except Exception as e: st.error(str(e))
     
+    elif "4. Chuyển đơn" in chuyem_muc:
+        st.markdown("#### 🔄 Chuyển Đơn Hàng Cho Đại Lý Bán Thay (Dropship)")
+        st.info("Nghiệp vụ này **KHÔNG** ghi nhận xuất kho thực tế. Hệ thống sẽ tự động tính toán khoản lời / chênh lệch và đẩy thẳng vào Công nợ của Đại lý được chọn.")
+        
+        try:
+            # Lấy danh sách đơn hàng chờ xuất
+            df_dh = pd.read_sql("SELECT id, ma_don, ten_kh, ngay_tao, trang_thai, chi_tiet FROM public.don_hang WHERE trang_thai IN ('Chờ xuất kho', 'Mới tạo') ORDER BY id DESC", conn)
+            
+            # Lấy danh sách đại lý/khách hàng hiện có trong lịch sử công nợ
+            df_kh = pd.read_sql("SELECT DISTINCT khach_hang FROM public.ls_nhap_xuat_kho WHERE khach_hang IS NOT NULL AND khach_hang != ''", conn)
+            ds_dai_ly = df_kh['khach_hang'].tolist() if not df_kh.empty else []
+
+            if not df_dh.empty:
+                options = [f"[{row['trang_thai']}] {row['ma_don']} - Khách mua: {row['ten_kh']}" for _, row in df_dh.iterrows()]
+                
+                don_chon_str = st.selectbox("📌 Chọn Đơn Hàng Cần Chuyển", options)
+                ma_don_chon = don_chon_str.split("] ")[1].split(" - ")[0]
+                don_info = df_dh[df_dh['ma_don'] == ma_don_chon].iloc[0]
+                items = json.loads(don_info['chi_tiet'])
+                
+                st.markdown("---")
+                # Chọn đại lý nhận đơn
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    dai_ly_nhan = st.selectbox("🏢 Chọn Đại Lý chịu trách nhiệm giao đơn này:", ["-- Chọn Đại Lý --"] + ds_dai_ly)
+                with col_dl2:
+                    dai_ly_moi = st.text_input("Hoặc nhập tên Đại lý mới (nếu chưa có trong danh sách):")
+                
+                ten_dai_ly_chot = dai_ly_moi.strip() if dai_ly_moi.strip() else dai_ly_nhan
+                
+                st.write("**Chi tiết hàng hóa trong đơn gốc:**")
+                df_items = pd.DataFrame(items)
+                cols_to_show = [c for c in ['Tên Sản Phẩm', 'Tên Sản Phẩm OME', 'Số Lượng', 'Đơn Giá', 'Thành Tiền'] if c in df_items.columns]
+                st.dataframe(df_items[cols_to_show], use_container_width=True, hide_index=True)
+
+                if st.button("🚀 XÁC NHẬN CHUYỂN ĐƠN & GHI CÔNG NỢ", type="primary", use_container_width=True):
+                    if ten_dai_ly_chot == "-- Chọn Đại Lý --" or not ten_dai_ly_chot:
+                        st.error("⚠️ Vui lòng chọn hoặc nhập tên Đại lý nhận chuyển đơn!")
+                    else:
+                        with st.spinner("⏳ Đang xử lý bóc tách và tính toán công nợ..."):
+                            tong_tien_don = 0
+                            tong_tien_gia_dl = 0
+                            
+                            for item in items:
+                                ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME', ''))
+                                sl = float(item.get('Số Lượng', 0))
+                                thanh_tien_sp = float(item.get('Thành Tiền', 0))
+                                tong_tien_don += thanh_tien_sp
+                                
+                                # Tra cứu giá đại lý từ database
+                                gia_dl_sp = 0
+                                try:
+                                    # Thử tìm trong bảng sản phẩm chuẩn
+                                    c.execute("SELECT gia_dai_ly FROM public.dm_san_pham WHERE ten_sp = %s", (ten_sp,))
+                                    res = c.fetchone()
+                                    if res and res[0]: 
+                                        gia_dl_sp = float(res[0])
+                                    else:
+                                        # Thử tìm trong bảng OME
+                                        c.execute("SELECT gia_dai_ly FROM public.dm_san_pham_ome WHERE ten_sp = %s", (ten_sp,))
+                                        res2 = c.fetchone()
+                                        if res2 and res2[0]: 
+                                            gia_dl_sp = float(res2[0])
+                                except Exception:
+                                    pass 
+                                    
+                                tong_tien_gia_dl += (gia_dl_sp * sl)
+                                
+                            # CÔNG THỨC: Tiền đơn - (20% Tiền đơn + Tổng tiền theo giá đại lý)
+                            so_tien_ghi_no = tong_tien_don - ((tong_tien_don * 0.2) + tong_tien_gia_dl)
+                            
+                            # Ghi nhận vào công nợ (ls_nhap_xuat_kho với loai_thao_tac = 'Xuất Bán')
+                            ghi_chu_chuyen = f"Chuyển đơn {ma_don_chon} (Tiền đơn: {format_vn(tong_tien_don)} | Trừ 20%: {format_vn(tong_tien_don*0.2)} | Tiền vốn ĐL: {format_vn(tong_tien_gia_dl)})"
+                            
+                            c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
+                                         (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, khach_hang, trang_thai_tt) 
+                                         VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s)""", 
+                                      (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), f"Chuyển giao đơn {ma_don_chon}", 1, so_tien_ghi_no, so_tien_ghi_no, ghi_chu_chuyen, ten_dai_ly_chot, 'Chưa thanh toán'))
+                            
+                            # Đánh dấu trạng thái đơn hàng để không hiện lại ở mục Chờ xuất kho nữa
+                            c.execute("UPDATE public.don_hang SET trang_thai = 'Đã chuyển đại lý' WHERE ma_don = %s", (ma_don_chon,))
+                            
+                            conn.commit()
+                            st.success(f"✅ Đã chuyển đơn thành công cho đại lý {ten_dai_ly_chot}!")
+                            st.success(f"💰 Đã tính và cộng khoản công nợ: {format_vn(so_tien_ghi_no)} VNĐ vào tài khoản đại lý.")
+                            time.sleep(3)
+                            st.rerun()
+            else:
+                st.info("🎉 Hiện tại không có đơn hàng nào đang chờ xử lý.")
+        except Exception as e:
+            st.error(f"Lỗi truy xuất dữ liệu: {e}")
+
     elif "1. Nhập NVL, NCC" in chuyem_muc:
         st.markdown("#### 📥 Nhập Nguyên Vật Liệu từ Nhà Cung Cấp")
         try:
