@@ -165,7 +165,11 @@ def nut_khoa_lai(tab_key):
         st.session_state.dashboard_unlocked = False
         st.rerun()
 
+# --- CƠ CHẾ CHỐNG RỚT MẠNG TỰ ĐỘNG ---
 conn = get_connection()
+if conn.closed != 0:
+    st.cache_resource.clear()
+    conn = get_connection()
 c = conn.cursor()
 
 try:
@@ -548,101 +552,101 @@ with tab3:
                         conn.commit()
                         st.rerun()
 
-    st.markdown("---")
+st.markdown("---")
 
-    if not ma_ca:
-        st.warning("⚠ Chủ xưởng chưa tạo mã ca làm việc. Vui lòng liên hệ Admin!")
+if not ma_ca:
+    st.warning("⚠ Chủ xưởng chưa tạo mã ca làm việc. Vui lòng liên hệ Admin!")
+else:
+    tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
+    if tg_tao_dt.tzinfo is None:
+        tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
+    if lay_gio_vn() > (tg_tao_dt + timedelta(hours=18)):
+        st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
     else:
-        tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
-        if tg_tao_dt.tzinfo is None:
-            tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
-        if lay_gio_vn() > (tg_tao_dt + timedelta(hours=18)):
-            st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
-        else:
-            col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
-            with col_c1: nv_cham_cong = st.selectbox("🙋‍♂ Chọn tên của bạn:", ["-- Chọn Tên --"] + df_nv['ten_nv'].tolist() if not df_nv.empty else ["-- Chọn Tên --"])
-            with col_c2: pin_nhap = st.text_input("Mã PIN cá nhân:", type="password", max_chars=4)
-            with col_c3: ma_ca_nhap = st.text_input("Mã CA tại xưởng:", type="password", max_chars=4)
+        col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
+        with col_c1: nv_cham_cong = st.selectbox("🙋‍♂ Chọn tên của bạn:", ["-- Chọn Tên --"] + df_nv['ten_nv'].tolist() if not df_nv.empty else ["-- Chọn Tên --"])
+        with col_c2: pin_nhap = st.text_input("Mã PIN cá nhân:", type="password", max_chars=4)
+        with col_c3: ma_ca_nhap = st.text_input("Mã CA tại xưởng:", type="password", max_chars=4)
 
-            if nv_cham_cong != "-- Chọn Tên --" and pin_nhap and ma_ca_nhap:
-                real_pin = df_nv[df_nv['ten_nv'] == nv_cham_cong].iloc[0]['ma_pin']
-                if ma_ca_nhap == ma_ca:
-                    if pin_nhap == real_pin:
-                        c.execute("SELECT gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_cham_cong, hom_nay))
-                        trang_thai = c.fetchone()
-                        
-                        col_b1, col_b2 = st.columns(2)
-                        if not trang_thai:
-                            if col_b1.button("🟢 VÀO CA (Check-in)", type="primary", use_container_width=True):
-                                c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao) VALUES (%s, %s, %s)", (nv_cham_cong, hom_nay, gio_hien_tai))
-                                conn.commit(); st.success(f"✅ Đã vào ca lúc {gio_hien_tai}"); time.sleep(1); st.rerun()
-                        elif trang_thai[1] is None:
-                            st.info(f"Bạn đã vào ca lúc: {trang_thai[0]}")
-                            if col_b2.button("🔴 TAN CA (Check-out)", type="primary", use_container_width=True):
-                                c.execute("UPDATE public.cham_cong SET gio_ra=%s WHERE ten_nv=%s AND ngay=%s", (gio_hien_tai, nv_cham_cong, hom_nay))
-                                conn.commit(); st.success(f"✅ Đã tan ca lúc {gio_hien_tai}"); time.sleep(1); st.rerun()
-                        else:
-                            st.success(f"✅ Đã hoàn thành ngày công. ({trang_thai[0]} - {trang_thai[1]})")
-                    else: st.error("❌ Mã PIN cá nhân sai!")
-                else: st.error("❌ Mã CA TẠI XƯỞNG không đúng!")
+        if nv_cham_cong != "-- Chọn Tên --" and pin_nhap and ma_ca_nhap:
+            real_pin = df_nv[df_nv['ten_nv'] == nv_cham_cong].iloc[0]['ma_pin']
+            if ma_ca_nhap == ma_ca:
+                if pin_nhap == real_pin:
+                    c.execute("SELECT gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_cham_cong, hom_nay))
+                    trang_thai = c.fetchone()
+                    
+                    col_b1, col_b2 = st.columns(2)
+                    if not trang_thai:
+                        if col_b1.button("🟢 VÀO CA (Check-in)", type="primary", use_container_width=True):
+                            c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao) VALUES (%s, %s, %s)", (nv_cham_cong, hom_nay, gio_hien_tai))
+                            conn.commit(); st.success(f"✅ Đã vào ca lúc {gio_hien_tai}"); time.sleep(1); st.rerun()
+                    elif trang_thai[1] is None:
+                        st.info(f"Bạn đã vào ca lúc: {trang_thai[0]}")
+                        if col_b2.button("🔴 TAN CA (Check-out)", type="primary", use_container_width=True):
+                            c.execute("UPDATE public.cham_cong SET gio_ra=%s WHERE ten_nv=%s AND ngay=%s", (gio_hien_tai, nv_cham_cong, hom_nay))
+                            conn.commit(); st.success(f"✅ Đã tan ca lúc {gio_hien_tai}"); time.sleep(1); st.rerun()
+                    else:
+                        st.success(f"✅ Đã hoàn thành ngày công. ({trang_thai[0]} - {trang_thai[1]})")
+                else: st.error("❌ Mã PIN cá nhân sai!")
+            else: st.error("❌ Mã CA TẠI XƯỞNG không đúng!")
 
-    st.markdown("---")
-    try:
-        df_cc = pd.read_sql(f"SELECT ten_nv, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ngay='{hom_nay}' ORDER BY gio_vao DESC", conn)
-        if not df_cc.empty:
-            df_cc['ve_som_co_phep'] = df_cc['ve_som_co_phep'].apply(lambda x: 'Có' if x else '')
-            df_cc.columns = ["Tên Nhân Viên", "Giờ Vào", "Giờ Ra", "Xin Phép Về Sớm"]
-            st.dataframe(df_cc, use_container_width=True, hide_index=True)
-    except: pass
+st.markdown("---")
+try:
+    df_cc = pd.read_sql(f"SELECT ten_nv, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ngay='{hom_nay}' ORDER BY gio_vao DESC", conn)
+    if not df_cc.empty:
+        df_cc['ve_som_co_phep'] = df_cc['ve_som_co_phep'].apply(lambda x: 'Có' if x else '')
+        df_cc.columns = ["Tên Nhân Viên", "Giờ Vào", "Giờ Ra", "Xin Phép Về Sớm"]
+        st.dataframe(df_cc, use_container_width=True, hide_index=True)
+except: pass
 
 # --- TAB 4: CẤU HÌNH CHẤM CÔNG ---
 with tab4:
-    if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t4")
-    else:
-        nut_khoa_lai("t4")
-        st.subheader("⚙ Cài Đặt Quy Tắc Chấm Công, Phạt Đi Trễ & Về Sớm")
-        st.info("💡 Hệ thống hiện chỉ đếm số lần đi trễ/về sớm và hiển thị cảnh báo đỏ nếu vượt mức cho phép, không tự động cấn trừ tiền.")
-        cf = lay_cau_hinh_gio()
-        
-        with st.form("form_cau_hinh_cc"):
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("**1. Thời gian làm việc**")
-                gio_vao_moi = st.time_input("Giờ bắt đầu làm việc (Ghi chú)", datetime.strptime(cf['gio_vao'], "%H:%M").time())
-                gio_ra_moi = st.time_input("Giờ kết thúc ca làm (Mặc định nếu quên quẹt thẻ)", datetime.strptime(cf['gio_ra'], "%H:%M").time())
-                gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
-                
-                st.markdown("**3. Cách tính tăng ca & Quên quẹt thẻ (Tự động)**")
-                st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca: Vẫn tính 1 ngày công nhưng KHÔNG tính tăng ca, ghi nhận 1 lỗi quên ra ca.\n*(Hệ thống tự động tính và lưu vào Hồ sơ nhân sự)*")
-                
-                st.markdown("**5. Cách tính thưởng Lễ, Tết & Phụ cấp chức vụ**")
-                st.info("- **Lễ 30/4, 1/5, 2/9**: Bằng Lương CB + 100.000đ.\n- **Thưởng Tết**: Lương CB x 30 ngày.\n- **Quản lý / Kỹ thuật trưởng**: Cộng thêm 300.000đ/tháng (Số tiền này có thể chỉnh sửa được khi tính lương).\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết có nút tích chọn ở phần Tính lương)*")
-            with c2:
-                st.markdown("**2. Quy tắc Đi trễ & Về sớm**")
-                gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
-                tre_toida_moi = st.number_input("Số lần đi trễ tối đa (Trước khi báo đỏ)", value=cf['so_lan_tre_toida'], step=1)
-                gio_ve_som_moi = st.time_input("Quẹt thẻ ra trước giờ này tính là về sớm", datetime.strptime(cf['gio_ve_som'], "%H:%M").time())
-                
-                st.markdown("**4. Cách tính thâm niên**")
-                tien_tham_nien_moi = st.number_input("Số tiền cộng thêm cho 1 năm làm việc (VNĐ/ngày)", value=int(cf['tien_tham_nien']), step=5000)
-                
-                st.markdown("**6. Thưởng Sinh Nhật**")
-                tien_thuong_sn_moi = st.number_input("Tiền thưởng sinh nhật (VNĐ)", value=int(cf['tien_thuong_sinh_nhat']), step=50000)
+if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t4")
+else:
+    nut_khoa_lai("t4")
+    st.subheader("⚙ Cài Đặt Quy Tắc Chấm Công, Phạt Đi Trễ & Về Sớm")
+    st.info("💡 Hệ thống hiện chỉ đếm số lần đi trễ/về sớm và hiển thị cảnh báo đỏ nếu vượt mức cho phép, không tự động cấn trừ tiền.")
+    cf = lay_cau_hinh_gio()
+    
+    with st.form("form_cau_hinh_cc"):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**1. Thời gian làm việc**")
+            gio_vao_moi = st.time_input("Giờ bắt đầu làm việc (Ghi chú)", datetime.strptime(cf['gio_vao'], "%H:%M").time())
+            gio_ra_moi = st.time_input("Giờ kết thúc ca làm (Mặc định nếu quên quẹt thẻ)", datetime.strptime(cf['gio_ra'], "%H:%M").time())
+            gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
             
-            if st.form_submit_button("💾 LƯU CẤU HÌNH", type="primary", use_container_width=True):
-                queries = [
-                    ("GIO_VAO_CA", gio_vao_moi.strftime("%H:%M")),
-                    ("GIO_TAN_CA", gio_ra_moi.strftime("%H:%M")),
-                    ("GIO_BAT_DAU_OT", gio_ot_moi.strftime("%H:%M")),
-                    ("GIO_TINH_TRE", gio_tre_moi.strftime("%H:%M")),
-                    ("GIO_VE_SOM", gio_ve_som_moi.strftime("%H:%M")),
-                    ("SO_LAN_TRE_TOI_DA", str(tre_toida_moi)),
-                    ("TIEN_THAM_NIEN_MOI_NAM", str(tien_tham_nien_moi)),
-                    ("THUONG_SINH_NHAT", str(tien_thuong_sn_moi))
-                ]
-                for key, val in queries:
-                    c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES (%s, %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (key, val))
-                conn.commit()
-                st.success("✅ Đã lưu cấu hình chấm công mới thành công!")
-                time.sleep(1)
-                st.rerun()
+            st.markdown("**3. Cách tính tăng ca & Quên quẹt thẻ (Tự động)**")
+            st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca: Vẫn tính 1 ngày công nhưng KHÔNG tính tăng ca, ghi nhận 1 lỗi quên ra ca.\n*(Hệ thống tự động tính và lưu vào Hồ sơ nhân sự)*")
+            
+            st.markdown("**5. Cách tính thưởng Lễ, Tết & Sinh nhật**")
+            st.info("- **Lễ 30/4, 1/5, 2/9**: Lương CB + 100.000đ.\n- **Thưởng Tết**: Lương CB x 26 ngày.\n- **Mừng sinh nhật**: 300.000đ.\n- **Quản lý / Kỹ thuật trưởng**: Cộng thêm 300.000đ/tháng (Số tiền này có thể chỉnh sửa được khi tính lương).\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết và Sinh nhật có nút tích chọn ở phần Tính lương)*")
+        with c2:
+            st.markdown("**2. Quy tắc Đi trễ & Về sớm**")
+            gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
+            tre_toida_moi = st.number_input("Số lần đi trễ tối đa (Trước khi báo đỏ)", value=cf['so_lan_tre_toida'], step=1)
+            gio_ve_som_moi = st.time_input("Quẹt thẻ ra trước giờ này tính là về sớm", datetime.strptime(cf['gio_ve_som'], "%H:%M").time())
+            
+            st.markdown("**4. Cách tính thâm niên**")
+            tien_tham_nien_moi = st.number_input("Số tiền cộng thêm cho 1 năm làm việc (VNĐ/ngày)", value=int(cf['tien_tham_nien']), step=5000)
+            
+            st.markdown("**6. Thưởng Sinh Nhật**")
+            tien_thuong_sn_moi = st.number_input("Tiền thưởng sinh nhật (VNĐ)", value=int(cf['tien_thuong_sinh_nhat']), step=50000)
+        
+        if st.form_submit_button("💾 LƯU CẤU HÌNH", type="primary", use_container_width=True):
+            queries = [
+                ("GIO_VAO_CA", gio_vao_moi.strftime("%H:%M")),
+                ("GIO_TAN_CA", gio_ra_moi.strftime("%H:%M")),
+                ("GIO_BAT_DAU_OT", gio_ot_moi.strftime("%H:%M")),
+                ("GIO_TINH_TRE", gio_tre_moi.strftime("%H:%M")),
+                ("GIO_VE_SOM", gio_ve_som_moi.strftime("%H:%M")),
+                ("SO_LAN_TRE_TOI_DA", str(tre_toida_moi)),
+                ("TIEN_THAM_NIEN_MOI_NAM", str(tien_tham_nien_moi)),
+                ("THUONG_SINH_NHAT", str(tien_thuong_sn_moi))
+            ]
+            for key, val in queries:
+                c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES (%s, %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (key, val))
+            conn.commit()
+            st.success("✅ Đã lưu cấu hình chấm công mới thành công!")
+            time.sleep(1)
+            st.rerun()
