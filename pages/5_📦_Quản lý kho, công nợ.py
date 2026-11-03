@@ -134,6 +134,16 @@ try:
     c.execute('''CREATE TABLE IF NOT EXISTS public.ls_phieu_chi (
                     id SERIAL PRIMARY KEY, ma_phieu TEXT, ngay_chi TEXT, ten_ncc TEXT, tong_chi REAL, chi_tiet TEXT
                 )''')
+                
+    # BẢNG MỚI ĐỂ LƯU LỊCH SỬ CHUYỂN ĐƠN ĐẠI LÝ
+    c.execute('''CREATE TABLE IF NOT EXISTS public.ls_chuyen_don (
+                    id SERIAL PRIMARY KEY,
+                    ngay_chuyen TEXT,
+                    ma_don TEXT,
+                    dai_ly_nhan TEXT,
+                    tong_tien_don REAL DEFAULT 0,
+                    so_tien_ghi_no REAL DEFAULT 0
+                )''')
     conn.commit()
 except: 
     conn.rollback()
@@ -148,6 +158,18 @@ def don_dep_lich_su_chi():
         c.execute("""DELETE FROM public.ls_phieu_chi 
                      WHERE id NOT IN (
                          SELECT id FROM public.ls_phieu_chi 
+                         ORDER BY id DESC LIMIT 50
+                     )""")
+        conn.commit()
+    except: 
+        conn.rollback()
+
+def don_dep_lich_su_chuyen_don():
+    """Hàm tự động dọn dẹp, chỉ giữ lại 50 đơn chuyển gần nhất"""
+    try:
+        c.execute("""DELETE FROM public.ls_chuyen_don
+                     WHERE id NOT IN (
+                         SELECT id FROM public.ls_chuyen_don 
                          ORDER BY id DESC LIMIT 50
                      )""")
         conn.commit()
@@ -542,7 +564,7 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
     pdf.cell(0, 10, "PHIẾU NHẬP KHO", ln=True, align="C")
     
     pdf.set_font(font_name, "", 11)
-    pdf.cell(0, 6, f"M Mã Phiếu: {ma_phieu}   |   Ngày nhập: {ngay_nhap}", ln=True, align="C")
+    pdf.cell(0, 6, f"Mã Phiếu: {ma_phieu}   |   Ngày nhập: {ngay_nhap}", ln=True, align="C")
     pdf.ln(5)
     
     pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
@@ -599,7 +621,7 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
 # ==========================================
 # GIAO DIỆN CHÍNH
 # ==========================================
-tab2, tab1, tab_kh, tab3, tab4 = st.tabs(["📥 Nhập / Xuất Kho", "📋 NVL, NCC, Công Nợ", "👤 Khách Hàng Công Nợ", "📊 Báo Cáo Tồn Kho", "🕰️ Lịch Sử Công Nợ"])
+tab2, tab1, tab_kh, tab3, tab4, tab5 = st.tabs(["📥 Nhập / Xuất Kho", "📋 NVL, NCC, Công Nợ", "👤 Khách Hàng Công Nợ", "📊 Báo Cáo Tồn Kho", "🕰️ Lịch Sử Công Nợ", "🔄 5. Quản Lý Đơn Đã Chuyển"])
 
 with tab1:
     st.subheader("🏢 Quản Lý Nhà Cung Cấp & Theo Dõi Công Nợ")
@@ -1215,19 +1237,26 @@ with tab2:
                                 
                             # CÔNG THỨC: Tiền đơn - (20% Tiền đơn + Tổng tiền theo giá đại lý)
                             so_tien_ghi_no = tong_tien_don - ((tong_tien_don * 0.2) + tong_tien_gia_dl)
+                            ngay_thao_tac = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                             
-                            # Ghi nhận vào công nợ (ls_nhap_xuat_kho với loai_thao_tac = 'Xuất Bán')
+                            # 1. Ghi nhận vào công nợ chung
                             ghi_chu_chuyen = f"Chuyển đơn {ma_don_chon} (Tiền đơn: {format_vn(tong_tien_don)} | Trừ 20%: {format_vn(tong_tien_don*0.2)} | Tiền vốn ĐL: {format_vn(tong_tien_gia_dl)})"
-                            
                             c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
                                          (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, khach_hang, trang_thai_tt) 
                                          VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s)""", 
-                                      (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), f"Chuyển giao đơn {ma_don_chon}", 1, so_tien_ghi_no, so_tien_ghi_no, ghi_chu_chuyen, ten_dai_ly_chot, 'Chưa thanh toán'))
+                                      (ngay_thao_tac, f"Chuyển giao đơn {ma_don_chon}", 1, so_tien_ghi_no, so_tien_ghi_no, ghi_chu_chuyen, ten_dai_ly_chot, 'Chưa thanh toán'))
+                            
+                            # 2. Ghi nhận vào bảng riêng quản lý lịch sử chuyển đơn
+                            c.execute("""INSERT INTO public.ls_chuyen_don (ngay_chuyen, ma_don, dai_ly_nhan, tong_tien_don, so_tien_ghi_no) 
+                                         VALUES (%s, %s, %s, %s, %s)""", 
+                                      (ngay_thao_tac, ma_don_chon, ten_dai_ly_chot, tong_tien_don, so_tien_ghi_no))
                             
                             # Đánh dấu trạng thái đơn hàng để không hiện lại ở mục Chờ xuất kho nữa
                             c.execute("UPDATE public.don_hang SET trang_thai = 'Đã chuyển đại lý' WHERE ma_don = %s", (ma_don_chon,))
                             
                             conn.commit()
+                            don_dep_lich_su_chuyen_don() # Chỉ giữ 50 đơn gần nhất
+                            
                             st.success(f"✅ Đã chuyển đơn thành công cho đại lý {ten_dai_ly_chot}!")
                             st.success(f"💰 Đã tính và cộng khoản công nợ: {format_vn(so_tien_ghi_no)} VNĐ vào tài khoản đại lý.")
                             time.sleep(3)
@@ -1531,5 +1560,53 @@ with tab4:
                             st.download_button("🖼️ XUẤT LẠI FILE ẢNH", data=img_re, file_name=pdf_name_re.replace('.pdf','.png'), mime="image/png", type="primary", use_container_width=True)
         else:
             st.info("Hệ thống chưa ghi nhận lịch sử thanh toán công nợ nào.")
+    except Exception as e:
+        st.error(f"Lỗi: {e}")
+
+# ------------------------------------------
+# TAB 5: QUẢN LÝ ĐƠN ĐÃ CHUYỂN
+# ------------------------------------------
+with tab5:
+    st.subheader("🔄 Quản Lý Đơn Đã Chuyển Đại Lý")
+    st.markdown("Theo dõi danh sách các đơn hàng Dropship và hủy chuyển đơn (xóa) nếu thao tác sai.")
+    
+    try:
+        df_ls_chuyen = pd.read_sql("SELECT id, ngay_chuyen, ma_don, dai_ly_nhan, tong_tien_don, so_tien_ghi_no FROM public.ls_chuyen_don ORDER BY id DESC", conn)
+        
+        if not df_ls_chuyen.empty:
+            df_hien_thi = df_ls_chuyen.copy()
+            df_hien_thi.columns = ["ID", "Ngày Chuyển", "Mã Đơn", "Đại Lý Nhận", "Tổng Tiền Đơn (VNĐ)", "Đại Lý Nợ (VNĐ)"]
+            
+            # Format tiền tệ để hiển thị đẹp hơn
+            df_hien_thi['Tổng Tiền Đơn (VNĐ)'] = df_hien_thi['Tổng Tiền Đơn (VNĐ)'].apply(lambda x: format_vn(x))
+            df_hien_thi['Đại Lý Nợ (VNĐ)'] = df_hien_thi['Đại Lý Nợ (VNĐ)'].apply(lambda x: format_vn(x))
+            
+            st.dataframe(df_hien_thi.drop(columns=["ID"]), use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
+            st.markdown("#### 🗑️ Hủy Chuyển Đơn (Xóa Giao Dịch)")
+            st.warning("⚠️ Nếu bạn xóa đơn chuyển tại đây, hệ thống sẽ tự động rút khoản công nợ khỏi đại lý và đưa trạng thái đơn hàng quay về 'Chờ xuất kho'.")
+            
+            options_del = ["-- Chọn mã đơn cần xóa --"] + df_ls_chuyen['ma_don'].tolist()
+            chon_don_xoa = st.selectbox("Chọn Mã Đơn:", options_del)
+            
+            if chon_don_xoa != "-- Chọn mã đơn cần xóa --":
+                if st.button(f"🚨 Xác Nhận Hủy Chuyển Đơn {chon_don_xoa}", type="primary"):
+                    with st.spinner("⏳ Đang hoàn tác giao dịch chuyển đơn..."):
+                        # 1. Tìm thông tin của giao dịch đó để xóa bên bảng công nợ chung (ls_nhap_xuat_kho)
+                        c.execute("DELETE FROM public.ls_nhap_xuat_kho WHERE ghi_chu LIKE %s AND loai_thao_tac = 'Xuất Bán'", (f"%Chuyển đơn {chon_don_xoa}%",))
+                        
+                        # 2. Xóa khỏi bảng ls_chuyen_don
+                        c.execute("DELETE FROM public.ls_chuyen_don WHERE ma_don = %s", (chon_don_xoa,))
+                        
+                        # 3. Trả lại trạng thái đơn hàng
+                        c.execute("UPDATE public.don_hang SET trang_thai = 'Chờ xuất kho' WHERE ma_don = %s", (chon_don_xoa,))
+                        
+                        conn.commit()
+                        st.success(f"✅ Đã hủy chuyển đơn {chon_don_xoa} thành công. Công nợ đã được hoàn tác.")
+                        time.sleep(2)
+                        st.rerun()
+        else:
+            st.info("Chưa có đơn hàng nào được chuyển cho đại lý.")
     except Exception as e:
         st.error(f"Lỗi: {e}")
