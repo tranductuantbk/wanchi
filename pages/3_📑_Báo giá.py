@@ -52,6 +52,40 @@ if role == "employee":
     st.stop()
 
 # ==========================================
+# 🛡️ LÁ CHẮN CHỐNG MẤT DỮ LIỆU (DATABASE GUARD)
+# ==========================================
+conn = get_connection()
+
+def kiem_tra_du_lieu_thuc_te(connection):
+    """Hàm bắn tín hiệu kiểm tra xem Neon có đang ngủ đông không"""
+    try:
+        if connection.closed != 0:
+            return False
+        cur = connection.cursor()
+        cur.execute("SELECT 1") # Lệnh test nhẹ nhất để gọi Neon dậy
+        cur.fetchone()
+        return True
+    except:
+        return False
+
+# Kích hoạt lá chắn
+if not kiem_tra_du_lieu_thuc_te(conn):
+    # Nếu mất kết nối, thử xóa cache và gọi Neon dậy 1 lần
+    st.cache_resource.clear()
+    conn = get_connection()
+    
+    # Nếu gọi lần 2 vẫn không được -> Đóng băng hệ thống
+    if not kiem_tra_du_lieu_thuc_te(conn):
+        st.error("🚨 LÁ CHẮN BẢO VỆ DỮ LIỆU ĐANG KÍCH HOẠT!")
+        st.warning("⚠️ Mạng yếu hoặc Máy chủ Neon đang ngủ đông khiến dữ liệu xưởng chưa được tải về. Để chống tình trạng ghi đè làm mất dữ liệu cũ, hệ thống tạm thời KHÓA toàn bộ thao tác.")
+        if st.button("🔄 Bấm vào đây để tải lại kết nối", type="primary"):
+            st.rerun()
+        st.stop() # 🛑 Lệnh này sẽ chặn đứng mọi code phía dưới, không cho hiện giao diện
+
+c = conn.cursor()
+# ==========================================
+
+# ==========================================
 # 1. CẤU HÌNH FONT & DATABASE
 # ==========================================
 FONT_FILE = "Roboto-Regular.ttf"
@@ -66,9 +100,6 @@ def download_font():
 download_font()
 
 st.title("🏭 Hệ Thống Báo Giá Khách Hàng WANCHI")
-
-conn = get_connection()
-c = conn.cursor()
 
 # ---------------------------------------------------------
 # KHỞI TẠO BẢNG DỮ LIỆU
@@ -455,32 +486,4 @@ with tab2:
                         pdf_re = generate_generic_pdf(
                             dataframe=df_chi_tiet, 
                             title="BÁO GIÁ SẢN PHẨM" if row_data['loai_bao_gia'] == 'Tiêu chuẩn' else "BÁO GIÁ DỊCH VỤ", 
-                            subtitle=f"Mã phiếu: {ma_tim_kiem} | Khách hàng: {row_data['ten_kh']} | SĐT: {row_data['so_dien_thoai']}", 
-                            columns_to_print=["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], 
-                            col_widths=[30, 70, 20, 35, 35], 
-                            total_amount=row_data['tong_tien']
-                        )
-                        
-                        pdf_name_re = f"{ma_tim_kiem}_ReExport_{row_data['ten_kh']}.pdf"
-                        if "PDF" in loai_xuat_his or "Cả" in loai_xuat_his:
-                            st.download_button("📥 XUẤT LẠI FILE PDF", data=pdf_re, file_name=pdf_name_re, mime="application/pdf", type="primary", use_container_width=True)
-                        
-                        if "Ảnh" in loai_xuat_his or "Cả" in loai_xuat_his:
-                            img_re = convert_pdf_to_png(pdf_re)
-                            if img_re:
-                                img_name_re = pdf_name_re.replace('.pdf', '.png')
-                                st.download_button("🖼️ XUẤT LẠI FILE ẢNH", data=img_re, file_name=img_name_re, mime="image/png", type="primary", use_container_width=True)
-                    
-                    with col_his2:
-                        st.write("") # Cân dòng
-                        is_chuan_flag = (row_data['loai_bao_gia'] == 'Tiêu chuẩn')
-                        if is_chuan_flag:
-                            if st.button("🛠️ Nạp dữ liệu để Chỉnh Sửa", type="primary", use_container_width=True, on_click=nap_du_lieu_sua, args=(row_data.to_dict(), json.loads(row_data['chi_tiet']))):
-                                st.success("✅ Đã nạp thành công! Hãy tải lại trang để sửa.")
-                        else:
-                            st.info("⚠️ Báo giá tùy chỉnh cũ chỉ có thể xem và xuất lại, không hỗ trợ chỉnh sửa nữa.")
-                else: st.warning("⚠️ Báo giá này là dữ liệu cũ, không lưu chi tiết sản phẩm nên máy không thể vẽ lại PDF hoặc chỉnh sửa được.")
-        else: st.info("Chưa có lịch sử báo giá.")
-    except Exception as e:
-        conn.rollback()
-        st.info(f"Chưa có lịch sử hoặc bảng dữ liệu trống. ({e})")
+                            subtitle=f"Mã phiếu: {ma_tim_kiem} | Khách hàng: {row_data['ten_kh']} | SĐT: {
