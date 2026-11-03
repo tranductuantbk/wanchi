@@ -147,24 +147,6 @@ if not is_admin:
 if 'dashboard_unlocked' not in st.session_state:
     st.session_state.dashboard_unlocked = False
 
-def yeu_cau_pin_giam_doc(tab_key):
-    st.markdown("<br>", unsafe_allow_html=True)
-    col_khoa1, col_khoa2, col_khoa3 = st.columns([1, 2, 1])
-    with col_khoa2:
-        st.warning("🔒 **BẢO MẬT CẤP CAO:** Vui lòng nhập Mã PIN Giám Đốc để mở khóa Tab này.")
-        with st.form(f"form_mat_khau_{tab_key}"):
-            pin_input = st.text_input("Mã PIN / Mật khẩu:", type="password")
-            if st.form_submit_button("🔓 Mở Khóa", type="primary", use_container_width=True):
-                if pin_input == MAT_KHAU_GIAM_DOC:
-                    st.session_state.dashboard_unlocked = True
-                    st.rerun()
-                else: st.error("❌ Mã PIN không chính xác!")
-
-def nut_khoa_lai(tab_key):
-    if st.button("🔒 Khóa Lại Két Sắt", key=f"lock_{tab_key}"):
-        st.session_state.dashboard_unlocked = False
-        st.rerun()
-
 # --- CƠ CHẾ CHỐNG RỚT MẠNG TỰ ĐỘNG ---
 conn = get_connection()
 if conn.closed != 0:
@@ -214,13 +196,14 @@ try: df_nv = pd.read_sql("SELECT * FROM public.nhan_vien ORDER BY id DESC", conn
 except: df_nv = pd.DataFrame()
 
 # ==========================================
-# GIAO DIỆN HIỂN THỊ
+# GIAO DIỆN HIỂN THỊ - PHÂN QUYỀN
 # ==========================================
+ma_ca, thoi_gian_tao = lay_thong_tin_ma_ca()
+hom_nay = lay_gio_vn().strftime("%d/%m/%Y")
+gio_hien_tai = lay_gio_vn().strftime("%H:%M")
+
 if is_admin == "employee":
     st.markdown("<h2 style='text-align: center; color: #4CAF50;'>📱 HỆ THỐNG CHẤM CÔNG WANCHI</h2>", unsafe_allow_html=True)
-    ma_ca, thoi_gian_tao = lay_thong_tin_ma_ca()
-    hom_nay = lay_gio_vn().strftime("%d/%m/%Y")
-    gio_hien_tai = lay_gio_vn().strftime("%H:%M")
     st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
     
     if not ma_ca:
@@ -258,14 +241,65 @@ if is_admin == "employee":
                     else: st.error("❌ Mã PIN cá nhân sai!")
                 else: st.error("❌ Mã CA TẠI XƯỞNG không đúng!")
 else:
-    st.header("👥 Quản Lý Nhân Sự & Lương WANCHI")
-    tab1, tab3, tab2, tab4 = st.tabs(["📁 Hồ Sơ Nhân Sự", "📱 Chấm Công", "💸 Tính Lương", "⚙ Cấu Hình Chấm Công"])
+    # GIAO DIỆN QUẢN LÝ (wanchi9187)
+    if not st.session_state.dashboard_unlocked:
+        st.header("👥 Cổng Quản Lý Nhân Sự WANCHI")
+        st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
+        
+        with st.expander("🔑 QUẢN LÝ MÃ CHẤM CÔNG (Dành cho Quản lý)", expanded=True):
+            if ma_ca:
+                try:
+                    tg_tao_dt = datetime.fromisoformat(thoi_gian_tao).replace(tzinfo=VN_TZ) if thoi_gian_tao.endswith('Z') or '+' not in thoi_gian_tao else datetime.fromisoformat(thoi_gian_tao)
+                    if tg_tao_dt.tzinfo is None:
+                        tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
+                    tg_het_han = tg_tao_dt + timedelta(hours=18)
+                    
+                    st.write(f"Mã hiện tại: **{ma_ca}** (Tạo lúc: {tg_tao_dt.strftime('%H:%M %d/%m')})")
+                    if lay_gio_vn() > tg_het_han: 
+                        st.error("⚠️ Mã này đã hết hạn 18h! Vui lòng tạo mã mới.")
+                    else: 
+                        st.success(f"Mã còn hiệu lực đến: {tg_het_han.strftime('%H:%M %d/%m')}")
+                except Exception as e:
+                    st.error("Lỗi đọc dữ liệu thời gian, vui lòng tạo mã mới.")
+            
+            if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 18h)", type="primary"):
+                moi_ma = str(random.randint(1000, 9999))
+                bay_gio = lay_gio_vn().isoformat()
+                c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('MA_CA_HIEN_TAI', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (moi_ma,))
+                c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('THOI_GIAN_TAO_MA', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (bay_gio,))
+                conn.commit()
+                st.rerun()
+                
+        st.markdown("---")
+        try:
+            df_cc = pd.read_sql(f"SELECT ten_nv, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ngay='{hom_nay}' ORDER BY gio_vao DESC", conn)
+            if not df_cc.empty:
+                df_cc['ve_som_co_phep'] = df_cc['ve_som_co_phep'].apply(lambda x: 'Có' if x else '')
+                df_cc.columns = ["Tên Nhân Viên", "Giờ Vào", "Giờ Ra", "Xin Phép Về Sớm"]
+                st.dataframe(df_cc, use_container_width=True, hide_index=True)
+        except: pass
+                
+        st.write("---")
+        st.warning("🔒 **BẢO MẬT CẤP CAO:** Vui lòng nhập Mã PIN Giám Đốc để truy cập vào Hồ sơ nhân sự, Tính lương và Cấu hình chấm công.")
+        with st.form("form_mat_khau_giam_doc"):
+            pin_input = st.text_input("Mã PIN / Mật khẩu Giám Đốc:", type="password")
+            if st.form_submit_button("🔓 Mở Khóa Hệ Thống", type="primary", use_container_width=True):
+                if pin_input == MAT_KHAU_GIAM_DOC:
+                    st.session_state.dashboard_unlocked = True
+                    st.rerun()
+                else: st.error("❌ Mã PIN không chính xác!")
+                
+    else:
+        # GIAO DIỆN GIÁM ĐỐC (ĐÃ MỞ KHÓA tbk1102)
+        st.header("👥 Quản Lý Nhân Sự & Lương WANCHI")
+        if st.button("🔒 Khóa Lại Hệ Thống", key="lock_all"):
+            st.session_state.dashboard_unlocked = False
+            st.rerun()
+            
+        tab1, tab3, tab2, tab4 = st.tabs(["📁 Hồ Sơ Nhân Sự", "📱 Chấm Công", "💸 Tính Lương", "⚙ Cấu Hình Chấm Công"])
 
-    # --- TAB 1: HỒ SƠ NHÂN SỰ ---
-    with tab1:
-        if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t1")
-        else:
-            nut_khoa_lai("t1")
+        # --- TAB 1: HỒ SƠ NHÂN SỰ ---
+        with tab1:
             cf = lay_cau_hinh_gio()
             st.subheader("1. Thêm Nhân Viên Mới")
             with st.form("form_them_nv", clear_on_submit=True):
@@ -338,11 +372,8 @@ else:
                                 conn.commit(); st.success("✅ Đã xóa thành công."); time.sleep(1); st.rerun()
                             except: pass
 
-    # --- TAB 2: TÍNH LƯƠNG & XUẤT PHIẾU ---
-    with tab2:
-        if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t2")
-        else:
-            nut_khoa_lai("t2")
+        # --- TAB 2: TÍNH LƯƠNG & XUẤT PHIẾU ---
+        with tab2:
             if df_nv.empty: st.warning("⚠️ Vui lòng khai báo nhân sự ở Tab 1 trước!")
             else:
                 cf = lay_cau_hinh_gio()
@@ -426,12 +457,6 @@ else:
 
                 with col_l3:
                     thuong_khac = st.number_input("Thưởng thêm (Nhập tay)", min_value=0, value=0, step=100000)
-                    
-                    bo_phan_str = str(nv_data.get('bo_phan', '')).lower()
-                    pc_chuc_vu = 0
-                    if 'quản lý' in bo_phan_str or 'kỹ thuật trưởng' in bo_phan_str:
-                        pc_chuc_vu = st.number_input("Phụ cấp Quản lý/KTT (Sửa được)", min_value=0, value=300000, step=50000)
-                        
                     thuong_tet = st.checkbox("🎉 Cộng thưởng Tết (Lương CB x 30 ngày)")
                     thuong_sn = st.checkbox(f"🎂 Cộng thưởng sinh nhật (+{cf['tien_thuong_sinh_nhat']:,.0f} đ)")
                     tam_ung = st.number_input("Tiền tạm ứng tự nhập nếu có", value=0, step=50000)
@@ -446,22 +471,18 @@ else:
                             for ngay_le in ["30/04", "01/05", "02/09"]:
                                 le_dd, le_mm = ngay_le.split('/')
                                 if le_mm == thang_str:
-                                    d_le = datetime.strptime(f"{le_dd}/{le_mm}/{nam_str}", "%d/%m/%Y")
-                                    if d_le.weekday() == 6:
-                                        tien_thuong_le += 100000
-                                        ghi_chu_txt.append(f"Lễ {ngay_le} (CN: +100k)")
-                                    else:
-                                        tien_thuong_le += (l_cb + 100000)
-                                        ghi_chu_txt.append(f"Lễ {ngay_le} (T2-T7: +100k & LCB)")
+                                    tien_thuong_le += (l_cb + 100000)
+                                    ghi_chu_txt.append(f"Lễ {ngay_le} (+100k & LCB)")
                     except: pass
                     
                     tien_thuong_tet = (l_cb * 30) if thuong_tet else 0
                     tien_thuong_sn = cf['tien_thuong_sinh_nhat'] if thuong_sn else 0
                     
                     tien_phu_cap_chuc_vu = 0
-                    if pc_chuc_vu > 0: 
-                        tien_phu_cap_chuc_vu = pc_chuc_vu
-                        ghi_chu_txt.append(f"Phụ cấp chức vụ (+{int(pc_chuc_vu/1000)}k)")
+                    bo_phan_str = str(nv_data.get('bo_phan', '')).lower()
+                    if 'quản lý' in bo_phan_str or 'kỹ thuật trưởng' in bo_phan_str:
+                        tien_phu_cap_chuc_vu = 300000
+                        ghi_chu_txt.append("Phụ cấp chức vụ (+300k)")
                         
                     if thuong_tet: ghi_chu_txt.append("Thưởng Tết (+30 ngày LCB)")
                     if thuong_sn: ghi_chu_txt.append("Thưởng sinh nhật")
@@ -522,51 +543,35 @@ else:
                             img_name_luong = st.session_state['pdf_luong_name'].replace('.pdf', '.png')
                             st.download_button("🖼️ TẢI PHIẾU LƯƠNG (ẢNH)", data=st.session_state['img_luong'], file_name=img_name_luong, mime="image/png", type="primary", use_container_width=True)
 
-    # --- TAB 3: CHẤM CÔNG ---
-    with tab3:
-        ma_ca, thoi_gian_tao = lay_thong_tin_ma_ca()
-        hom_nay = lay_gio_vn().strftime("%d/%m/%Y")
-        gio_hien_tai = lay_gio_vn().strftime("%H:%M")
-        
-        st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
+        # --- TAB 3: CHẤM CÔNG ---
+        with tab3:
+            st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
 
-        # LUÔN HIỂN THỊ KHI ĐĂNG NHẬP WANCHI9187
-        with st.expander("🔑 QUẢN LÝ MÃ CHẤM CÔNG (Dành cho Quản lý)", expanded=True):
-            if ma_ca:
-                try:
-                    tg_tao_dt = datetime.fromisoformat(thoi_gian_tao).replace(tzinfo=VN_TZ) if thoi_gian_tao.endswith('Z') or '+' not in thoi_gian_tao else datetime.fromisoformat(thoi_gian_tao)
-                    if tg_tao_dt.tzinfo is None:
-                        tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
-                    tg_het_han = tg_tao_dt + timedelta(hours=18)
-                    
-                    st.write(f"Mã hiện tại: **{ma_ca}** (Tạo lúc: {tg_tao_dt.strftime('%H:%M %d/%m')})")
-                    if lay_gio_vn() > tg_het_han: 
-                        st.error("⚠️ Mã này đã hết hạn 18h! Vui lòng tạo mã mới.")
-                    else: 
-                        st.success(f"Mã còn hiệu lực đến: {tg_het_han.strftime('%H:%M %d/%m')}")
-                except Exception as e:
-                    st.error("Lỗi đọc dữ liệu thời gian, vui lòng tạo mã mới.")
-            
-            if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 18h)", type="primary"):
-                moi_ma = str(random.randint(1000, 9999))
-                bay_gio = lay_gio_vn().isoformat()
-                c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('MA_CA_HIEN_TAI', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (moi_ma,))
-                c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('THOI_GIAN_TAO_MA', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (bay_gio,))
-                conn.commit()
-                st.rerun()
-
-        # MỤC SỬA GIỜ CẦN MẬT KHẨU GIÁM ĐỐC
-        with st.expander("🛠️ CÔNG CỤ SỬA GIỜ CHẤM CÔNG (Cần Mật Khẩu Giám Đốc)"):
-            if not st.session_state.dashboard_unlocked:
-                mk_nhap = st.text_input("Nhập Mật Khẩu Giám Đốc để mở khóa công cụ:", type="password", key="mk_sua_cc")
-                if mk_nhap == MAT_KHAU_GIAM_DOC:
-                    st.session_state.dashboard_unlocked = True
-                    st.rerun()
-                elif mk_nhap != "":
-                    st.error("❌ Mật khẩu không chính xác! Không thể sử dụng công cụ.")
-            else:
-                st.success("🔓 Đã xác thực thành công! Anh/chị có thể sửa giờ và ghi nhận xin phép bên dưới.")
+            with st.expander("🔑 QUẢN LÝ MÃ CHẤM CÔNG (Dành cho Quản lý)", expanded=True):
+                if ma_ca:
+                    try:
+                        tg_tao_dt = datetime.fromisoformat(thoi_gian_tao).replace(tzinfo=VN_TZ) if thoi_gian_tao.endswith('Z') or '+' not in thoi_gian_tao else datetime.fromisoformat(thoi_gian_tao)
+                        if tg_tao_dt.tzinfo is None:
+                            tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
+                        tg_het_han = tg_tao_dt + timedelta(hours=18)
+                        
+                        st.write(f"Mã hiện tại: **{ma_ca}** (Tạo lúc: {tg_tao_dt.strftime('%H:%M %d/%m')})")
+                        if lay_gio_vn() > tg_het_han: 
+                            st.error("⚠️ Mã này đã hết hạn 18h! Vui lòng tạo mã mới.")
+                        else: 
+                            st.success(f"Mã còn hiệu lực đến: {tg_het_han.strftime('%H:%M %d/%m')}")
+                    except Exception as e:
+                        st.error("Lỗi đọc dữ liệu thời gian, vui lòng tạo mã mới.")
                 
+                if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 18h)", type="primary"):
+                    moi_ma = str(random.randint(1000, 9999))
+                    bay_gio = lay_gio_vn().isoformat()
+                    c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('MA_CA_HIEN_TAI', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (moi_ma,))
+                    c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('THOI_GIAN_TAO_MA', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (bay_gio,))
+                    conn.commit()
+                    st.rerun()
+
+            with st.expander("🛠️ CÔNG CỤ SỬA GIỜ CHẤM CÔNG (Giám Đốc)", expanded=True):
                 c1, c2 = st.columns(2)
                 with c1: 
                     ngay_sua = st.date_input("Chọn ngày cần sửa:", lay_gio_vn().date(), format="DD/MM/YYYY")
@@ -606,58 +611,17 @@ else:
                             conn.commit()
                             st.rerun()
 
-        st.markdown("---")
+            st.markdown("---")
+            try:
+                df_cc = pd.read_sql(f"SELECT ten_nv, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ngay='{hom_nay}' ORDER BY gio_vao DESC", conn)
+                if not df_cc.empty:
+                    df_cc['ve_som_co_phep'] = df_cc['ve_som_co_phep'].apply(lambda x: 'Có' if x else '')
+                    df_cc.columns = ["Tên Nhân Viên", "Giờ Vào", "Giờ Ra", "Xin Phép Về Sớm"]
+                    st.dataframe(df_cc, use_container_width=True, hide_index=True)
+            except: pass
 
-        if not ma_ca:
-            st.warning("⚠️ Chủ xưởng chưa tạo mã ca làm việc. Vui lòng liên hệ Admin!")
-        else:
-            tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
-            if tg_tao_dt.tzinfo is None:
-                tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
-            if lay_gio_vn() > (tg_tao_dt + timedelta(hours=18)):
-                st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
-            else:
-                col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
-                with col_c1: nv_cham_cong = st.selectbox("🙋‍♂ Chọn tên của bạn:", ["-- Chọn Tên --"] + df_nv['ten_nv'].tolist() if not df_nv.empty else ["-- Chọn Tên --"])
-                with col_c2: pin_nhap = st.text_input("Mã PIN cá nhân:", type="password", max_chars=4)
-                with col_c3: ma_ca_nhap = st.text_input("Mã CA tại xưởng:", type="password", max_chars=4)
-
-                if nv_cham_cong != "-- Chọn Tên --" and pin_nhap and ma_ca_nhap:
-                    real_pin = df_nv[df_nv['ten_nv'] == nv_cham_cong].iloc[0]['ma_pin']
-                    if ma_ca_nhap == ma_ca:
-                        if pin_nhap == real_pin:
-                            c.execute("SELECT gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_cham_cong, hom_nay))
-                            trang_thai = c.fetchone()
-                            
-                            col_b1, col_b2 = st.columns(2)
-                            if not trang_thai:
-                                if col_b1.button("🟢 VÀO CA (Check-in)", type="primary", use_container_width=True):
-                                    c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao) VALUES (%s, %s, %s)", (nv_cham_cong, hom_nay, gio_hien_tai))
-                                    conn.commit(); st.success(f"✅ Đã vào ca lúc {gio_hien_tai}"); time.sleep(1); st.rerun()
-                            elif trang_thai[1] is None:
-                                st.info(f"Bạn đã vào ca lúc: {trang_thai[0]}")
-                                if col_b2.button("🔴 TAN CA (Check-out)", type="primary", use_container_width=True):
-                                    c.execute("UPDATE public.cham_cong SET gio_ra=%s WHERE ten_nv=%s AND ngay=%s", (gio_hien_tai, nv_cham_cong, hom_nay))
-                                    conn.commit(); st.success(f"✅ Đã tan ca lúc {gio_hien_tai}"); time.sleep(1); st.rerun()
-                            else:
-                                st.success(f"✅ Đã hoàn thành ngày công. ({trang_thai[0]} - {trang_thai[1]})")
-                        else: st.error("❌ Mã PIN cá nhân sai!")
-                    else: st.error("❌ Mã CA TẠI XƯỞNG không đúng!")
-
-        st.markdown("---")
-        try:
-            df_cc = pd.read_sql(f"SELECT ten_nv, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ngay='{hom_nay}' ORDER BY gio_vao DESC", conn)
-            if not df_cc.empty:
-                df_cc['ve_som_co_phep'] = df_cc['ve_som_co_phep'].apply(lambda x: 'Có' if x else '')
-                df_cc.columns = ["Tên Nhân Viên", "Giờ Vào", "Giờ Ra", "Xin Phép Về Sớm"]
-                st.dataframe(df_cc, use_container_width=True, hide_index=True)
-        except: pass
-
-    # --- TAB 4: CẤU HÌNH CHẤM CÔNG ---
-    with tab4:
-        if not st.session_state.dashboard_unlocked: yeu_cau_pin_giam_doc("t4")
-        else:
-            nut_khoa_lai("t4")
+        # --- TAB 4: CẤU HÌNH CHẤM CÔNG ---
+        with tab4:
             st.subheader("⚙ Cài Đặt Quy Tắc Chấm Công, Phạt Đi Trễ & Về Sớm")
             st.info("💡 Hệ thống hiện chỉ đếm số lần đi trễ/về sớm và hiển thị cảnh báo đỏ nếu vượt mức cho phép, không tự động cấn trừ tiền.")
             cf = lay_cau_hinh_gio()
@@ -683,6 +647,9 @@ else:
                     
                     st.markdown("**4. Cách tính thâm niên**")
                     tien_tham_nien_moi = st.number_input("Số tiền cộng thêm cho 1 năm làm việc (VNĐ/ngày)", value=int(cf['tien_tham_nien']), step=5000)
+                    
+                    st.markdown("**6. Thưởng Sinh Nhật**")
+                    tien_thuong_sn_moi = st.number_input("Tiền thưởng sinh nhật (VNĐ)", value=int(cf['tien_thuong_sinh_nhat']), step=50000)
                 
                 if st.form_submit_button("💾 LƯU CẤU HÌNH", type="primary", use_container_width=True):
                     queries = [
@@ -692,7 +659,8 @@ else:
                         ("GIO_TINH_TRE", gio_tre_moi.strftime("%H:%M")),
                         ("GIO_VE_SOM", gio_ve_som_moi.strftime("%H:%M")),
                         ("SO_LAN_TRE_TOI_DA", str(tre_toida_moi)),
-                        ("TIEN_THAM_NIEN_MOI_NAM", str(tien_tham_nien_moi))
+                        ("TIEN_THAM_NIEN_MOI_NAM", str(tien_tham_nien_moi)),
+                        ("THUONG_SINH_NHAT", str(tien_thuong_sn_moi))
                     ]
                     for key, val in queries:
                         c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES (%s, %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (key, val))
