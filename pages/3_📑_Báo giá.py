@@ -486,4 +486,32 @@ with tab2:
                         pdf_re = generate_generic_pdf(
                             dataframe=df_chi_tiet, 
                             title="BÁO GIÁ SẢN PHẨM" if row_data['loai_bao_gia'] == 'Tiêu chuẩn' else "BÁO GIÁ DỊCH VỤ", 
-                            subtitle=f"Mã phiếu: {ma_tim_kiem} | Khách hàng: {row_data['ten_kh']} | SĐT: {
+                            subtitle=f"Mã phiếu: {ma_tim_kiem} | Khách hàng: {row_data['ten_kh']} | SĐT: {row_data['so_dien_thoai']}", 
+                            columns_to_print=["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], 
+                            col_widths=[30, 70, 20, 35, 35], 
+                            total_amount=row_data['tong_tien']
+                        )
+                        
+                        pdf_name_re = f"{ma_tim_kiem}_ReExport_{row_data['ten_kh']}.pdf"
+                        if "PDF" in loai_xuat_his or "Cả" in loai_xuat_his:
+                            st.download_button("📥 XUẤT LẠI FILE PDF", data=pdf_re, file_name=pdf_name_re, mime="application/pdf", type="primary", use_container_width=True)
+                        
+                        if "Ảnh" in loai_xuat_his or "Cả" in loai_xuat_his:
+                            img_re = convert_pdf_to_png(pdf_re)
+                            if img_re:
+                                img_name_re = pdf_name_re.replace('.pdf', '.png')
+                                st.download_button("🖼️ XUẤT LẠI FILE ẢNH", data=img_re, file_name=img_name_re, mime="image/png", type="primary", use_container_width=True)
+                    
+                    with col_his2:
+                        st.write("") # Cân dòng
+                        is_chuan_flag = (row_data['loai_bao_gia'] == 'Tiêu chuẩn')
+                        if is_chuan_flag:
+                            if st.button("🛠️ Nạp dữ liệu để Chỉnh Sửa", type="primary", use_container_width=True, on_click=nap_du_lieu_sua, args=(row_data.to_dict(), json.loads(row_data['chi_tiet']))):
+                                st.success("✅ Đã nạp thành công! Hãy tải lại trang để sửa.")
+                        else:
+                            st.info("⚠️ Báo giá tùy chỉnh cũ chỉ có thể xem và xuất lại, không hỗ trợ chỉnh sửa nữa.")
+                else: st.warning("⚠️ Báo giá này là dữ liệu cũ, không lưu chi tiết sản phẩm nên máy không thể vẽ lại PDF hoặc chỉnh sửa được.")
+        else: st.info("Chưa có lịch sử báo giá.")
+    except Exception as e:
+        conn.rollback()
+        st.info(f"Chưa có lịch sử hoặc bảng dữ liệu trống. ({e})")
