@@ -17,8 +17,39 @@ if role == "employee":
 
 st.header("📦 Quản Lý Danh Mục Sản Phẩm ")
 
+# ==========================================
+# 🛡️ LÁ CHẮN CHỐNG MẤT DỮ LIỆU (DATABASE GUARD)
+# ==========================================
 conn = get_connection()
+
+def kiem_tra_du_lieu_thuc_te(connection):
+    """Hàm bắn tín hiệu kiểm tra xem Neon có đang ngủ đông không"""
+    try:
+        if connection.closed != 0:
+            return False
+        cur = connection.cursor()
+        cur.execute("SELECT 1") # Lệnh test nhẹ nhất để gọi Neon dậy
+        cur.fetchone()
+        return True
+    except:
+        return False
+
+# Kích hoạt lá chắn
+if not kiem_tra_du_lieu_thuc_te(conn):
+    # Nếu mất kết nối, thử xóa cache và gọi Neon dậy 1 lần
+    st.cache_resource.clear()
+    conn = get_connection()
+    
+    # Nếu gọi lần 2 vẫn không được -> Đóng băng hệ thống
+    if not kiem_tra_du_lieu_thuc_te(conn):
+        st.error("🚨 LÁ CHẮN BẢO VỆ DỮ LIỆU ĐANG KÍCH HOẠT!")
+        st.warning("⚠️ Mạng yếu hoặc Máy chủ Neon đang ngủ đông khiến dữ liệu xưởng chưa được tải về. Để chống tình trạng ghi đè làm mất dữ liệu cũ, hệ thống tạm thời KHÓA toàn bộ thao tác.")
+        if st.button("🔄 Bấm vào đây để tải lại kết nối", type="primary"):
+            st.rerun()
+        st.stop() # 🛑 Lệnh này sẽ chặn đứng mọi code phía dưới, không cho hiện giao diện
+
 c = conn.cursor()
+# ==========================================
 
 # ==========================================
 # CẬP NHẬT DATABASE 
