@@ -138,9 +138,41 @@ def generate_payslip_pdf(nv_name, ky_luong, data):
     except: return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# PHÂN QUYỀN HỆ THỐNG & LÁ CHẮN BẢO VỆ
+# PHÂN QUYỀN HỆ THỐNG (ĐÃ TÙY CHỈNH CHO NHÂN SỰ)
 # ==========================================
-is_admin = check_password()
+def xac_thuc_nhan_su():
+    # 1. Kiểm tra nếu Quản lý đã đăng nhập
+    if st.session_state.get("password_correct"):
+        return True
+    
+    # 2. Kiểm tra nếu Nhân viên đã đăng nhập
+    if st.session_state.get("employee_logged_in"):
+        return "employee"
+        
+    def password_entered():
+        pwd = st.session_state.get("nhan_su_pwd", "")
+        if pwd == "wanchi9187":
+            st.session_state["password_correct"] = True
+            st.session_state["logged_in"] = True
+            if "nhan_su_pwd" in st.session_state:
+                del st.session_state["nhan_su_pwd"]
+        elif pwd == "nv":
+            st.session_state["employee_logged_in"] = True
+            if "nhan_su_pwd" in st.session_state:
+                del st.session_state["nhan_su_pwd"]
+        else:
+            st.session_state["password_correct"] = False
+            st.session_state["employee_logged_in"] = False
+
+    st.text_input("🔑 Nhập mật khẩu hệ thống (Quản lý) hoặc 'nv' (Nhân viên):", type="password", on_change=password_entered, key="nhan_su_pwd")
+    
+    if "password_correct" in st.session_state and not st.session_state.get("password_correct") and not st.session_state.get("employee_logged_in"):
+        st.error("😕 Mật khẩu không đúng!")
+    return False
+
+is_admin = xac_thuc_nhan_su()
+if not is_admin: 
+    st.stop()
 
 if 'dashboard_unlocked' not in st.session_state:
     st.session_state.dashboard_unlocked = False
