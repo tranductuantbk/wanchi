@@ -254,7 +254,7 @@ if is_admin == "employee":
     else:
         tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
         if tg_tao_dt.tzinfo is None: tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
-        if lay_gio_vn() > (tg_tao_dt + timedelta(hours=18)):
+        if lay_gio_vn() > (tg_tao_dt + timedelta(hours=13)):
             st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
         else:
             col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
@@ -295,17 +295,17 @@ else:
                     tg_tao_dt = datetime.fromisoformat(thoi_gian_tao).replace(tzinfo=VN_TZ) if thoi_gian_tao.endswith('Z') or '+' not in thoi_gian_tao else datetime.fromisoformat(thoi_gian_tao)
                     if tg_tao_dt.tzinfo is None:
                         tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
-                    tg_het_han = tg_tao_dt + timedelta(hours=18)
+                    tg_het_han = tg_tao_dt + timedelta(hours=13)
                     
                     st.write(f"Mã hiện tại: **{ma_ca}** (Tạo lúc: {tg_tao_dt.strftime('%H:%M %d/%m')})")
                     if lay_gio_vn() > tg_het_han: 
-                        st.error("⚠️ Mã này đã hết hạn 18h! Vui lòng tạo mã mới.")
+                        st.error("⚠️ Mã này đã hết hạn 13h! Vui lòng tạo mã mới.")
                     else: 
                         st.success(f"Mã còn hiệu lực đến: {tg_het_han.strftime('%H:%M %d/%m')}")
                 except Exception as e:
                     st.error("Lỗi đọc dữ liệu thời gian, vui lòng tạo mã mới.")
             
-            if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 18h)", type="primary"):
+            if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 13h)", type="primary"):
                 moi_ma = str(random.randint(1000, 9999))
                 bay_gio = lay_gio_vn().isoformat()
                 c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('MA_CA_HIEN_TAI', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (moi_ma,))
@@ -596,17 +596,17 @@ else:
                         tg_tao_dt = datetime.fromisoformat(thoi_gian_tao).replace(tzinfo=VN_TZ) if thoi_gian_tao.endswith('Z') or '+' not in thoi_gian_tao else datetime.fromisoformat(thoi_gian_tao)
                         if tg_tao_dt.tzinfo is None:
                             tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
-                        tg_het_han = tg_tao_dt + timedelta(hours=18)
+                        tg_het_han = tg_tao_dt + timedelta(hours=13)
                         
                         st.write(f"Mã hiện tại: **{ma_ca}** (Tạo lúc: {tg_tao_dt.strftime('%H:%M %d/%m')})")
                         if lay_gio_vn() > tg_het_han: 
-                            st.error("⚠️ Mã này đã hết hạn 18h! Vui lòng tạo mã mới.")
+                            st.error("⚠️ Mã này đã hết hạn 13h! Vui lòng tạo mã mới.")
                         else: 
                             st.success(f"Mã còn hiệu lực đến: {tg_het_han.strftime('%H:%M %d/%m')}")
                     except Exception as e:
                         st.error("Lỗi đọc dữ liệu thời gian, vui lòng tạo mã mới.")
                 
-                if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 18h)", type="primary"):
+                if st.button("🔄 TẠO MÃ CA MỚI (Hiệu lực 13h)", type="primary"):
                     moi_ma = str(random.randint(1000, 9999))
                     bay_gio = lay_gio_vn().isoformat()
                     c.execute("INSERT INTO public.cau_hinh (ten_cau_hinh, gia_tri) VALUES ('MA_CA_HIEN_TAI', %s) ON CONFLICT (ten_cau_hinh) DO UPDATE SET gia_tri = EXCLUDED.gia_tri", (moi_ma,))
