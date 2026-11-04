@@ -1040,8 +1040,8 @@ with tab2:
                 ten_khach_hang_hien_tai = don_info['ten_kh']
                 la_dai_ly = "đại lý" in ten_khach_hang_hien_tai.lower()
                 
-                # BỔ SUNG: Tick chọn có xuất hóa đơn (Giá / 0.95)
-                co_xuat_hoa_don = st.checkbox("🧾 Có xuất hóa đơn (Tính công nợ = Tổng đơn / 0.95)", value=False)
+                # Thêm mục chọn Có xuất hóa đơn (Chia 0.95 để ghi nhận công nợ)
+                co_xuat_hoa_don = st.checkbox("✅ Có xuất hóa đơn (Ghi nhận công nợ chia 0.95)", value=False)
                 
                 # Mặc định chọn "Chưa thanh toán" (index=0) cho mọi đơn xuất kho
                 trang_thai_tt_xuat = st.selectbox(
@@ -1053,9 +1053,12 @@ with tab2:
                 items = json.loads(don_info['chi_tiet'])
                 df_items = pd.DataFrame(items)
                 
-                # Xử lý để hiển thị đúng Số Lượng Lốc và Số Lượng Cái (từ số lượng gốc của hệ thống)
+                # Xử lý để hiển thị đúng Số Lượng Lốc, Số Lượng Cái và cập nhật tiền nếu có xuất hóa đơn
                 sl_loc_list = []
                 sl_cai_list = []
+                don_gia_list = []
+                thanh_tien_list = []
+                
                 for _, row in df_items.iterrows():
                     ten_sp = row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', ''))
                     # Số lượng trong JSON gốc chính là Tổng Số Cái
@@ -1076,18 +1079,24 @@ with tab2:
                     # Số lốc = Số cái / Quy cách
                     sl_loc = sl_cai / quy_cach if quy_cach > 0 else 0
                     sl_loc_list.append(sl_loc)
+                    
+                    # Tính toán đơn giá mới nếu có chọn xuất hóa đơn
+                    don_gia_goc = float(row.get('Đơn Giá', row.get('Giá', 0)))
+                    if co_xuat_hoa_don:
+                        don_gia_moi = round(don_gia_goc / 0.95)
+                    else:
+                        don_gia_moi = don_gia_goc
+                        
+                    don_gia_list.append(don_gia_moi)
+                    thanh_tien_list.append(don_gia_moi * sl_cai)
                 
                 df_items['Số Lượng Lốc'] = sl_loc_list
                 df_items['Số Lượng Cái'] = sl_cai_list
-                
-                # Áp dụng chia 0.95 cho bảng hiển thị nếu có tick
-                if co_xuat_hoa_don:
-                    if 'Đơn Giá' in df_items.columns:
-                        df_items['Đơn Giá'] = df_items['Đơn Giá'].astype(float) / 0.95
-                    elif 'Giá' in df_items.columns:
-                        df_items['Giá'] = df_items['Giá'].astype(float) / 0.95
-                    if 'Thành Tiền' in df_items.columns:
-                        df_items['Thành Tiền'] = df_items['Thành Tiền'].astype(float) / 0.95
+                if 'Đơn Giá' in df_items.columns:
+                    df_items['Đơn Giá'] = don_gia_list
+                if 'Giá' in df_items.columns:
+                    df_items['Giá'] = don_gia_list
+                df_items['Thành Tiền'] = thanh_tien_list
                 
                 # Bổ sung cột "Số Bao" cho phép người dùng nhập trực tiếp trên giao diện
                 df_items.insert(len(df_items.columns), "Số Bao", "")
@@ -1106,9 +1115,9 @@ with tab2:
                         "Tên Sản Phẩm OME": st.column_config.TextColumn(disabled=True),
                         "Số Lượng Lốc": st.column_config.NumberColumn("Số Lượng (Lốc)", disabled=True, format="%.2f"),
                         "Số Lượng Cái": st.column_config.NumberColumn("Số Lượng (Cái)", disabled=True, format="%.0f"),
-                        "Đơn Giá": st.column_config.NumberColumn(disabled=True),
-                        "Giá": st.column_config.NumberColumn(disabled=True),
-                        "Thành Tiền": st.column_config.NumberColumn(disabled=True),
+                        "Đơn Giá": st.column_config.NumberColumn(disabled=True, format="%.0f"),
+                        "Giá": st.column_config.NumberColumn(disabled=True, format="%.0f"),
+                        "Thành Tiền": st.column_config.NumberColumn(disabled=True, format="%.0f"),
                         "Ghi Chú": st.column_config.TextColumn(disabled=True),
                         "Số Bao": st.column_config.TextColumn("Số Bao (Nhập tay)")
                     }
@@ -1124,9 +1133,9 @@ with tab2:
                                 sl = float(item.get('Số Lượng', 0)) # Đây là số lượng cái cần trừ kho
                                 don_gia_sp = float(item.get('Đơn Giá', item.get('Giá', 0)))
                                 
-                                # Áp dụng chia 0.95 để ghi nhận công nợ mới
+                                # Áp dụng tính giá hóa đơn khi đẩy vào CSDL công nợ
                                 if co_xuat_hoa_don:
-                                    don_gia_sp = don_gia_sp / 0.95
+                                    don_gia_sp = round(don_gia_sp / 0.95)
                                     
                                 thanh_tien_sp = sl * don_gia_sp
                                 
