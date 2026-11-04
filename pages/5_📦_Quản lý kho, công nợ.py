@@ -1185,8 +1185,12 @@ with tab2:
                                 c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl, ten_sp))
                                 c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl, ten_sp))
                                 c.execute("INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) VALUES (%s, 'Thu hồi đơn', %s, %s, %s)", (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, sl, f"Thu hồi đơn {ma_don_chon}"))
+                            
+                            # Xóa khoản công nợ ứng với mã đơn này khỏi bảng ls_nhap_xuat_kho
+                            c.execute("DELETE FROM public.ls_nhap_xuat_kho WHERE ghi_chu = %s AND loai_thao_tac = 'Xuất Bán'", (f"Đơn {ma_don_chon}",))
+
                             c.execute("UPDATE public.don_hang SET trang_thai = 'Đã thu hồi' WHERE ma_don = %s", (ma_don_chon,))
-                            conn.commit(); st.info("Đã thu hồi hàng về kho."); time.sleep(1.5); st.rerun()
+                            conn.commit(); st.info("Đã thu hồi hàng về kho và xóa công nợ gốc."); time.sleep(1.5); st.rerun()
                 else:
                     st.info(f"Đơn hàng này đang ở trạng thái: **{don_info['trang_thai']}**")
 
