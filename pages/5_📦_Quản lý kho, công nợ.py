@@ -1040,6 +1040,9 @@ with tab2:
                 ten_khach_hang_hien_tai = don_info['ten_kh']
                 la_dai_ly = "đại lý" in ten_khach_hang_hien_tai.lower()
                 
+                # BỔ SUNG: Tick chọn có xuất hóa đơn (Giá / 0.95)
+                co_xuat_hoa_don = st.checkbox("🧾 Có xuất hóa đơn (Tính công nợ = Tổng đơn / 0.95)", value=False)
+                
                 # Mặc định chọn "Chưa thanh toán" (index=0) cho mọi đơn xuất kho
                 trang_thai_tt_xuat = st.selectbox(
                     "Trạng thái thanh toán Đơn hàng", 
@@ -1077,6 +1080,15 @@ with tab2:
                 df_items['Số Lượng Lốc'] = sl_loc_list
                 df_items['Số Lượng Cái'] = sl_cai_list
                 
+                # Áp dụng chia 0.95 cho bảng hiển thị nếu có tick
+                if co_xuat_hoa_don:
+                    if 'Đơn Giá' in df_items.columns:
+                        df_items['Đơn Giá'] = df_items['Đơn Giá'].astype(float) / 0.95
+                    elif 'Giá' in df_items.columns:
+                        df_items['Giá'] = df_items['Giá'].astype(float) / 0.95
+                    if 'Thành Tiền' in df_items.columns:
+                        df_items['Thành Tiền'] = df_items['Thành Tiền'].astype(float) / 0.95
+                
                 # Bổ sung cột "Số Bao" cho phép người dùng nhập trực tiếp trên giao diện
                 df_items.insert(len(df_items.columns), "Số Bao", "")
                 
@@ -1111,6 +1123,11 @@ with tab2:
                                 ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
                                 sl = float(item.get('Số Lượng', 0)) # Đây là số lượng cái cần trừ kho
                                 don_gia_sp = float(item.get('Đơn Giá', item.get('Giá', 0)))
+                                
+                                # Áp dụng chia 0.95 để ghi nhận công nợ mới
+                                if co_xuat_hoa_don:
+                                    don_gia_sp = don_gia_sp / 0.95
+                                    
                                 thanh_tien_sp = sl * don_gia_sp
                                 
                                 c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
