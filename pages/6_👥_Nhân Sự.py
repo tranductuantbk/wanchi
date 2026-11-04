@@ -649,44 +649,56 @@ else:
                     st.rerun()
 
             with st.expander("🛠️ CÔNG CỤ SỬA GIỜ CHẤM CÔNG (Giám Đốc)", expanded=True):
-                c1, c2 = st.columns(2)
-                with c1: 
-                    ngay_sua = st.date_input("Chọn ngày cần sửa:", lay_gio_vn().date(), format="DD/MM/YYYY")
-                    ngay_sua_str = ngay_sua.strftime("%d/%m/%Y")
-                with c2:
-                    nv_sua = st.selectbox("Chọn nhân viên cần sửa:", ["-- Chọn --"] + df_nv['ten_nv'].tolist(), key="nv_sua_cc")
+                ngay_sua = st.date_input("Chọn ngày cần sửa:", lay_gio_vn().date(), format="DD/MM/YYYY")
+                ngay_sua_str = ngay_sua.strftime("%d/%m/%Y")
                 
-                if nv_sua != "-- Chọn --":
-                    c.execute("SELECT gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_sua, ngay_sua_str))
-                    du_lieu_cu = c.fetchone()
+                c.execute("SELECT ten_nv, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ngay=%s ORDER BY gio_vao DESC", (ngay_sua_str,))
+                du_lieu_cu = c.fetchall()
+                
+                if du_lieu_cu:
+                    st.info("👉 Chỉnh sửa trực tiếp Giờ Vào, Giờ Ra (HH:MM) hoặc tick chọn Có phép ngay trên bảng, sau đó bấm Lưu.")
+                    df_sua = pd.DataFrame(du_lieu_cu, columns=['ten_nv', 'gio_vao', 'gio_ra', 've_som_co_phep'])
+                    df_sua['ve_som_co_phep'] = df_sua['ve_som_co_phep'].apply(lambda x: bool(x) if pd.notna(x) else False)
                     
-                    if du_lieu_cu:
-                        st.info(f"👉 Dữ liệu hiện tại của {nv_sua}: Giờ Vào **{du_lieu_cu[0]}** - Giờ Ra **{du_lieu_cu[1] or 'Chưa tan ca'}** | Có phép: **{'Có' if du_lieu_cu[2] else 'Không'}**")
-                        with st.form("form_sua_cc"):
-                            col_sv, col_sr = st.columns(2)
-                            
-                            try: gv_def = datetime.strptime(du_lieu_cu[0], "%H:%M").time() if du_lieu_cu[0] else datetime.strptime("07:30", "%H:%M").time()
-                            except: gv_def = datetime.strptime("07:30", "%H:%M").time()
-                            
-                            try: gr_def = datetime.strptime(du_lieu_cu[1], "%H:%M").time() if du_lieu_cu[1] else datetime.strptime("17:00", "%H:%M").time()
-                            except: gr_def = datetime.strptime("17:00", "%H:%M").time()
-
-                            with col_sv: gio_vao_moi = st.time_input("Nhập Giờ VÀO mới:", gv_def)
-                            with col_sr: 
-                                gio_ra_moi = st.time_input("Nhập Giờ RA mới:", gr_def)
-                                co_phep_moi = st.checkbox("☑️ Về sớm có phép (Không bị đếm lỗi)", value=bool(du_lieu_cu[2]) if du_lieu_cu[2] is not None else False)
-                            
-                            if st.form_submit_button("💾 LƯU THAY ĐỔI VÀO HỆ THỐNG", type="primary", use_container_width=True):
-                                c.execute("UPDATE public.cham_cong SET gio_vao=%s, gio_ra=%s, ve_som_co_phep=%s WHERE ten_nv=%s AND ngay=%s", (gio_vao_moi.strftime("%H:%M"), gio_ra_moi.strftime("%H:%M"), co_phep_moi, nv_sua, ngay_sua_str))
-                                conn.commit()
-                                st.success(f"✅ Đã cập nhật thành công dữ liệu ngày {ngay_sua_str} cho {nv_sua}!")
-                                time.sleep(1.5); st.rerun()
-                    else:
-                        st.warning(f"⚠ Nhân viên {nv_sua} chưa có dữ liệu chấm công nào trong ngày {ngay_sua_str}.")
-                        if st.button("➕ Bổ sung dữ liệu (Tạo mới)"):
-                            c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao) VALUES (%s, %s, %s)", (nv_sua, ngay_sua_str, "07:30"))
+                    edited_df = st.data_editor(
+                        df_sua,
+                        column_config={
+                            "ten_nv": st.column_config.TextColumn("Nhân Viên", disabled=True),
+                            "gio_vao": st.column_config.TextColumn("Giờ Vào (HH:MM)"),
+                            "gio_ra": st.column_config.TextColumn("Giờ Ra (HH:MM)"),
+                            "ve_som_co_phep": st.column_config.CheckboxColumn("☑️ Xin phép về sớm")
+                        },
+                        hide_index=True,
+                        use_container_width=True,
+                        key="editor_sua_cong"
+                    )
+                    
+                    if st.button("💾 LƯU THAY ĐỔI VÀO HỆ THỐNG", type="primary", use_container_width=True):
+                        try:
+                            for index, row in edited_df.iterrows():
+                                gv = str(row['gio_vao']) if pd.notna(row['gio_vao']) and str(row['gio_vao']).strip() != "" else None
+                                gr = str(row['gio_ra']) if pd.notna(row['gio_ra']) and str(row['gio_ra']).strip() != "" else None
+                                cp = bool(row['ve_som_co_phep'])
+                                
+                                c.execute("UPDATE public.cham_cong SET gio_vao=%s, gio_ra=%s, ve_som_co_phep=%s WHERE ten_nv=%s AND ngay=%s", 
+                                          (gv, gr, cp, str(row['ten_nv']), ngay_sua_str))
                             conn.commit()
+                            st.success(f"✅ Đã lưu toàn bộ thay đổi cho ngày {ngay_sua_str}!")
+                            time.sleep(1)
                             st.rerun()
+                        except Exception as e:
+                            st.error(f"Lỗi khi lưu: {e}")
+                else:
+                    st.warning(f"⚠ Chưa có dữ liệu chấm công nào trong ngày {ngay_sua_str}.")
+                    
+                st.markdown("---")
+                st.markdown("**➕ Bổ sung dữ liệu chấm công (Tạo mới)**")
+                nv_bs = st.selectbox("Chọn nhân viên để bổ sung công:", ["-- Chọn --"] + df_nv['ten_nv'].tolist(), key="nv_bs_cc")
+                if nv_bs != "-- Chọn --":
+                    if st.button(f"➕ Thêm {nv_bs} vào ngày {ngay_sua_str}"):
+                        c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao) VALUES (%s, %s, %s)", (nv_bs, ngay_sua_str, "07:30"))
+                        conn.commit()
+                        st.rerun()
 
             st.markdown("---")
             try:
