@@ -141,8 +141,6 @@ def generate_payslip_pdf(nv_name, ky_luong, data):
 # PHÂN QUYỀN HỆ THỐNG & LÁ CHẮN BẢO VỆ
 # ==========================================
 is_admin = check_password()
-if not is_admin: 
-    st.stop()
 
 if 'dashboard_unlocked' not in st.session_state:
     st.session_state.dashboard_unlocked = False
@@ -245,7 +243,8 @@ ma_ca, thoi_gian_tao = lay_thong_tin_ma_ca()
 hom_nay = lay_gio_vn().strftime("%d/%m/%Y")
 gio_hien_tai = lay_gio_vn().strftime("%H:%M")
 
-if is_admin == "employee":
+# GIAO DIỆN NHÂN VIÊN
+if not is_admin or is_admin == "employee":
     st.markdown("<h2 style='text-align: center; color: #4CAF50;'>📱 HỆ THỐNG CHẤM CÔNG WANCHI</h2>", unsafe_allow_html=True)
     st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
     
@@ -257,6 +256,9 @@ if is_admin == "employee":
         if lay_gio_vn() > (tg_tao_dt + timedelta(hours=13)):
             st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
         else:
+            # Hiển thị mã ca trực tiếp cho nhân viên thấy
+            st.info(f"🔑 Mã Ca Hôm Nay: **{ma_ca}**")
+            
             col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
             with col_c1: nv_cham_cong = st.selectbox("🙋‍♂ Chọn tên của bạn:", ["-- Chọn Tên --"] + df_nv['ten_nv'].tolist() if not df_nv.empty else ["-- Chọn Tên --"])
             with col_c2: pin_nhap = st.text_input("Mã PIN cá nhân:", type="password", max_chars=4)
@@ -284,7 +286,7 @@ if is_admin == "employee":
                     else: st.error("❌ Mã PIN cá nhân sai!")
                 else: st.error("❌ Mã CA TẠI XƯỞNG không đúng!")
 else:
-    # GIAO DIỆN QUẢN LÝ (wanchi9187)
+    # GIAO DIỆN QUẢN LÝ (wanchi9187) HOẶC GIÁM ĐỐC
     if not st.session_state.dashboard_unlocked:
         st.header("👥 Cổng Quản Lý Nhân Sự WANCHI")
         st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
