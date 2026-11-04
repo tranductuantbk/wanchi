@@ -166,17 +166,15 @@ def kiem_tra_du_lieu_thuc_te(connection):
 
 # Kích hoạt lá chắn
 if not kiem_tra_du_lieu_thuc_te(conn):
-    # Nếu mất kết nối, thử xóa cache và gọi Neon dậy 1 lần
     st.cache_resource.clear()
     conn = get_connection()
     
-    # Nếu gọi lần 2 vẫn không được -> Đóng băng hệ thống
     if not kiem_tra_du_lieu_thuc_te(conn):
         st.error("🚨 LÁ CHẮN BẢO VỆ DỮ LIỆU ĐANG KÍCH HOẠT!")
         st.warning("⚠️ Mạng yếu hoặc Máy chủ Neon đang ngủ đông khiến dữ liệu xưởng chưa được tải về. Để chống tình trạng ghi đè làm mất dữ liệu cũ, hệ thống tạm thời KHÓA toàn bộ thao tác.")
         if st.button("🔄 Bấm vào đây để tải lại kết nối", type="primary"):
             st.rerun()
-        st.stop() # 🛑 Lệnh này sẽ chặn đứng mọi code phía dưới, không cho hiện giao diện
+        st.stop()
 
 c = conn.cursor()
 # ==========================================
@@ -266,8 +264,8 @@ if is_admin == "employee":
 
             if nv_cham_cong != "-- Chọn Tên --" and pin_nhap and ma_ca_nhap:
                 real_pin = df_nv[df_nv['ten_nv'] == nv_cham_cong].iloc[0]['ma_pin']
-                if ma_ca_nhap == ma_ca:
-                    if pin_nhap == real_pin:
+                if str(ma_ca_nhap).strip() == str(ma_ca).strip():
+                    if str(pin_nhap).strip() == str(real_pin).strip():
                         c.execute("SELECT gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_cham_cong, hom_nay))
                         trang_thai = c.fetchone()
                         
