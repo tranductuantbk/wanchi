@@ -1080,8 +1080,10 @@ with tab2:
                     sl_loc = sl_cai / quy_cach if quy_cach > 0 else 0
                     sl_loc_list.append(sl_loc)
                     
-                    # Tính toán đơn giá mới nếu có chọn xuất hóa đơn
-                    don_gia_goc = float(row.get('Đơn Giá', row.get('Giá', 0)))
+                    # CẬP NHẬT: Lấy đơn giá đảm bảo quét trúng giá hàng OME nếu có
+                    val_gia = row.get('Đơn Giá OME', row.get('Đơn Giá', row.get('Giá', 0)))
+                    don_gia_goc = float(val_gia) if pd.notna(val_gia) and val_gia != "" else 0.0
+                    
                     if co_xuat_hoa_don:
                         don_gia_moi = round(don_gia_goc / 0.95)
                     else:
@@ -1096,6 +1098,8 @@ with tab2:
                     df_items['Đơn Giá'] = don_gia_list
                 if 'Giá' in df_items.columns:
                     df_items['Giá'] = don_gia_list
+                if 'Đơn Giá OME' in df_items.columns:
+                    df_items['Đơn Giá OME'] = don_gia_list
                 df_items['Thành Tiền'] = thanh_tien_list
                 
                 # Bổ sung cột "Số Bao" cho phép người dùng nhập trực tiếp trên giao diện
@@ -1116,6 +1120,7 @@ with tab2:
                         "Số Lượng Lốc": st.column_config.NumberColumn("Số Lượng (Lốc)", disabled=True, format="%.2f"),
                         "Số Lượng Cái": st.column_config.NumberColumn("Số Lượng (Cái)", disabled=True, format="%.0f"),
                         "Đơn Giá": st.column_config.NumberColumn(disabled=True, format="%.0f"),
+                        "Đơn Giá OME": st.column_config.NumberColumn(disabled=True, format="%.0f"),
                         "Giá": st.column_config.NumberColumn(disabled=True, format="%.0f"),
                         "Thành Tiền": st.column_config.NumberColumn(disabled=True, format="%.0f"),
                         "Ghi Chú": st.column_config.TextColumn(disabled=True),
@@ -1131,7 +1136,10 @@ with tab2:
                             for item in items:
                                 ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
                                 sl = float(item.get('Số Lượng', 0)) # Đây là số lượng cái cần trừ kho
-                                don_gia_sp = float(item.get('Đơn Giá', item.get('Giá', 0)))
+                                
+                                # CẬP NHẬT: Lấy đơn giá quét trúng giá hàng OME
+                                val_gia_sp = item.get('Đơn Giá OME', item.get('Đơn Giá', item.get('Giá', 0)))
+                                don_gia_sp = float(val_gia_sp) if val_gia_sp != "" else 0.0
                                 
                                 # Áp dụng tính giá hóa đơn khi đẩy vào CSDL công nợ
                                 if co_xuat_hoa_don:
@@ -1229,7 +1237,7 @@ with tab2:
                 
                 st.write("**Chi tiết hàng hóa trong đơn gốc:**")
                 df_items = pd.DataFrame(items)
-                cols_to_show = [c for c in ['Tên Sản Phẩm', 'Tên Sản Phẩm OME', 'Số Lượng', 'Đơn Giá', 'Thành Tiền'] if c in df_items.columns]
+                cols_to_show = [c for c in ['Tên Sản Phẩm', 'Tên Sản Phẩm OME', 'Số Lượng', 'Đơn Giá', 'Đơn Giá OME', 'Thành Tiền', 'Thành Tiền OME'] if c in df_items.columns]
                 st.dataframe(df_items[cols_to_show], use_container_width=True, hide_index=True)
 
                 if st.button("🚀 XÁC NHẬN CHUYỂN ĐƠN & GHI CÔNG NỢ", type="primary", use_container_width=True):
@@ -1243,7 +1251,10 @@ with tab2:
                             for item in items:
                                 ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME', ''))
                                 sl = float(item.get('Số Lượng', 0))
-                                thanh_tien_sp = float(item.get('Thành Tiền', 0))
+                                
+                                # CẬP NHẬT: Lấy thành tiền quét trúng giá hàng OME
+                                val_thanh_tien = item.get('Thành Tiền OME', item.get('Thành Tiền', 0))
+                                thanh_tien_sp = float(val_thanh_tien) if val_thanh_tien != "" else 0.0
                                 tong_tien_don += thanh_tien_sp
                                 
                                 # Tra cứu giá đại lý từ database
