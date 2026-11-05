@@ -246,10 +246,57 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
         pdf.cell(w_label, 10, "TỔNG CỘNG:", border=1, align='R')
         pdf.cell(w_value, 10, format_vn(total_amount), border=1, align='R', ln=True)
 
-    pdf.ln(8)
-    pdf.set_font(font_name, size=10)
-    pdf.cell(0, 6, "* Phiếu báo giá có giá trị trong 10 ngày.", ln=True)
-    pdf.cell(0, 6, "* Giá chưa bao gồm phí vận chuyển.", ln=True)
+    # -----------------------------------------------------
+    # CẬP NHẬT THÔNG TIN THANH TOÁN VÀ LƯU Ý MỚI
+    # -----------------------------------------------------
+    pdf.ln(5)
+    current_y = pdf.get_y()
+    
+    # Vẽ khung chữ nhật thông tin thanh toán
+    pdf.rect(10, current_y, 190, 26)
+    
+    pdf.set_y(current_y + 2)
+    # Tiêu đề màu xanh dương
+    pdf.set_text_color(0, 102, 153)
+    pdf.set_font(font_name, 'B' if has_font else '', 11)
+    pdf.cell(0, 6, "  THÔNG TIN THANH TOÁN CHUYỂN KHOẢN", ln=True)
+    
+    pdf.set_text_color(0, 0, 0)
+    
+    # Dòng 1: Tên tài khoản
+    pdf.cell(4, 6, "", ln=0)
+    pdf.set_font(font_name, 'B' if has_font else '', 10)
+    pdf.cell(27, 6, "• Tên tài khoản: ", ln=0)
+    pdf.set_font(font_name, '', 10)
+    pdf.cell(0, 6, "HỘ KINH DOANH WANCHI", ln=True)
+    
+    # Dòng 2: Số tài khoản (chữ số màu xanh)
+    pdf.cell(4, 6, "", ln=0)
+    pdf.set_font(font_name, 'B' if has_font else '', 10)
+    pdf.cell(25, 6, "• Số tài khoản: ", ln=0)
+    pdf.set_text_color(0, 102, 153)
+    pdf.cell(0, 6, "060329421638", ln=True)
+    pdf.set_text_color(0, 0, 0)
+    
+    # Dòng 3: Ngân hàng
+    pdf.cell(4, 6, "", ln=0)
+    pdf.set_font(font_name, 'B' if has_font else '', 10)
+    pdf.cell(24, 6, "• Ngân hàng: ", ln=0)
+    pdf.set_font(font_name, '', 10)
+    pdf.cell(0, 6, "SACOMBANK - PGD AN LẠC", ln=True)
+    
+    pdf.ln(5)
+    
+    # Thông tin cảnh báo màu đỏ
+    pdf.set_text_color(204, 0, 0)
+    pdf.set_font(font_name, 'B' if has_font else '', 10)
+    pdf.cell(0, 6, "BẢNG BÁO GIÁ HẾT HIỆU LỰC SAU 24H", ln=True)
+    
+    # Lưu ý dưới cùng
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font(font_name, '', 10)
+    pdf.cell(0, 6, "• Đơn giá tại nhà máy", ln=True)
+    pdf.cell(0, 6, "• Giá trên đã bao gồm thuế VAT", ln=True)
     
     try: return bytes(pdf.output())
     except:
