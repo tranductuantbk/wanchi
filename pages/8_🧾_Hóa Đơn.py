@@ -123,6 +123,9 @@ with tab1:
         dict_ma = {}
         danh_sach_sp = []
 
+    # Tạo dictionary giá bằng chữ thường để tra cứu chính xác khi tên vật tư bị thay đổi định dạng chữ
+    dict_gia_lower = {str(k).lower(): v for k, v in dict_gia.items()}
+
     if 'bang_hoa_don' not in st.session_state:
         st.session_state.bang_hoa_don = []
 
@@ -134,8 +137,9 @@ with tab1:
         
         if st.form_submit_button("➕ Thêm vào bảng Hóa đơn"):
             if sp_chon != "-- Chọn Sản Phẩm --":
-                # Xử lý tự động thêm "Hộp Nhựa" nếu chưa có
-                ten_vt_hien_thi = sp_chon if str(sp_chon).strip().startswith("Hộp Nhựa") else f"Hộp Nhựa {sp_chon.strip()}"
+                # Xử lý tự động thêm "Hộp Nhựa" nếu chưa có và viết hoa TẤT CẢ chữ cái đầu tiên
+                ten_vt_hien_thi = sp_chon if str(sp_chon).strip().lower().startswith("hộp nhựa") else f"Hộp Nhựa {sp_chon.strip()}"
+                ten_vt_hien_thi = ten_vt_hien_thi.title() 
                 
                 st.session_state.bang_hoa_don.append({
                     "Mã vt": dict_ma.get(sp_chon, ""),  # Tự động chèn Mã vật tư
@@ -160,10 +164,10 @@ with tab1:
         gia_list = []
         tien_list = []
         for _, row in df_bang.iterrows():
-            sp = row['Tên vt']
-            # Lọc bỏ "Hộp Nhựa " để tìm về đúng giá gốc trong DB
-            sp_goc = sp[9:] if str(sp).startswith("Hộp Nhựa ") else sp
-            gia_goc = dict_gia.get(sp, dict_gia.get(sp_goc, 0))
+            sp = str(row['Tên vt']).lower()
+            # Lọc bỏ "hộp nhựa " để tìm về đúng giá gốc trong DB
+            sp_goc = sp[9:] if sp.startswith("hộp nhựa ") else sp
+            gia_goc = dict_gia_lower.get(sp, dict_gia_lower.get(sp_goc, 0))
             
             gia_tinh = gia_goc / 0.95 if chon_che_do == "Chia 0.95" else gia_goc
             gia_tinh = round(float(gia_tinh), 0)  # Làm tròn chẵn để kế toán không bị lỗi số thập phân
@@ -412,14 +416,15 @@ with tab3:
                 # Tự động map mã vật tư
                 ma_vt_list = [dict_ma_tab3.get(ten, "") for ten in df_items_thue['ten_sp']]
 
-                # Tự động thêm "Hộp Nhựa" vào Tên Sản Phẩm nếu chưa có
+                # Tự động thêm "Hộp Nhựa" vào Tên Sản Phẩm nếu chưa có và viết hoa TẤT CẢ chữ cái đầu tiên
                 ten_vt_list = []
                 for ten in df_items_thue['ten_sp']:
                     ten_str = str(ten).strip()
-                    if not ten_str.startswith("Hộp Nhựa"):
-                        ten_vt_list.append(f"Hộp Nhựa {ten_str}")
+                    if not ten_str.lower().startswith("hộp nhựa"):
+                        ten_vt = f"Hộp Nhựa {ten_str}"
                     else:
-                        ten_vt_list.append(ten_str)
+                        ten_vt = ten_str
+                    ten_vt_list.append(ten_vt.title()) 
 
                 df_import_thue = pd.DataFrame({
                     "Mã vt": ma_vt_list,
