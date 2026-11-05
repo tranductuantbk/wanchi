@@ -348,6 +348,46 @@ else:
                 st.rerun()
                 
         st.markdown("---")
+        
+        # --- KHU VỰC CHẤM CÔNG DÀNH CHO QUẢN LÝ (Thêm mới) ---
+        if not ma_ca:
+            st.warning("⚠ Chủ xưởng chưa tạo mã ca làm việc. Vui lòng tạo mã ở khung trên!")
+        else:
+            tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
+            if tg_tao_dt.tzinfo is None: tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
+            if lay_gio_vn() > (tg_tao_dt + timedelta(hours=13)):
+                pass # Lỗi hết hạn mã đã báo ở trên
+            else:
+                st.info("👇 Quản lý có thể trực tiếp quẹt thẻ tại đây:")
+                col_ql1, col_ql2, col_ql3 = st.columns([2, 1, 1])
+                with col_ql1: nv_cham_cong_ql = st.selectbox("🙋‍♂ Chọn tên của bạn:", ["-- Chọn Tên --"] + df_nv['ten_nv'].tolist() if not df_nv.empty else ["-- Chọn Tên --"], key="ql_nv_cham_cong")
+                with col_ql2: pin_nhap_ql = st.text_input("Mã PIN cá nhân:", type="password", max_chars=4, key="ql_pin_nhap")
+                with col_ql3: ma_ca_nhap_ql = st.text_input("Mã CA tại xưởng:", type="password", max_chars=4, key="ql_ma_ca_nhap")
+
+                if nv_cham_cong_ql != "-- Chọn Tên --" and pin_nhap_ql and ma_ca_nhap_ql:
+                    real_pin = df_nv[df_nv['ten_nv'] == nv_cham_cong_ql].iloc[0]['ma_pin']
+                    if str(ma_ca_nhap_ql).strip() == str(ma_ca).strip():
+                        if str(pin_nhap_ql).strip() == str(real_pin).strip():
+                            c.execute("SELECT gio_vao, gio_ra FROM public.cham_cong WHERE ten_nv=%s AND ngay=%s", (nv_cham_cong_ql, hom_nay))
+                            trang_thai = c.fetchone()
+                            
+                            col_b1, col_b2 = st.columns(2)
+                            if not trang_thai:
+                                if col_b1.button("🟢 VÀO CA (Check-in)", type="primary", use_container_width=True, key="ql_checkin"):
+                                    c.execute("INSERT INTO public.cham_cong (ten_nv, ngay, gio_vao) VALUES (%s, %s, %s)", (nv_cham_cong_ql, hom_nay, gio_hien_tai))
+                                    conn.commit(); st.success(f"✅ Đã vào ca lúc {gio_hien_tai}"); time.sleep(1); st.rerun()
+                            elif trang_thai[1] is None:
+                                st.info(f"Bạn đã vào ca lúc: {trang_thai[0]}")
+                                if col_b2.button("🔴 TAN CA (Check-out)", type="primary", use_container_width=True, key="ql_checkout"):
+                                    c.execute("UPDATE public.cham_cong SET gio_ra=%s WHERE ten_nv=%s AND ngay=%s", (gio_hien_tai, nv_cham_cong_ql, hom_nay))
+                                    conn.commit(); st.success(f"✅ Đã tan ca lúc {gio_hien_tai}"); time.sleep(1); st.rerun()
+                            else:
+                                st.success(f"✅ Đã hoàn thành ngày công. ({trang_thai[0]} - {trang_thai[1]})")
+                        else: st.error("❌ Mã PIN cá nhân sai!")
+                    else: st.error("❌ Mã CA TẠI XƯỞNG không đúng!")
+        
+        st.markdown("---")
+
         try:
             df_cc = pd.read_sql(f"SELECT ten_nv, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ngay='{hom_nay}' ORDER BY gio_vao DESC", conn)
             if not df_cc.empty:
