@@ -637,8 +637,45 @@ with tab4:
     try:
         df_his = pd.read_sql("SELECT ma_don, ngay_tao, ten_kh, loai_don, tong_tien, trang_thai, chi_tiet FROM don_hang ORDER BY id DESC", conn)
         if not df_his.empty:
-            df_hien_thi_his = df_his.drop(columns=['chi_tiet'])
-            st.dataframe(df_hien_thi_his, use_container_width=True, hide_index=True)
+            # Tạo bản sao dữ liệu để chỉnh sửa
+            df_hien_thi_his = df_his.drop(columns=['chi_tiet']).copy()
+            df_hien_thi_his.insert(0, "Chọn Xóa", False) 
+            
+            st.info("💡 **Mẹo:** Tích chọn vào các đơn hàng làm sai hoặc đã thu hồi để hiển thị nút xóa.")
+            
+            edited_his = st.data_editor(
+                df_hien_thi_his,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Chọn Xóa": st.column_config.CheckboxColumn("🗑️ Chọn Xóa", default=False),
+                    "ma_don": st.column_config.TextColumn("Mã Đơn", disabled=True),
+                    "ngay_tao": st.column_config.TextColumn("Ngày Tạo", disabled=True),
+                    "ten_kh": st.column_config.TextColumn("Khách Hàng", disabled=True),
+                    "loai_don": st.column_config.TextColumn("Loại Đơn", disabled=True),
+                    "tong_tien": st.column_config.NumberColumn("Tổng Tiền", disabled=True),
+                    "trang_thai": st.column_config.TextColumn("Trạng Thái", disabled=True)
+                },
+                key="editor_lich_su_don"
+            )
+            
+            selected_to_delete = edited_his[edited_his["Chọn Xóa"] == True]
+            
+            if not selected_to_delete.empty:
+                if st.button("🚨 XÓA CÁC ĐƠN ĐÃ CHỌN", type="primary", use_container_width=True):
+                    ma_don_list = selected_to_delete["ma_don"].tolist()
+                    try:
+                        if len(ma_don_list) == 1:
+                            c.execute("DELETE FROM don_hang WHERE ma_don = %s", (ma_don_list[0],))
+                        else:
+                            c.execute(f"DELETE FROM don_hang WHERE ma_don IN {tuple(ma_don_list)}")
+                        conn.commit()
+                        st.success("✅ Đã xóa thành công các đơn hàng được chọn khỏi lịch sử!")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"⚠️ Lỗi xóa dữ liệu: {e}")
             
             st.markdown("---")
             st.subheader("🖨️ Tải Lại Hóa Đơn Cũ")
