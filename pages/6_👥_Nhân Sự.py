@@ -138,14 +138,12 @@ def generate_payslip_pdf(nv_name, ky_luong, data):
     except: return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# PHÂN QUYỀN HỆ THỐNG (ĐÃ TÙY CHỈNH CHO NHÂN SỰ)
+# PHÂN QUYỀN HỆ THỐNG
 # ==========================================
 def xac_thuc_nhan_su():
-    # 1. Kiểm tra nếu Quản lý đã đăng nhập
     if st.session_state.get("password_correct"):
         return True
     
-    # 2. Kiểm tra nếu Nhân viên đã đăng nhập
     if st.session_state.get("employee_logged_in"):
         return "employee"
         
@@ -178,23 +176,21 @@ if 'dashboard_unlocked' not in st.session_state:
     st.session_state.dashboard_unlocked = False
 
 # ==========================================
-# 🛡️ LÁ CHẮN CHỐNG MẤT DỮ LIỆU (DATABASE GUARD)
+# 🛡️ LÁ CHẮN CHỐNG MẤT DỮ LIỆU
 # ==========================================
 conn = get_connection()
 
 def kiem_tra_du_lieu_thuc_te(connection):
-    """Hàm bắn tín hiệu kiểm tra xem Neon có đang ngủ đông không"""
     try:
         if connection.closed != 0:
             return False
         cur = connection.cursor()
-        cur.execute("SELECT 1") # Lệnh test nhẹ nhất để gọi Neon dậy
+        cur.execute("SELECT 1") 
         cur.fetchone()
         return True
     except:
         return False
 
-# Kích hoạt lá chắn
 if not kiem_tra_du_lieu_thuc_te(conn):
     st.cache_resource.clear()
     conn = get_connection()
@@ -275,7 +271,6 @@ ma_ca, thoi_gian_tao = lay_thong_tin_ma_ca()
 hom_nay = lay_gio_vn().strftime("%d/%m/%Y")
 gio_hien_tai = lay_gio_vn().strftime("%H:%M")
 
-# GIAO DIỆN NHÂN VIÊN
 if not is_admin or is_admin == "employee":
     st.markdown("<h2 style='text-align: center; color: #4CAF50;'>📱 HỆ THỐNG CHẤM CÔNG WANCHI</h2>", unsafe_allow_html=True)
     st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
@@ -288,7 +283,6 @@ if not is_admin or is_admin == "employee":
         if lay_gio_vn() > (tg_tao_dt + timedelta(hours=13)):
             st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
         else:
-            # Hiển thị mã ca trực tiếp cho nhân viên thấy
             st.info(f"🔑 Mã Ca Hôm Nay: **{ma_ca}**")
             
             col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
@@ -318,7 +312,6 @@ if not is_admin or is_admin == "employee":
                     else: st.error("❌ Mã PIN cá nhân sai!")
                 else: st.error("❌ Mã CA TẠI XƯỞNG không đúng!")
 else:
-    # GIAO DIỆN QUẢN LÝ (wanchi9187) HOẶC GIÁM ĐỐC
     if not st.session_state.dashboard_unlocked:
         st.header("👥 Cổng Quản Lý Nhân Sự WANCHI")
         st.markdown(f"### 📍 Điểm danh ngày: **{hom_nay}**")
@@ -349,14 +342,13 @@ else:
                 
         st.markdown("---")
         
-        # --- KHU VỰC CHẤM CÔNG DÀNH CHO QUẢN LÝ (Thêm mới) ---
         if not ma_ca:
             st.warning("⚠ Chủ xưởng chưa tạo mã ca làm việc. Vui lòng tạo mã ở khung trên!")
         else:
             tg_tao_dt = datetime.fromisoformat(thoi_gian_tao)
             if tg_tao_dt.tzinfo is None: tg_tao_dt = tg_tao_dt.replace(tzinfo=VN_TZ)
             if lay_gio_vn() > (tg_tao_dt + timedelta(hours=13)):
-                pass # Lỗi hết hạn mã đã báo ở trên
+                pass 
             else:
                 st.info("👇 Quản lý có thể trực tiếp quẹt thẻ tại đây:")
                 col_ql1, col_ql2, col_ql3 = st.columns([2, 1, 1])
@@ -407,7 +399,6 @@ else:
                 else: st.error("❌ Mã PIN không chính xác!")
                 
     else:
-        # GIAO DIỆN GIÁM ĐỐC (ĐÃ MỞ KHÓA tbk1102)
         st.header("👥 Quản Lý Nhân Sự & Lương WANCHI")
         if st.button("🔒 Khóa Lại Hệ Thống", key="lock_all"):
             st.session_state.dashboard_unlocked = False
@@ -439,8 +430,8 @@ else:
                     ma_pin_moi = st.text_input("Mã PIN (4 số)", value="0000", max_chars=4)
 
                 if st.form_submit_button("💾 Lưu Hồ Sơ", type="primary") and ten_nv:
-                    tc_thuong_calc = (luong_cb + luong_nl + t_nien_fixed) / 10.0 * 1.5
-                    tc_cn_calc = (luong_cb + luong_nl + t_nien_fixed) / 10.0 * 2.0
+                    tc_thuong_calc = (luong_cb + luong_nl + t_nien_fixed) / 9.5 * 1.5
+                    tc_cn_calc = (luong_cb + luong_nl + t_nien_fixed) / 9.5 * 2.0
                     try:
                         c.execute("""INSERT INTO public.nhan_vien 
                                      (ten_nv, bo_phan, ngay_vao_lam, luong_cb, luong_nang_luc, tham_nien, tien_com, tc_ngay_thuong_gia, tc_chu_nhat_gia, phu_cap_khac, ma_pin) 
@@ -470,8 +461,8 @@ else:
                                         so_nam_db = 0
                                     t_nien = so_nam_db * cf['tien_tham_nien'] if so_nam_db > 0 else 0
                                     
-                                    tc_thuong_calc = (l_cb + l_nl + t_nien) / 10.0 * 1.5
-                                    tc_cn_calc = (l_cb + l_nl + t_nien) / 10.0 * 2.0
+                                    tc_thuong_calc = (l_cb + l_nl + t_nien) / 9.5 * 1.5
+                                    tc_cn_calc = (l_cb + l_nl + t_nien) / 9.5 * 2.0
                                     
                                     c.execute("""UPDATE public.nhan_vien SET ten_nv=%s, bo_phan=%s, ngay_vao_lam=%s, luong_cb=%s, luong_nang_luc=%s, tham_nien=%s, tien_com=%s, tc_ngay_thuong_gia=%s, tc_chu_nhat_gia=%s, phu_cap_khac=%s, ma_pin=%s WHERE id=%s""", 
                                               (str(row['ten_nv']).strip(), str(row['bo_phan']), str(row['ngay_vao_lam']), l_cb, l_nl, t_nien, float(row['tien_com']), tc_thuong_calc, tc_cn_calc, float(row['phu_cap_khac']), str(row['ma_pin']), int(row['id'])))
@@ -512,7 +503,6 @@ else:
                     quen_ra_ca = False
                     
                     if not g_ra: 
-                        g_ra = cf['gio_ra'] 
                         quen_ra_ca = True
                         so_lan_quen_ra_ca += 1
                         
@@ -520,7 +510,6 @@ else:
                         d = datetime.strptime(ngay_str, "%d/%m/%Y")
                         is_sunday = (d.weekday() == 6)
                         t_in = datetime.strptime(g_vao, "%H:%M")
-                        t_out = datetime.strptime(g_ra, "%H:%M")
                         
                         ot_start = datetime.strptime(cf['gio_ot'], "%H:%M")
                         t_tre_muc = datetime.strptime(cf['gio_tre'], "%H:%M")
@@ -529,19 +518,36 @@ else:
                         if t_in > t_tre_muc:
                             so_lan_tre += 1
                         
-                        if not quen_ra_ca and t_out < t_ve_som_muc and not co_phep:
-                            so_lan_ve_som += 1
-
                         if quen_ra_ca:
-                            ot_hrs = 0.0
+                            pass # Quên ra ca không được tính công, không tăng ca
                         else:
+                            t_out = datetime.strptime(g_ra, "%H:%M")
+                            if t_out < t_ve_som_muc and not co_phep:
+                                so_lan_ve_som += 1
+
                             ot_hrs = max(0, (t_out - ot_start).total_seconds() / 3600) if t_out > ot_start else 0
-                        
-                        if is_sunday: 
-                            auto_tc_cn += 8.0 + ot_hrs
-                        else:
-                            auto_ngay_cong += 1.0 
-                            auto_tc_thuong += ot_hrs      
+                            
+                            if co_phep:
+                                # Quy đổi ngày công từ thời gian làm thực tế
+                                std_in = datetime.strptime(cf['gio_vao'], "%H:%M")
+                                std_out = datetime.strptime(cf['gio_ra'], "%H:%M")
+                                std_hrs = (std_out - std_in).total_seconds() / 3600
+                                if std_hrs <= 0: std_hrs = 9.5
+                                
+                                worked_hrs = max(0, (t_out - t_in).total_seconds() / 3600)
+                                reg_hrs = min(worked_hrs, std_hrs)
+                                
+                                if is_sunday: 
+                                    auto_tc_cn += worked_hrs
+                                else:
+                                    auto_ngay_cong += reg_hrs / std_hrs
+                                    auto_tc_thuong += ot_hrs
+                            else:
+                                if is_sunday: 
+                                    auto_tc_cn += 8.0 + ot_hrs
+                                else:
+                                    auto_ngay_cong += 1.0 
+                                    auto_tc_thuong += ot_hrs      
                     except: pass
 
                 st.info(f"📅 Quét được **{len(bang_cong)}** ngày chấm công. Phát hiện **{so_lan_tre}** lần đi trễ, **{so_lan_ve_som}** lần về sớm, và **{so_lan_quen_ra_ca}** lỗi quên ra ca.")
@@ -574,7 +580,7 @@ else:
 
                 with col_l3:
                     thuong_khac = st.number_input("Thưởng thêm (Nhập tay)", min_value=0, value=0, step=100000)
-                    thuong_tet = st.checkbox("🎉 Cộng thưởng Tết (Lương CB x 30 ngày)")
+                    thuong_tet = st.checkbox("🎉 Cộng thưởng Tết (Lương CB x 26 ngày)")
                     thuong_sn = st.checkbox(f"🎂 Cộng thưởng sinh nhật (+{cf['tien_thuong_sinh_nhat']:,.0f} đ)")
                     tam_ung = st.number_input("Tiền tạm ứng tự nhập nếu có", value=0, step=50000)
                     
@@ -592,16 +598,16 @@ else:
                                     ghi_chu_txt.append(f"Lễ {ngay_le} (+100k & LCB)")
                     except: pass
                     
-                    tien_thuong_tet = (l_cb * 30) if thuong_tet else 0
+                    tien_thuong_tet = (l_cb * 26) if thuong_tet else 0
                     tien_thuong_sn = cf['tien_thuong_sinh_nhat'] if thuong_sn else 0
                     
                     tien_phu_cap_chuc_vu = 0
                     bo_phan_str = str(nv_data.get('bo_phan', '')).lower()
                     if 'quản lý' in bo_phan_str or 'kỹ thuật trưởng' in bo_phan_str:
-                        tien_phu_cap_chuc_vu = 300000
-                        ghi_chu_txt.append("Phụ cấp chức vụ (+300k)")
+                        tien_phu_cap_chuc_vu = 200000
+                        ghi_chu_txt.append("Phụ cấp chức vụ (+200k)")
                         
-                    if thuong_tet: ghi_chu_txt.append("Thưởng Tết (+30 ngày LCB)")
+                    if thuong_tet: ghi_chu_txt.append("Thưởng Tết (+26 ngày LCB)")
                     if thuong_sn: ghi_chu_txt.append("Thưởng sinh nhật")
                     
                     thuong = thuong_khac + tien_thuong_le + tien_thuong_tet + tien_thuong_sn + tien_phu_cap_chuc_vu
@@ -764,10 +770,10 @@ else:
                     gio_ot_moi = st.time_input("Thời điểm bắt đầu tính Tăng Ca (OT)", datetime.strptime(cf['gio_ot'], "%H:%M").time())
                     
                     st.markdown("**3. Cách tính tăng ca & Quên quẹt thẻ (Tự động)**")
-                    st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 10 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 10 * 200%\n- Quên ra ca: Vẫn tính 1 ngày công nhưng KHÔNG tính tăng ca, tự động ghi nhận 1 lỗi quên ra ca.\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
+                    st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca: Không tính ngày công, không tính tăng ca, tự động ghi nhận 1 lỗi quên ra ca.\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                     
                     st.markdown("**5. Cách tính thưởng Lễ, Tết, Mừng sinh nhật & Phụ cấp chức vụ**")
-                    st.info("- **Lễ 30/4, 1/5, 2/9**: Trùng T2-T7 = Lương CB + 100.000đ; Trùng Chủ nhật = 100.000đ.\n- **Thưởng Tết**: Lương CB x 30 ngày.\n- **Mừng sinh nhật**: 300.000đ.\n- **Quản lý / Kỹ thuật trưởng**: Tự động cộng thêm 300.000đ/tháng (Có thể chỉnh sửa số tiền này lúc tính lương).\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết và Mừng sinh nhật có nút tích chọn ở phần Tính lương)*")
+                    st.info("- **Lễ 30/4, 1/5, 2/9**: Trùng T2-T7 = Lương CB + 100.000đ; Trùng Chủ nhật = 100.000đ.\n- **Thưởng Tết**: Lương CB x 26 ngày.\n- **Mừng sinh nhật**: 300.000đ.\n- **Quản lý / Kỹ thuật trưởng**: Tự động cộng thêm 200.000đ/tháng (Có thể chỉnh sửa số tiền này lúc tính lương).\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết và Mừng sinh nhật có nút tích chọn ở phần Tính lương)*")
                 with c2:
                     st.markdown("**2. Quy tắc Đi trễ & Về sớm**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
