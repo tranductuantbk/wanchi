@@ -283,7 +283,7 @@ if not is_admin or is_admin == "employee":
         if lay_gio_vn() > (tg_tao_dt + timedelta(hours=13)):
             st.error("🛑 Mã ca làm việc đã hết hạn. Vui lòng báo Admin tạo mã mới!")
         else:
-            st.info(f"🔑 Mã Ca Hôm Nay: **{ma_ca}**")
+            st.info(f"🔑 Mã Ca Hôm Hôm Nay: **{ma_ca}**")
             
             col_c1, col_c2, col_c3 = st.columns([2, 1, 1])
             with col_c1: nv_cham_cong = st.selectbox("🙋‍♂ Chọn tên của bạn:", ["-- Chọn Tên --"] + df_nv['ten_nv'].tolist() if not df_nv.empty else ["-- Chọn Tên --"])
@@ -496,7 +496,7 @@ else:
                 c.execute("SELECT ngay, gio_vao, gio_ra, ve_som_co_phep FROM public.cham_cong WHERE ten_nv=%s AND ngay LIKE %s", (chon_nv_luong, f"%/{ky_luong_str}"))
                 bang_cong = c.fetchall()
 
-                auto_ngay_cong, auto_tc_thuong, auto_tc_cn, so_lan_tre, so_lan_ve_som, so_lan_quen_ra_ca = 0.0, 0.0, 0.0, 0, 0, 0
+                auto_ngay_cong, auto_tc_thuong, auto_tc_cn, so_lan_tre, so_lan_ve_som, so_lan_xin_phep, so_lan_quen_ra_ca = 0.0, 0.0, 0.0, 0, 0, 0, 0
                 for r in bang_cong:
                     ngay_str, g_vao, g_ra, co_phep = r
                     co_phep = bool(co_phep)
@@ -522,8 +522,11 @@ else:
                             pass 
                         else:
                             t_out = datetime.strptime(g_ra, "%H:%M")
-                            if t_out < t_ve_som_muc and not co_phep:
-                                so_lan_ve_som += 1
+                            if t_out < t_ve_som_muc:
+                                if co_phep:
+                                    so_lan_xin_phep += 1
+                                else:
+                                    so_lan_ve_som += 1
 
                             ot_hrs = max(0, (t_out - ot_start).total_seconds() / 3600) if t_out > ot_start else 0
                             
@@ -549,10 +552,13 @@ else:
                                     auto_tc_thuong += ot_hrs      
                     except: pass
 
-                st.info(f"📅 Quét được **{len(bang_cong)}** ngày chấm công. Phát hiện **{so_lan_tre}** lần đi trễ, **{so_lan_ve_som}** lần về sớm, và **{so_lan_quen_ra_ca}** lỗi quên ra ca.")
+                st.info(f"📅 Quét được **{len(bang_cong)}** ngày chấm công. Phát hiện **{so_lan_tre}** lần đi trễ, **{so_lan_ve_som}** lần về sớm không phép, **{so_lan_xin_phep}** lần xin phép về sớm, và **{so_lan_quen_ra_ca}** lỗi quên ra ca.")
                 
                 if so_lan_tre > cf['so_lan_tre_toida']:
                     st.error(f"🚨 CẢNH BÁO ĐỎ: Nhân viên này đã đi trễ {so_lan_tre} lần trong tháng (Vượt mức cho phép {cf['so_lan_tre_toida']} lần)!")
+                
+                if so_lan_xin_phep > 3:
+                    st.error(f"🚨 CẢNH BÁO ĐỎ: Nhân viên này đã XIN PHÉP VỀ SỚM {so_lan_xin_phep} lần trong tháng (Vượt mức cho phép 3 lần)!")
 
                 st.markdown("---")
                 def s_int(val): return int(val) if pd.notna(val) else 0
@@ -613,6 +619,7 @@ else:
                     
                     if so_lan_tre > 0: ghi_chu_txt.append(f"Đi trễ {so_lan_tre} lần")
                     if so_lan_ve_som > 0: ghi_chu_txt.append(f"Về sớm {so_lan_ve_som} lần")
+                    if so_lan_xin_phep > 0: ghi_chu_txt.append(f"Xin phép về sớm {so_lan_xin_phep} lần")
                     if so_lan_quen_ra_ca > 0: ghi_chu_txt.append(f"Lỗi quên ra ca: {so_lan_quen_ra_ca} lần")
                     ghi_chu = st.text_area("Ghi chú", value=", ".join(ghi_chu_txt) + "." if ghi_chu_txt else "")
 
