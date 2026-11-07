@@ -994,32 +994,34 @@ with tab2:
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
                     if st.button("💾 TẠO ĐƠN & XUẤT PHIẾU (Không ghi công nợ)", type="primary", use_container_width=True):
-                        if ncc_chon == "-- Chọn NCC --":
-                            st.error("⚠️ Vui lòng chọn Nhà Cung Cấp!")
-                        else:
-                            ma_phieu_nhap = f"PN_{int(time.time())}"
-                            ngay_nhap_str = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                        # Gỡ bỏ kiểm tra NCC, thay bằng chuỗi rỗng nếu chưa chọn
+                        ten_ncc_luu = ncc_chon if ncc_chon != "-- Chọn NCC --" else ""
+                        
+                        ma_phieu_nhap = f"PN_{int(time.time())}"
+                        ngay_nhap_str = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
+                        
+                        df_luu = pd.DataFrame(st.session_state.gio_nhap_kho)
+                        
+                        # CHỈ LƯU VÀO BẢNG ĐƠN TẠO, KHÔNG TRỪ/CỘNG TỒN KHO, KHÔNG GHI CÔNG NỢ
+                        chi_tiet_json = df_luu.to_json(orient='records')
+                        c.execute("""INSERT INTO public.ls_don_nhap_hang (ma_phieu, ngay_tao, ten_ncc, tong_tien, chi_tiet, ghi_chu)
+                                     VALUES (%s, %s, %s, %s, %s, %s)""",
+                                  (ma_phieu_nhap, ngay_nhap_str, ten_ncc_luu, tong_tien, chi_tiet_json, ghi_chu))
+                        conn.commit()
+                        don_dep_lich_su_don_nhap() # Giữ 10 đơn gần nhất
+                        
+                        pdf_nhap = generate_phieu_nhap_pdf(ma_phieu_nhap, ten_ncc_luu, df_luu, tong_tien, ghi_chu, ngay_nhap_str)
+                        st.session_state['pdf_phieu_nhap'] = pdf_nhap
+                        
+                        ten_file_ncc = ten_ncc_luu if ten_ncc_luu else "ChuaXacDinh"
+                        st.session_state['ten_phieu_nhap'] = f"{ma_phieu_nhap}_{ten_file_ncc}.pdf"
+                        
+                        img_nhap = convert_pdf_to_png(pdf_nhap)
+                        if img_nhap:
+                            st.session_state['img_phieu_nhap'] = img_nhap
                             
-                            df_luu = pd.DataFrame(st.session_state.gio_nhap_kho)
-                            
-                            # CHỈ LƯU VÀO BẢNG ĐƠN TẠO, KHÔNG TRỪ/CỘNG TỒN KHO, KHÔNG GHI CÔNG NỢ
-                            chi_tiet_json = df_luu.to_json(orient='records')
-                            c.execute("""INSERT INTO public.ls_don_nhap_hang (ma_phieu, ngay_tao, ten_ncc, tong_tien, chi_tiet, ghi_chu)
-                                         VALUES (%s, %s, %s, %s, %s, %s)""",
-                                      (ma_phieu_nhap, ngay_nhap_str, ncc_chon, tong_tien, chi_tiet_json, ghi_chu))
-                            conn.commit()
-                            don_dep_lich_su_don_nhap() # Giữ 10 đơn gần nhất
-                            
-                            pdf_nhap = generate_phieu_nhap_pdf(ma_phieu_nhap, ncc_chon, df_luu, tong_tien, ghi_chu, ngay_nhap_str)
-                            st.session_state['pdf_phieu_nhap'] = pdf_nhap
-                            st.session_state['ten_phieu_nhap'] = f"{ma_phieu_nhap}_{ncc_chon}.pdf"
-                            
-                            img_nhap = convert_pdf_to_png(pdf_nhap)
-                            if img_nhap:
-                                st.session_state['img_phieu_nhap'] = img_nhap
-                                
-                            st.session_state.gio_nhap_kho = []
-                            st.success("✅ Đã tạo đơn nháp thành công! Hãy tải file bên dưới.")
+                        st.session_state.gio_nhap_kho = []
+                        st.success("✅ Đã tạo đơn nháp thành công! Hãy tải file bên dưới.")
                 
                 with col_b2:
                     if st.button("🗑️ Xóa Phiếu Nháp", use_container_width=True):
