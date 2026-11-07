@@ -144,6 +144,17 @@ try:
                     tong_tien_don REAL DEFAULT 0,
                     so_tien_ghi_no REAL DEFAULT 0
                 )''')
+                
+    # BẢNG MỚI ĐỂ LƯU ĐƠN NHẬP HÀNG (CHỈ TẠO ĐƠN, KHÔNG GHI CÔNG NỢ)
+    c.execute('''CREATE TABLE IF NOT EXISTS public.ls_don_nhap_hang (
+                    id SERIAL PRIMARY KEY, 
+                    ma_phieu TEXT, 
+                    ngay_tao TEXT, 
+                    ten_ncc TEXT, 
+                    tong_tien REAL DEFAULT 0, 
+                    chi_tiet TEXT, 
+                    ghi_chu TEXT
+                )''')
     conn.commit()
 except: 
     conn.rollback()
@@ -171,6 +182,18 @@ def don_dep_lich_su_chuyen_don():
                      WHERE id NOT IN (
                          SELECT id FROM public.ls_chuyen_don 
                          ORDER BY id DESC LIMIT 50
+                     )""")
+        conn.commit()
+    except: 
+        conn.rollback()
+
+def don_dep_lich_su_don_nhap():
+    """Hàm tự động dọn dẹp, chỉ giữ lại 10 đơn nhập hàng gần nhất"""
+    try:
+        c.execute("""DELETE FROM public.ls_don_nhap_hang
+                     WHERE id NOT IN (
+                         SELECT id FROM public.ls_don_nhap_hang 
+                         ORDER BY id DESC LIMIT 10
                      )""")
         conn.commit()
     except: 
@@ -892,7 +915,7 @@ with tab2:
     st.markdown("---")
 
     if "0. Tạo Đơn Nhập Hàng" in chuyem_muc:
-        st.markdown("#### 📝 Lập Phiếu Nhập Kho (Nhiều Vật Tư)")
+        st.markdown("#### 📝 Lập Phiếu Nhập Kho (Đơn thuần tạo phiếu)")
         
         if 'gio_nhap_kho' not in st.session_state:
             st.session_state.gio_nhap_kho = []
@@ -970,7 +993,7 @@ with tab2:
                 
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
-                    if st.button("💾 LƯU KHO & TẠO PHIẾU", type="primary", use_container_width=True):
+                    if st.button("💾 TẠO ĐƠN & XUẤT PHIẾU (Không ghi công nợ)", type="primary", use_container_width=True):
                         if ncc_chon == "-- Chọn NCC --":
                             st.error("⚠️ Vui lòng chọn Nhà Cung Cấp!")
                         else:
@@ -979,22 +1002,13 @@ with tab2:
                             
                             df_luu = pd.DataFrame(st.session_state.gio_nhap_kho)
                             
-                            for _, row in df_luu.iterrows():
-                                vt = row['Vật Tư']
-                                sl = row['Số Lượng']
-                                pl = row['Phân Loại']
-                                dg = row.get('Đơn Giá', 0)
-                                tt = row.get('Thành Tiền', 0)
-                                gc_chi_tiet = f"Phiếu {ma_phieu_nhap} - Phân loại: {pl} - {ghi_chu}" if ghi_chu else f"Phiếu {ma_phieu_nhap} - Phân loại: {pl}"
-                                
-                                c.execute("UPDATE public.dm_nguyen_lieu SET ton_kho = ton_kho + %s WHERE ten_nl = %s", (sl, vt))
-                                
-                                c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
-                                             (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, nha_cung_cap, trang_thai_tt) 
-                                             VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s, %s, %s)""", 
-                                          (ngay_nhap_str, vt, sl, dg, tt, gc_chi_tiet, ncc_chon, trang_thai_tt))
-                            
+                            # CHỈ LƯU VÀO BẢNG ĐƠN TẠO, KHÔNG TRỪ/CỘNG TỒN KHO, KHÔNG GHI CÔNG NỢ
+                            chi_tiet_json = df_luu.to_json(orient='records')
+                            c.execute("""INSERT INTO public.ls_don_nhap_hang (ma_phieu, ngay_tao, ten_ncc, tong_tien, chi_tiet, ghi_chu)
+                                         VALUES (%s, %s, %s, %s, %s, %s)""",
+                                      (ma_phieu_nhap, ngay_nhap_str, ncc_chon, tong_tien, chi_tiet_json, ghi_chu))
                             conn.commit()
+                            don_dep_lich_su_don_nhap() # Giữ 10 đơn gần nhất
                             
                             pdf_nhap = generate_phieu_nhap_pdf(ma_phieu_nhap, ncc_chon, df_luu, tong_tien, ghi_chu, ngay_nhap_str)
                             st.session_state['pdf_phieu_nhap'] = pdf_nhap
@@ -1005,7 +1019,7 @@ with tab2:
                                 st.session_state['img_phieu_nhap'] = img_nhap
                                 
                             st.session_state.gio_nhap_kho = []
-                            st.success("✅ Đã lưu kho và tạo phiếu thành công! Hãy tải file bên dưới.")
+                            st.success("✅ Đã tạo đơn nháp thành công! Hãy tải file bên dưới.")
                 
                 with col_b2:
                     if st.button("🗑️ Xóa Phiếu Nháp", use_container_width=True):
@@ -1024,6 +1038,49 @@ with tab2:
                             
         except Exception as e:
             st.error(f"Lỗi: {e}")
+            
+        # ------------------------------------------
+        # BẢNG 10 ĐƠN NHẬP HÀNG ĐÃ TẠO
+        # ------------------------------------------
+        st.markdown("---")
+        st.markdown("#### 📋 Danh sách 10 Đơn Nhập Hàng gần nhất (Chưa ghi nhận công nợ)")
+        try:
+            df_don_nhap = pd.read_sql("SELECT id, ma_phieu, ngay_tao, ten_ncc, tong_tien, ghi_chu FROM public.ls_don_nhap_hang ORDER BY id DESC LIMIT 10", conn)
+            if not df_don_nhap.empty:
+                df_don_nhap.insert(0, "Xóa Đơn", False)
+                df_don_nhap.columns = ["Xóa Đơn", "ID", "Mã Phiếu", "Ngày Tạo", "Nhà Cung Cấp", "Tổng Tiền (VNĐ)", "Ghi Chú"]
+                
+                edited_don = st.data_editor(
+                    df_don_nhap,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "Xóa Đơn": st.column_config.CheckboxColumn("🗑️ Chọn Xóa", default=False),
+                        "ID": None,
+                        "Mã Phiếu": st.column_config.TextColumn(disabled=True),
+                        "Ngày Tạo": st.column_config.TextColumn(disabled=True),
+                        "Nhà Cung Cấp": st.column_config.TextColumn(disabled=True),
+                        "Tổng Tiền (VNĐ)": st.column_config.NumberColumn("Tổng Tiền (VNĐ)", disabled=True, format="%.0f"),
+                        "Ghi Chú": st.column_config.TextColumn(disabled=True)
+                    },
+                    key="editor_don_nhap"
+                )
+                
+                selected_don = edited_don[edited_don["Xóa Đơn"] == True]
+                if not selected_don.empty:
+                    if st.button("🚨 XÓA CÁC ĐƠN ĐÃ CHỌN", type="primary"):
+                        ids_to_delete = selected_don["ID"].tolist()
+                        if len(ids_to_delete) == 1:
+                            c.execute("DELETE FROM public.ls_don_nhap_hang WHERE id = %s", (ids_to_delete[0],))
+                        else:
+                            c.execute(f"DELETE FROM public.ls_don_nhap_hang WHERE id IN {tuple(ids_to_delete)}")
+                        conn.commit()
+                        st.success("✅ Đã xóa đơn khỏi lịch sử thành công!")
+                        time.sleep(1.5); st.rerun()
+            else:
+                st.info("Chưa có đơn nhập hàng nào được tạo.")
+        except Exception as e:
+            st.error(f"Lỗi hiển thị bảng đơn nhập: {e}")
 
     elif "3. Xuất Kho" in chuyem_muc:
         st.markdown("#### 🚚 Quản Lý Xuất Kho & Thu Hồi Đơn")
