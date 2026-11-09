@@ -1254,7 +1254,7 @@ with tab2:
                                     
                                     c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
                                                  (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, tien_da_thu, ghi_chu, khach_hang, trang_thai_tt) 
-                                                 VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s, %s, %s)""", 
+                                                 VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s, %s)""", 
                                               (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, -sl, don_gia_sp, thanh_tien_sp, tien_da_thu_sp, f"Đơn {ma_don_chon}{ghi_chu_hd}", ten_khach_hang_hien_tai, trang_thai_tt_xuat))
                                     
                                 c.execute("UPDATE public.don_hang SET trang_thai = 'Đã xuất kho' WHERE ma_don = %s", (ma_don_chon,))
