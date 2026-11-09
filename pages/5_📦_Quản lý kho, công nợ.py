@@ -1423,11 +1423,39 @@ with tab2:
                 try:
                     df_ls_nhap = pd.read_sql("SELECT id, ngay_thao_tac, nha_cung_cap, ten_nl, so_luong, don_gia, thanh_tien, trang_thai_tt, ghi_chu FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac='Nhập NVL' ORDER BY id DESC LIMIT 100", conn)
                     if not df_ls_nhap.empty:
-                        df_ls_nhap.columns = ["ID", "Ngày Nhập", "Nhà Cung Cấp", "Vật Tư", "Số Lượng", "Đơn Giá (VNĐ)", "Thành Tiền (VNĐ)", "Trạng Thái", "Ghi Chú"]
-                        df_ls_nhap['Đơn Giá (VNĐ)'] = df_ls_nhap['Đơn Giá (VNĐ)'].apply(lambda x: format_vn(x))
-                        df_ls_nhap['Thành Tiền (VNĐ)'] = df_ls_nhap['Thành Tiền (VNĐ)'].apply(lambda x: format_vn(x))
+                        df_ls_nhap.insert(0, "Xóa Phiếu", False)
+                        df_ls_nhap.columns = ["Xóa Phiếu", "ID", "Ngày Nhập", "Nhà Cung Cấp", "Vật Tư", "Số Lượng", "Đơn Giá (VNĐ)", "Thành Tiền (VNĐ)", "Trạng Thái", "Ghi Chú"]
                         
-                        st.dataframe(df_ls_nhap.drop(columns=["ID"]), use_container_width=True, hide_index=True)
+                        edited_nhap = st.data_editor(
+                            df_ls_nhap,
+                            hide_index=True,
+                            use_container_width=True,
+                            column_config={
+                                "Xóa Phiếu": st.column_config.CheckboxColumn("🗑️ Chọn Xóa", default=False),
+                                "ID": None,
+                                "Ngày Nhập": st.column_config.TextColumn(disabled=True),
+                                "Nhà Cung Cấp": st.column_config.TextColumn(disabled=True),
+                                "Vật Tư": st.column_config.TextColumn(disabled=True),
+                                "Số Lượng": st.column_config.NumberColumn(disabled=True),
+                                "Đơn Giá (VNĐ)": st.column_config.NumberColumn("Đơn Giá (VNĐ)", disabled=True, format="%.0f"),
+                                "Thành Tiền (VNĐ)": st.column_config.NumberColumn("Thành Tiền (VNĐ)", disabled=True, format="%.0f"),
+                                "Trạng Thái": st.column_config.TextColumn(disabled=True),
+                                "Ghi Chú": st.column_config.TextColumn(disabled=True)
+                            },
+                            key="editor_ls_nhap_nvl"
+                        )
+                        
+                        selected_nhap = edited_nhap[edited_nhap["Xóa Phiếu"] == True]
+                        if not selected_nhap.empty:
+                            if st.button("🚨 XÓA CÁC PHIẾU ĐÃ CHỌN", type="primary"):
+                                ids_to_delete = selected_nhap["ID"].tolist()
+                                if len(ids_to_delete) == 1:
+                                    c.execute("DELETE FROM public.ls_nhap_xuat_kho WHERE id = %s", (ids_to_delete[0],))
+                                else:
+                                    c.execute(f"DELETE FROM public.ls_nhap_xuat_kho WHERE id IN {tuple(ids_to_delete)}")
+                                conn.commit()
+                                st.success("✅ Đã xóa phiếu nhập thành công! Hệ thống đã tự động gỡ khoản này khỏi Công nợ và Chi phí.")
+                                time.sleep(1.5); st.rerun()
                     else:
                         st.info("Chưa có đơn nhập nguyên vật liệu nào được ghi nhận.")
                 except Exception as e:
