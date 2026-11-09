@@ -1127,14 +1127,18 @@ with tab2:
                 ten_khach_hang_hien_tai = don_info['ten_kh']
                 la_dai_ly = "đại lý" in ten_khach_hang_hien_tai.lower()
                 
-                # Thêm mục chọn Có xuất hóa đơn (Chia 0.95 để ghi nhận công nợ)
-                co_xuat_hoa_don = st.checkbox("✅ Có xuất hóa đơn (Ghi nhận công nợ chia 0.95)", value=False)
+                # Hai nút chọn loại hóa đơn
+                col_hd1, col_hd2 = st.columns(2)
+                with col_hd1:
+                    co_xuat_hoa_don = st.checkbox("✅ Có xuất hóa đơn (Chia 0.95)", value=False)
+                with col_hd2:
+                    co_xuat_hoa_don_nguyen = st.checkbox("✅ Có xuất hóa đơn (Giữ nguyên giá)", value=False)
                 
                 # Mặc định chọn "Chưa thanh toán" (index=0) cho mọi đơn xuất kho
                 trang_thai_tt_xuat = st.selectbox(
                     "Trạng thái thanh toán Đơn hàng", 
                     ["Chưa thanh toán", "Đã thanh toán"], 
-                    index=0
+                    index=0 if la_dai_ly else 1
                 )
                 
                 items = json.loads(don_info['chi_tiet'])
@@ -1171,8 +1175,11 @@ with tab2:
                     val_gia = row.get('Đơn Giá OME', row.get('Đơn Giá', row.get('Giá', 0)))
                     don_gia_goc = float(val_gia) if pd.notna(val_gia) and val_gia != "" else 0.0
                     
-                    if co_xuat_hoa_don:
+                    # Áp dụng logic hiển thị bảng
+                    if co_xuat_hoa_don and not co_xuat_hoa_don_nguyen:
                         don_gia_moi = round(don_gia_goc / 0.95)
+                    elif co_xuat_hoa_don_nguyen and not co_xuat_hoa_don:
+                        don_gia_moi = don_gia_goc
                     else:
                         don_gia_moi = don_gia_goc
                         
@@ -1220,30 +1227,38 @@ with tab2:
                 if don_info['trang_thai'] in ['Chờ xuất kho', 'Mới tạo']:
                     with c_btn1:
                         if st.button("📦 XÁC NHẬN XUẤT KHO", type="primary", use_container_width=True):
-                            for item in items:
-                                ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
-                                sl = float(item.get('Số Lượng', 0)) # Đây là số lượng cái cần trừ kho
-                                
-                                # CẬP NHẬT: Lấy đơn giá quét trúng giá hàng OME
-                                val_gia_sp = item.get('Đơn Giá OME', item.get('Đơn Giá', item.get('Giá', 0)))
-                                don_gia_sp = float(val_gia_sp) if val_gia_sp != "" else 0.0
-                                
-                                # Áp dụng tính giá hóa đơn khi đẩy vào CSDL công nợ
-                                if co_xuat_hoa_don:
-                                    don_gia_sp = round(don_gia_sp / 0.95)
+                            if co_xuat_hoa_don and co_xuat_hoa_don_nguyen:
+                                st.error("⚠️ Vui lòng chỉ tích chọn 1 loại xuất hóa đơn!")
+                            else:
+                                for item in items:
+                                    ten_sp = item.get('Tên Sản Phẩm', item.get('Tên Sản Phẩm OME'))
+                                    sl = float(item.get('Số Lượng', 0)) # Đây là số lượng cái cần trừ kho
                                     
-                                thanh_tien_sp = sl * don_gia_sp
-                                
-                                c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
-                                c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
-                                
-                                c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
-                                             (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, ghi_chu, khach_hang, trang_thai_tt) 
-                                             VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s)""", 
-                                          (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, -sl, don_gia_sp, thanh_tien_sp, f"Đơn {ma_don_chon}", ten_khach_hang_hien_tai, trang_thai_tt_xuat))
-                                
-                            c.execute("UPDATE public.don_hang SET trang_thai = 'Đã xuất kho' WHERE ma_don = %s", (ma_don_chon,))
-                            conn.commit(); st.success("Đã xuất kho và lưu công nợ!"); time.sleep(1.5); st.rerun()
+                                    # CẬP NHẬT: Lấy đơn giá quét trúng giá hàng OME
+                                    val_gia_sp = item.get('Đơn Giá OME', item.get('Đơn Giá', item.get('Giá', 0)))
+                                    don_gia_sp = float(val_gia_sp) if val_gia_sp != "" else 0.0
+                                    
+                                    ghi_chu_hd = ""
+                                    if co_xuat_hoa_don:
+                                        don_gia_sp = round(don_gia_sp / 0.95)
+                                        ghi_chu_hd = " (Hóa đơn chia 0.95)"
+                                    elif co_xuat_hoa_don_nguyen:
+                                        ghi_chu_hd = " (Hóa đơn nguyên giá)"
+                                        
+                                    thanh_tien_sp = sl * don_gia_sp
+                                    # Phân loại Doanh Thu hay Công Nợ ngay lúc lưu
+                                    tien_da_thu_sp = thanh_tien_sp if trang_thai_tt_xuat == "Đã thanh toán" else 0
+                                    
+                                    c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
+                                    c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (sl, ten_sp))
+                                    
+                                    c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
+                                                 (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, don_gia, thanh_tien, tien_da_thu, ghi_chu, khach_hang, trang_thai_tt) 
+                                                 VALUES (%s, 'Xuất Bán', %s, %s, %s, %s, %s, %s, %s, %s, %s)""", 
+                                              (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, -sl, don_gia_sp, thanh_tien_sp, tien_da_thu_sp, f"Đơn {ma_don_chon}{ghi_chu_hd}", ten_khach_hang_hien_tai, trang_thai_tt_xuat))
+                                    
+                                c.execute("UPDATE public.don_hang SET trang_thai = 'Đã xuất kho' WHERE ma_don = %s", (ma_don_chon,))
+                                conn.commit(); st.success("Đã xuất kho và lưu số liệu thành công!"); time.sleep(1.5); st.rerun()
                     
                     with c_btn2:
                         if st.button("❌ HỦY ĐƠN NÀY", use_container_width=True):
@@ -1279,17 +1294,52 @@ with tab2:
                                 sl = float(item.get('Số Lượng', 0))
                                 c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl, ten_sp))
                                 c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (sl, ten_sp))
-                                c.execute("INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu) VALUES (%s, 'Thu hồi đơn', %s, %s, %s)", (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, sl, f"Thu hồi đơn {ma_don_chon}"))
+                                c.execute("INSERT INTO public.ls_nhap_xuat_kho (ngay_thao_tac, loai_thao_tac, ten_nl, so_luong, ghi_chu, khach_hang) VALUES (%s, 'Thu hồi đơn', %s, %s, %s, %s)", (lay_gio_vn().strftime("%d/%m/%Y %H:%M"), ten_sp, sl, f"Thu hồi đơn {ma_don_chon}", don_info['ten_kh']))
                             
-                            # Xóa khoản công nợ ứng với mã đơn này khỏi bảng ls_nhap_xuat_kho
-                            c.execute("DELETE FROM public.ls_nhap_xuat_kho WHERE ghi_chu = %s AND loai_thao_tac = 'Xuất Bán'", (f"Đơn {ma_don_chon}",))
+                            # Xóa khoản công nợ/doanh thu ứng với mã đơn này khỏi bảng ls_nhap_xuat_kho
+                            c.execute("DELETE FROM public.ls_nhap_xuat_kho WHERE (ghi_chu = %s OR ghi_chu LIKE %s) AND loai_thao_tac = 'Xuất Bán'", (f"Đơn {ma_don_chon}", f"Đơn {ma_don_chon} (%"))
 
                             c.execute("UPDATE public.don_hang SET trang_thai = 'Đã thu hồi' WHERE ma_don = %s", (ma_don_chon,))
-                            conn.commit(); st.info("Đã thu hồi hàng về kho và xóa công nợ gốc."); time.sleep(1.5); st.rerun()
+                            conn.commit(); st.info("Đã thu hồi hàng về kho và xóa công nợ/doanh thu gốc."); time.sleep(1.5); st.rerun()
                 else:
                     st.info(f"Đơn hàng này đang ở trạng thái: **{don_info['trang_thai']}**")
 
             else: st.info("Chưa có đơn hàng nào.")
+            
+            # --- BẢNG THEO DÕI XUẤT KHO VÀ THU HỒI ---
+            st.markdown("---")
+            st.markdown("#### 📋 Bảng Danh Sách Phiếu Xuất Kho & Thu Hồi")
+            try:
+                df_ls_xuat = pd.read_sql("""
+                    SELECT 
+                        MAX(ngay_thao_tac) as "Ngày Thao Tác", 
+                        ghi_chu as "Số Phiếu (Ghi chú)", 
+                        MAX(khach_hang) as "Khách Hàng", 
+                        loai_thao_tac as "Trạng Thái (Loại)", 
+                        MAX(trang_thai_tt) as "Thanh Toán",
+                        SUM(thanh_tien) as "Tổng Tiền (VNĐ)",
+                        SUM(tien_da_thu) as "Doanh Thu (Đã thu)",
+                        SUM(thanh_tien - COALESCE(tien_da_thu, 0)) as "Công Nợ (Chưa thu)"
+                    FROM public.ls_nhap_xuat_kho
+                    WHERE loai_thao_tac IN ('Xuất Bán', 'Thu hồi đơn')
+                    GROUP BY ghi_chu, loai_thao_tac
+                    ORDER BY MAX(id) DESC
+                    LIMIT 100
+                """, conn)
+                
+                if not df_ls_xuat.empty:
+                    df_ls_xuat['Thanh Toán'] = df_ls_xuat['Thanh Toán'].fillna('---')
+                    df_ls_xuat['Khách Hàng'] = df_ls_xuat['Khách Hàng'].fillna('---')
+                    df_ls_xuat['Tổng Tiền (VNĐ)'] = df_ls_xuat['Tổng Tiền (VNĐ)'].apply(lambda x: format_vn(x) if pd.notnull(x) else "0")
+                    df_ls_xuat['Doanh Thu (Đã thu)'] = df_ls_xuat['Doanh Thu (Đã thu)'].apply(lambda x: format_vn(x) if pd.notnull(x) else "0")
+                    df_ls_xuat['Công Nợ (Chưa thu)'] = df_ls_xuat['Công Nợ (Chưa thu)'].apply(lambda x: format_vn(x) if pd.notnull(x) else "0")
+                    
+                    st.dataframe(df_ls_xuat, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Chưa có dữ liệu xuất kho hoặc thu hồi nào được ghi nhận.")
+            except Exception as e:
+                st.error(f"Lỗi hiển thị bảng lịch sử xuất kho: {e}")
+                
         except Exception as e: st.error(str(e))
     
     elif "4. Chuyển đơn" in chuyem_muc:
