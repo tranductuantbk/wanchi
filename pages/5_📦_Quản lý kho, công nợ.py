@@ -212,6 +212,19 @@ def don_dep_lich_su_nhap_nvl():
     except: 
         conn.rollback()
 
+def don_dep_lich_su_nhap_tp():
+    """Hàm tự động dọn dẹp, chỉ giữ lại 100 đơn nhập Thành Phẩm gần nhất"""
+    try:
+        c.execute("""DELETE FROM public.ls_nhap_xuat_kho
+                     WHERE loai_thao_tac = 'Nhập Thành Phẩm' AND id NOT IN (
+                         SELECT id FROM public.ls_nhap_xuat_kho 
+                         WHERE loai_thao_tac = 'Nhập Thành Phẩm'
+                         ORDER BY id DESC LIMIT 100
+                     )""")
+        conn.commit()
+    except: 
+        conn.rollback()
+
 # ==========================================
 # HÀM TẠO PHIẾU PDF
 # ==========================================
@@ -604,6 +617,8 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
     pdf.ln(5)
     
     pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
+    if ghi_chu:
+        pdf.cell(0, 8, f"Ghi chú: {ghi_chu}", ln=True)
     pdf.ln(3)
     
     if not df_items.empty:
@@ -1494,8 +1509,84 @@ with tab2:
                                      VALUES (%s, 'Nhập Thành Phẩm', %s, %s, %s)""", (ngay_tt, sp_chon, sl_nhap, ghi_chu_sp))
                         
                         conn.commit()
+                        don_dep_lich_su_nhap_tp()
                         st.success(f"✅ Đã nhập {sl_nhap} {don_vi_nhap} {sp_chon} vào kho!")
                         time.sleep(2); st.rerun()
+                
+                # --- BẢNG DANH SÁCH 100 LẦN NHẬP THÀNH PHẨM ---
+                st.markdown("---")
+                st.markdown("#### 📋 Danh sách 100 Lần Nhập Thành Phẩm Gần Nhất")
+                
+                df_ls_nhap_tp = pd.read_sql("SELECT id, ngay_thao_tac, ten_nl, so_luong, ghi_chu FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac='Nhập Thành Phẩm' ORDER BY id DESC LIMIT 100", conn)
+                if not df_ls_nhap_tp.empty:
+                    df_ls_nhap_tp.insert(0, "Xóa Phiếu", False)
+                    df_ls_nhap_tp.columns = ["Xóa Phiếu", "ID", "Ngày Nhập", "Tên Sản Phẩm", "Số Lượng (Bộ/Thành phẩm)", "Ghi Chú (Đơn vị)"]
+
+                    edited_nhap_tp = st.data_editor(
+                        df_ls_nhap_tp,
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "Xóa Phiếu": st.column_config.CheckboxColumn("🗑️ Chọn Xóa", default=False),
+                            "ID": None,
+                            "Ngày Nhập": st.column_config.TextColumn(disabled=True),
+                            "Tên Sản Phẩm": st.column_config.TextColumn(disabled=True),
+                            "Số Lượng (Bộ/Thành phẩm)": st.column_config.NumberColumn("Số Lượng (Sửa được)", format="%.0f"),
+                            "Ghi Chú (Đơn vị)": st.column_config.TextColumn("Ghi Chú / Đơn Vị (Sửa được)")
+                        },
+                        key="editor_ls_nhap_tp"
+                    )
+
+                    # Xử lý Cập nhật (Sửa số lượng / Ghi chú)
+                    diff_mask_tp = (edited_nhap_tp['Số Lượng (Bộ/Thành phẩm)'] != df_ls_nhap_tp['Số Lượng (Bộ/Thành phẩm)']) | \
+                                   (edited_nhap_tp['Ghi Chú (Đơn vị)'] != df_ls_nhap_tp['Ghi Chú (Đơn vị)'])
+                    
+                    if diff_mask_tp.any():
+                        st.warning("⚠️ Bạn vừa sửa dữ liệu nhập kho. Vui lòng bấm LƯU để tự động tính và cập nhật bù lại vào Tồn kho.")
+                        if st.button("💾 LƯU THAY ĐỔI PHIẾU NHẬP", type="primary"):
+                            for _, row in edited_nhap_tp[diff_mask_tp].iterrows():
+                                id_phieu = row['ID']
+                                old_qty = df_ls_nhap_tp[df_ls_nhap_tp['ID'] == id_phieu]['Số Lượng (Bộ/Thành phẩm)'].iloc[0]
+                                new_qty = row['Số Lượng (Bộ/Thành phẩm)']
+                                new_note = row['Ghi Chú (Đơn vị)']
+                                sp_name = row['Tên Sản Phẩm']
+                                
+                                qty_diff = new_qty - old_qty
+                                
+                                # Cập nhật tồn kho (Cộng thêm hoặc trừ bớt phần chênh lệch)
+                                if qty_diff != 0:
+                                    c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (qty_diff, sp_name))
+                                    c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho + %s WHERE ten_sp = %s", (qty_diff, sp_name))
+                                
+                                # Cập nhật lịch sử
+                                c.execute("UPDATE public.ls_nhap_xuat_kho SET so_luong = %s, ghi_chu = %s WHERE id = %s", (new_qty, new_note, id_phieu))
+                                
+                            conn.commit()
+                            st.success("✅ Đã tính toán và cập nhật lại Báo cáo tồn kho thành phẩm!")
+                            time.sleep(1.5); st.rerun()
+
+                    # Xử lý Xóa Phiếu
+                    selected_nhap_tp = edited_nhap_tp[edited_nhap_tp["Xóa Phiếu"] == True]
+                    if not selected_nhap_tp.empty:
+                        if st.button("🚨 XÓA CÁC PHIẾU ĐÃ CHỌN & THU HỒI TỒN KHO", type="primary"):
+                            for _, row in selected_nhap_tp.iterrows():
+                                id_phieu = row['ID']
+                                qty_to_revert = row['Số Lượng (Bộ/Thành phẩm)']
+                                sp_name = row['Tên Sản Phẩm']
+                                
+                                # Trừ lại tồn kho vì thao tác này là xóa phiếu đã nhập
+                                c.execute("UPDATE public.dm_san_pham SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (qty_to_revert, sp_name))
+                                c.execute("UPDATE public.dm_san_pham_ome SET ton_kho = ton_kho - %s WHERE ten_sp = %s", (qty_to_revert, sp_name))
+                                
+                                # Xóa phiếu khỏi lịch sử
+                                c.execute("DELETE FROM public.ls_nhap_xuat_kho WHERE id = %s", (id_phieu,))
+                                
+                            conn.commit()
+                            st.success("✅ Đã xóa phiếu! Hệ thống đã tự động gỡ sản lượng này khỏi Báo cáo tồn kho.")
+                            time.sleep(1.5); st.rerun()
+                else:
+                    st.info("Chưa có phiếu nhập thành phẩm nào được ghi nhận.")
+
             else: st.info("Chưa có danh mục sản phẩm.")
         except Exception as e: st.error(str(e))
 
