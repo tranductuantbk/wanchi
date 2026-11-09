@@ -1224,7 +1224,7 @@ with tab2:
                 
                 c_btn1, c_btn2, c_btn3 = st.columns([2, 2, 2])
                 
-                if don_info['trang_thai'] in ['Chờ xuất kho', 'Mới tạo']:
+                if don_info['trang_thai'] in ['Chờ xuất kho', 'Mới tạo', '', None]:
                     with c_btn1:
                         if st.button("📦 XÁC NHẬN XUẤT KHO", type="primary", use_container_width=True):
                             if co_xuat_hoa_don and co_xuat_hoa_don_nguyen:
