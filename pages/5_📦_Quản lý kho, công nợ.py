@@ -199,6 +199,19 @@ def don_dep_lich_su_don_nhap():
     except: 
         conn.rollback()
 
+def don_dep_lich_su_nhap_nvl():
+    """Hàm tự động dọn dẹp, chỉ giữ lại 100 đơn nhập NVL gần nhất"""
+    try:
+        c.execute("""DELETE FROM public.ls_nhap_xuat_kho
+                     WHERE loai_thao_tac = 'Nhập NVL' AND id NOT IN (
+                         SELECT id FROM public.ls_nhap_xuat_kho 
+                         WHERE loai_thao_tac = 'Nhập NVL'
+                         ORDER BY id DESC LIMIT 100
+                     )""")
+        conn.commit()
+    except: 
+        conn.rollback()
+
 # ==========================================
 # HÀM TẠO PHIẾU PDF
 # ==========================================
@@ -1375,7 +1388,7 @@ with tab2:
             danh_sach_ncc = df_ncc['ten_ncc'].tolist() if not df_ncc.empty else ["-- Chưa có Nhà Cung Cấp --"]
 
             if not df_nl_ton.empty:
-                with st.form("form_nhap_nvl"):
+                with st.form("form_nhap_nvl", clear_on_submit=True):
                     col_n1, col_n2 = st.columns(2)
                     with col_n1:
                         ngay_nhap_hd = st.date_input("Ngày nhập hàng", lay_gio_vn().date(), format="DD/MM/YYYY")
@@ -1400,8 +1413,26 @@ with tab2:
                                          VALUES (%s, 'Nhập NVL', %s, %s, %s, %s, %s, %s, %s)""", 
                                       (ngay_tt, nl_chon, sl_tt, don_gia, thanh_tien, ghi_chu, ncc_chon, trang_thai_tt))
                             conn.commit()
+                            don_dep_lich_su_nhap_nvl()
                             st.success(f"✅ Đã ghi nhận lô hàng từ {ncc_chon} vào Lịch sử & Công nợ!")
                             time.sleep(2); st.rerun()
+                
+                # --- BẢNG DANH SÁCH 100 ĐƠN NHẬP GẦN NHẤT ---
+                st.markdown("---")
+                st.markdown("#### 📋 Danh sách 100 Lần Nhập NVL, NCC Gần Nhất")
+                try:
+                    df_ls_nhap = pd.read_sql("SELECT id, ngay_thao_tac, nha_cung_cap, ten_nl, so_luong, don_gia, thanh_tien, trang_thai_tt, ghi_chu FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac='Nhập NVL' ORDER BY id DESC LIMIT 100", conn)
+                    if not df_ls_nhap.empty:
+                        df_ls_nhap.columns = ["ID", "Ngày Nhập", "Nhà Cung Cấp", "Vật Tư", "Số Lượng", "Đơn Giá (VNĐ)", "Thành Tiền (VNĐ)", "Trạng Thái", "Ghi Chú"]
+                        df_ls_nhap['Đơn Giá (VNĐ)'] = df_ls_nhap['Đơn Giá (VNĐ)'].apply(lambda x: format_vn(x))
+                        df_ls_nhap['Thành Tiền (VNĐ)'] = df_ls_nhap['Thành Tiền (VNĐ)'].apply(lambda x: format_vn(x))
+                        
+                        st.dataframe(df_ls_nhap.drop(columns=["ID"]), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Chưa có đơn nhập nguyên vật liệu nào được ghi nhận.")
+                except Exception as e:
+                    st.error(f"Lỗi hiển thị bảng lịch sử: {e}")
+
             else: st.warning("⚠️ Kho chưa có Danh mục Vật tư nào.")
         except Exception as e: st.error(str(e))
 
