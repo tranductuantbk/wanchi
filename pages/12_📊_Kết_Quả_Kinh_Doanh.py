@@ -94,9 +94,8 @@ p2 = f"%/{m_str}/{y_str}%"
 p3 = f"%{y_str}/{m_str}%"
 p4 = f"%-{m_str}-{y_str}%"
 
-# ĐIỀU KIỆN TRẠNG THÁI MỚI: Chỉ lấy đơn Đã xuất kho VÀ Đã thanh toán
-# Lưu ý: Tuỳ cách phần mềm đang lưu, chuỗi trạng thái có thể chứa cả 2 cụm từ này
-status_cond = "(trang_thai LIKE '%Đã xuất kho%' AND trang_thai LIKE '%Đã thanh toán%')"
+# ĐIỀU KIỆN TRẠNG THÁI ĐÃ ĐƯỢC SỬA LẠI: Chỉ cần tìm chữ "Đã thanh toán"
+status_cond = "trang_thai LIKE '%Đã thanh toán%'"
 
 # ==========================================
 # TRÍCH XUẤT DỮ LIỆU TỪ HỆ THỐNG
@@ -106,7 +105,7 @@ gia_von = 0.0
 thanh_toan_ncc = 0.0
 chi_phi_tu_nhap = 0.0
 
-# 1. DOANH THU THÁNG (Chỉ đơn Đã xuất kho VÀ Đã thanh toán)
+# 1. DOANH THU THÁNG (Chỉ tính các đơn Đã thanh toán)
 try:
     c.execute(f"SELECT SUM(tong_tien) FROM don_hang WHERE {status_cond} AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
     dt = c.fetchone()[0]
@@ -114,7 +113,7 @@ try:
 except Exception as e:
     pass
 
-# 2. GIÁ VỐN (Lấy giá vốn của những đơn Đã xuất kho & Đã thanh toán, tra từ DM Sản phẩm)
+# 2. GIÁ VỐN (Lấy giá vốn của những đơn Đã thanh toán, tra từ DM Sản phẩm)
 try:
     # Lấy danh sách từ điển Giá Vốn từ bảng dm_san_pham
     df_sp = pd.read_sql("SELECT ten_sp, gia_von FROM dm_san_pham", conn)
