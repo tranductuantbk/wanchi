@@ -94,8 +94,9 @@ p2 = f"%/{m_str}/{y_str}%"
 p3 = f"%{y_str}/{m_str}%"
 p4 = f"%-{m_str}-{y_str}%"
 
-# ĐIỀU KIỆN TRẠNG THÁI: Tích hợp các trạng thái xuất kho, thanh toán, công nợ mới
-status_cond = "trang_thai IN ('Đã xuất kho', 'Đã thanh toán', 'Chưa thanh toán') OR trang_thai LIKE '%xuất%' OR trang_thai LIKE '%thanh toán%'"
+# ĐIỀU KIỆN TRẠNG THÁI MỚI: Chỉ lấy đơn Đã xuất kho VÀ Đã thanh toán
+# Lưu ý: Tuỳ cách phần mềm đang lưu, chuỗi trạng thái có thể chứa cả 2 cụm từ này
+status_cond = "(trang_thai LIKE '%Đã xuất kho%' AND trang_thai LIKE '%Đã thanh toán%')"
 
 # ==========================================
 # TRÍCH XUẤT DỮ LIỆU TỪ HỆ THỐNG
@@ -105,15 +106,15 @@ gia_von = 0.0
 thanh_toan_ncc = 0.0
 chi_phi_tu_nhap = 0.0
 
-# 1. DOANH THU THÁNG (Tính bằng đơn đã xuất kho)
+# 1. DOANH THU THÁNG (Chỉ đơn Đã xuất kho VÀ Đã thanh toán)
 try:
-    c.execute(f"SELECT SUM(tong_tien) FROM don_hang WHERE ({status_cond}) AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
+    c.execute(f"SELECT SUM(tong_tien) FROM don_hang WHERE {status_cond} AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
     dt = c.fetchone()[0]
     doanh_thu = float(dt) if dt else 0.0
-except:
+except Exception as e:
     pass
 
-# 2. GIÁ VỐN HÀNG BÁN (Lấy tổng của giá vốn trong mục danh sách sản phẩm)
+# 2. GIÁ VỐN (Lấy giá vốn của những đơn Đã xuất kho & Đã thanh toán, tra từ DM Sản phẩm)
 try:
     # Lấy danh sách từ điển Giá Vốn từ bảng dm_san_pham
     df_sp = pd.read_sql("SELECT ten_sp, gia_von FROM dm_san_pham", conn)
@@ -126,8 +127,8 @@ try:
     except:
         pass
     
-    # Quét tất cả các đơn hàng đã xuất kho trong tháng để nhân số lượng với Giá Vốn
-    c.execute(f"SELECT chi_tiet FROM don_hang WHERE ({status_cond}) AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
+    # Quét tất cả các đơn hàng HỢP LỆ trong tháng để nhân số lượng với Giá Vốn
+    c.execute(f"SELECT chi_tiet FROM don_hang WHERE {status_cond} AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
     cac_don_hang = c.fetchall()
     
     for row in cac_don_hang:
@@ -143,15 +144,16 @@ try:
 except Exception as e:
     pass
 
-# 3. THANH TOÁN CÔNG NỢ NCC (Đã thanh toán NVL, NCC)
+# 3. THANH TOÁN CÔNG NỢ NCC (Chỉ lấy đơn nhập NVL/NCC có trạng thái "Đã thanh toán")
 try:
     df_nhap = pd.read_sql("SELECT * FROM don_nhap_hang WHERE ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s", conn, params=(p1, p2, p3, p4))
     if not df_nhap.empty and 'tong_tien' in df_nhap.columns:
         if 'trang_thai' in df_nhap.columns:
-            thanh_toan_ncc = float(df_nhap[df_nhap['trang_thai'] == 'Đã thanh toán']['tong_tien'].sum())
+            # Lọc chính xác các đơn Đã thanh toán
+            thanh_toan_ncc = float(df_nhap[df_nhap['trang_thai'].str.contains('Đã thanh toán', na=False)]['tong_tien'].sum())
         elif 'da_thanh_toan' in df_nhap.columns: 
             thanh_toan_ncc = float(df_nhap['da_thanh_toan'].sum())
-except:
+except Exception as e:
     pass
 
 # 4. CHI PHÍ TỰ NHẬP (Từ bảng chi_phi_khac)
@@ -163,11 +165,11 @@ except:
     chi_phi_tu_nhap = 0.0
 
 # ==========================================
-# TÍNH TOÁN CÔNG THỨC KINH DOANH MỚI (TÁCH BẠCH P&L VÀ DÒNG TIỀN)
+# TÍNH TOÁN CÔNG THỨC KINH DOANH MỚI
 # ==========================================
 # 1. BÁO CÁO LỢI NHUẬN (P&L)
 loi_nhuan_gop = doanh_thu - gia_von
-loi_nhuan_thang = loi_nhuan_gop - chi_phi_tu_nhap # Không trừ thanh_toan_ncc ở đây
+loi_nhuan_thang = loi_nhuan_gop - chi_phi_tu_nhap
 
 # 2. BÁO CÁO DÒNG TIỀN (CASHFLOW)
 tong_chi_tien = thanh_toan_ncc + chi_phi_tu_nhap
@@ -179,8 +181,8 @@ st.markdown("---")
 st.markdown(f"### 📈 BÁO CÁO LỢI NHUẬN KINH DOANH - {thang_chon_display}")
 
 col_dt1, col_dt2, col_dt3 = st.columns(3)
-col_dt1.metric("Doanh Thu (Đã xuất kho)", f"{doanh_thu:,.0f} VNĐ")
-col_dt2.metric("Giá Vốn Hàng Bán", f"{gia_von:,.0f} VNĐ")
+col_dt1.metric("Doanh Thu (Đã xuất kho & Đã thanh toán)", f"{doanh_thu:,.0f} VNĐ")
+col_dt2.metric("Giá Vốn", f"{gia_von:,.0f} VNĐ")
 col_dt3.metric("Chi Phí Vận Hành (Tự Nhập)", f"{chi_phi_tu_nhap:,.0f} VNĐ")
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -212,7 +214,6 @@ with col_form:
         if st.form_submit_button("💾 Lưu Chi Phí", type="primary", use_container_width=True):
             if cp_sotien > 0 and cp_diengiai:
                 try:
-                    # Lưu ngày chuẩn ISO để dễ truy vấn sau này
                     c.execute("INSERT INTO chi_phi_khac (ngay, dien_giai, so_tien) VALUES (%s, %s, %s)",
                               (cp_ngay.strftime("%Y-%m-%d"), cp_diengiai, cp_sotien))
                     conn.commit()
