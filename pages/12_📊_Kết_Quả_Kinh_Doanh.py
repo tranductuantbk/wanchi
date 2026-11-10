@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import time
-import json
 from db_utils import get_connection, check_password
 
 st.set_page_config(page_title="Kết Quả Kinh Doanh", page_icon="📊", layout="wide")
@@ -68,7 +67,6 @@ except Exception as e:
 # ==========================================
 today = date.today()
 list_months_display = []
-list_months_value = []
 
 # Tạo danh sách 12 tháng (Tháng hiện tại và 11 tháng trước đó)
 for i in range(12):
@@ -78,110 +76,95 @@ for i in range(12):
         m += 12
         y -= 1
     list_months_display.append(f"{m:02d}/{y}")
-    list_months_value.append(f"{y}-{m:02d}") # Chuẩn ISO YYYY-MM
 
 st.markdown("### 🗓️ Chọn Kỳ Báo Cáo")
 thang_chon_display = st.selectbox("Lọc dữ liệu theo tháng/năm:", list_months_display, index=0)
 
-# Lấy giá trị YYYY-MM tương ứng để truy vấn DB chuẩn hơn
-idx = list_months_display.index(thang_chon_display)
-thang_chon_val = list_months_value[idx] 
 m_str, y_str = thang_chon_display.split('/')
 
-# MỞ RỘNG BỘ QUÉT: Bắt mọi định dạng ngày tháng có thể bị nhập sai lệch từ trước
-p1 = f"%{y_str}-{m_str}%"
-p2 = f"%/{m_str}/{y_str}%"
-p3 = f"%{y_str}/{m_str}%"
-p4 = f"%-{m_str}-{y_str}%"
-
-# ĐIỀU KIỆN TRẠNG THÁI ĐÃ ĐƯỢC SỬA LẠI: Chỉ cần tìm chữ "Đã thanh toán"
-status_cond = "trang_thai LIKE '%Đã thanh toán%'"
+# BỘ LỌC ĐỒNG BỘ: Chuẩn ngày tháng trong bảng lịch sử kho là DD/MM/YYYY
+pattern_thang_vn = f"%/{m_str}/{y_str}%"
+# Bộ lọc ISO cho bảng chi phí tự nhập là YYYY-MM-DD
+pattern_thang_iso = f"{y_str}-{m_str}-%"
 
 # ==========================================
-# TRÍCH XUẤT DỮ LIỆU TỪ HỆ THỐNG
+# TRÍCH XUẤT DỮ LIỆU TỪ HỆ THỐNG MỚI NHẤT
 # ==========================================
-doanh_thu = 0.0
+doanh_so = 0.0
+thuc_thu = 0.0
 gia_von = 0.0
 thanh_toan_ncc = 0.0
 chi_phi_tu_nhap = 0.0
 
-# 1. DOANH THU THÁNG (Chỉ tính các đơn Đã thanh toán)
+# 1. DOANH SỐ & THỰC THU (Lấy trực tiếp từ bảng ls_nhap_xuat_kho siêu tốc)
 try:
-    c.execute(f"SELECT SUM(tong_tien) FROM don_hang WHERE {status_cond} AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
-    dt = c.fetchone()[0]
-    doanh_thu = float(dt) if dt else 0.0
+    c.execute("SELECT SUM(thanh_tien), SUM(tien_da_thu) FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Xuất Bán' AND ngay_thao_tac LIKE %s", (pattern_thang_vn,))
+    res = c.fetchone()
+    doanh_so = float(res[0]) if res and res[0] else 0.0
+    thuc_thu = float(res[1]) if res and res[1] else 0.0
 except Exception as e:
     pass
 
-# 2. GIÁ VỐN (Lấy giá vốn của những đơn Đã thanh toán, tra từ DM Sản phẩm)
+# 2. GIÁ VỐN HÀNG BÁN (Ánh xạ từ danh mục sản phẩm chuẩn)
 try:
-    # Lấy danh sách từ điển Giá Vốn từ bảng dm_san_pham
     df_sp = pd.read_sql("SELECT ten_sp, gia_von FROM dm_san_pham", conn)
     dict_gia_von = dict(zip(df_sp['ten_sp'], df_sp['gia_von']))
     
-    # Lấy thêm từ điển Giá Vốn từ bảng dm_san_pham_ome
     try:
         df_ome = pd.read_sql("SELECT ten_sp, gia_von FROM dm_san_pham_ome", conn)
         dict_gia_von.update(dict(zip(df_ome['ten_sp'], df_ome['gia_von'])))
     except:
         pass
     
-    # Quét tất cả các đơn hàng HỢP LỆ trong tháng để nhân số lượng với Giá Vốn
-    c.execute(f"SELECT chi_tiet FROM don_hang WHERE {status_cond} AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
-    cac_don_hang = c.fetchall()
+    # Quét bảng lịch sử để tính giá vốn những mặt hàng đã xuất bán
+    c.execute("SELECT ten_nl, so_luong FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Xuất Bán' AND ngay_thao_tac LIKE %s", (pattern_thang_vn,))
+    cac_mat_hang = c.fetchall()
     
-    for row in cac_don_hang:
-        chi_tiet_str = row[0]
-        if chi_tiet_str:
-            items = json.loads(chi_tiet_str)
-            for sp in items:
-                ten_san_pham = sp.get('Tên Sản Phẩm', sp.get('Tên Sản Phẩm OME', ''))
-                so_luong = float(sp.get('Số Lượng', 0))
-                # Lấy giá vốn, nếu không có trong danh mục thì tính là 0
-                gia_von_1_sp = dict_gia_von.get(ten_san_pham, 0)
-                gia_von += gia_von_1_sp * so_luong
+    for row in cac_mat_hang:
+        ten_san_pham = row[0]
+        so_luong_xuat = abs(float(row[1])) # Lấy trị tuyệt đối vì xuất kho lưu số âm
+        gia_von_1_sp = dict_gia_von.get(ten_san_pham, 0)
+        gia_von += (gia_von_1_sp * so_luong_xuat)
 except Exception as e:
     pass
 
-# 3. THANH TOÁN CÔNG NỢ NCC (Chỉ lấy đơn nhập NVL/NCC có trạng thái "Đã thanh toán")
+# 3. THANH TOÁN CÔNG NỢ NCC (Lấy từ bảng phiếu chi ls_phieu_chi)
 try:
-    df_nhap = pd.read_sql("SELECT * FROM don_nhap_hang WHERE ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s", conn, params=(p1, p2, p3, p4))
-    if not df_nhap.empty and 'tong_tien' in df_nhap.columns:
-        if 'trang_thai' in df_nhap.columns:
-            # Lọc chính xác các đơn Đã thanh toán
-            thanh_toan_ncc = float(df_nhap[df_nhap['trang_thai'].str.contains('Đã thanh toán', na=False)]['tong_tien'].sum())
-        elif 'da_thanh_toan' in df_nhap.columns: 
-            thanh_toan_ncc = float(df_nhap['da_thanh_toan'].sum())
+    c.execute("SELECT SUM(tong_chi) FROM public.ls_phieu_chi WHERE ngay_chi LIKE %s", (pattern_thang_vn,))
+    res_ncc = c.fetchone()[0]
+    thanh_toan_ncc = float(res_ncc) if res_ncc else 0.0
 except Exception as e:
     pass
 
 # 4. CHI PHÍ TỰ NHẬP (Từ bảng chi_phi_khac)
 try:
-    df_cp = pd.read_sql("SELECT id, ngay, dien_giai, so_tien FROM chi_phi_khac WHERE ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s ORDER BY id DESC", conn, params=(p1, p2, p3, p4))
-    chi_phi_tu_nhap = float(df_cp['so_tien'].sum()) if not df_cp.empty else 0.0
+    c.execute("SELECT SUM(so_tien) FROM public.chi_phi_khac WHERE ngay LIKE %s", (pattern_thang_iso,))
+    res_cp = c.fetchone()[0]
+    chi_phi_tu_nhap = float(res_cp) if res_cp else 0.0
 except:
-    df_cp = pd.DataFrame()
-    chi_phi_tu_nhap = 0.0
+    pass
 
 # ==========================================
-# TÍNH TOÁN CÔNG THỨC KINH DOANH MỚI
+# TÍNH TOÁN CÔNG THỨC KINH DOANH
 # ==========================================
-# 1. BÁO CÁO LỢI NHUẬN (P&L)
-loi_nhuan_gop = doanh_thu - gia_von
+# 1. BÁO CÁO LỢI NHUẬN KINH DOANH (P&L)
+loi_nhuan_gop = doanh_so - gia_von
 loi_nhuan_thang = loi_nhuan_gop - chi_phi_tu_nhap
 
 # 2. BÁO CÁO DÒNG TIỀN (CASHFLOW)
 tong_chi_tien = thanh_toan_ncc + chi_phi_tu_nhap
+dong_tien_thuan = thuc_thu - tong_chi_tien
 
 # ==========================================
 # HIỂN THỊ METRICS KẾT QUẢ KINH DOANH
 # ==========================================
 st.markdown("---")
 st.markdown(f"### 📈 BÁO CÁO LỢI NHUẬN KINH DOANH - {thang_chon_display}")
+st.caption("*(Đánh giá hiệu quả kinh doanh dựa trên Tổng lượng hàng đã xuất, không tính công nợ)*")
 
 col_dt1, col_dt2, col_dt3 = st.columns(3)
-col_dt1.metric("Doanh Thu (Đã xuất kho & Đã thanh toán)", f"{doanh_thu:,.0f} VNĐ")
-col_dt2.metric("Giá Vốn", f"{gia_von:,.0f} VNĐ")
+col_dt1.metric("Tổng Doanh Số (Xuất kho)", f"{doanh_so:,.0f} VNĐ")
+col_dt2.metric("Tổng Giá Vốn", f"{gia_von:,.0f} VNĐ")
 col_dt3.metric("Chi Phí Vận Hành (Tự Nhập)", f"{chi_phi_tu_nhap:,.0f} VNĐ")
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -189,10 +172,15 @@ color_ln = "#00cc00" if loi_nhuan_thang >= 0 else "#cc0000"
 st.markdown(f"<h2 style='text-align: center; color: {color_ln};'>LỢI NHUẬN THÁNG: {loi_nhuan_thang:,.0f} VNĐ</h2>", unsafe_allow_html=True)
 
 st.markdown("---")
-st.markdown(f"### 💸 THEO DÕI DÒNG TIỀN CHI RA (CASHFLOW)")
-col_cf1, col_cf2 = st.columns(2)
-col_cf1.metric("Tiền Đã Thanh Toán NCC/NVL", f"{thanh_toan_ncc:,.0f} VNĐ", help="Tiền chi mua tài sản/vật tư lưu kho, đã được bóc tách khỏi Lợi Nhuận.")
-col_cf2.metric("TỔNG CHI TIỀN THỰC TẾ (NCC + Vận hành)", f"{tong_chi_tien:,.0f} VNĐ")
+st.markdown(f"### 💸 THEO DÕI DÒNG TIỀN THỰC TẾ (CASHFLOW)")
+st.caption("*(Đánh giá lượng Tiền mặt thực tế thu về và chi ra trong tháng)*")
+
+col_cf1, col_cf2, col_cf3 = st.columns(3)
+col_cf1.metric("Tiền Mặt Thực Thu (Khách Hàng)", f"{thuc_thu:,.0f} VNĐ")
+col_cf2.metric("Tổng Chi (NCC + Vận hành)", f"{tong_chi_tien:,.0f} VNĐ")
+
+color_cf = "#00cc00" if dong_tien_thuan >= 0 else "#cc0000"
+col_cf3.markdown(f"<h4 style='text-align: center; color: {color_cf}; margin-top: 15px;'>DÒNG TIỀN THUẦN:<br>{dong_tien_thuan:,.0f} VNĐ</h4>", unsafe_allow_html=True)
 
 # ==========================================
 # KHU VỰC NHẬP & THEO DÕI CHI PHÍ TỰ NHẬP
@@ -228,16 +216,17 @@ with col_form:
 # Bảng thể hiện
 with col_table:
     st.markdown(f"**Bảng chi phí đã nhập trong {thang_chon_display}**")
-    if not df_cp.empty:
-        df_hien_thi = df_cp.copy()
-        # Đổi tên cột cho đẹp
-        df_hien_thi.columns = ['ID', 'Ngày', 'Diễn Giải', 'Số Tiền (VNĐ)']
-        
-        # Định dạng tiền tệ
-        st.dataframe(
-            df_hien_thi.style.format({"Số Tiền (VNĐ)": "{:,.0f}"}),
-            use_container_width=True, 
-            hide_index=True
-        )
-    else:
+    try:
+        df_cp = pd.read_sql("SELECT id, ngay, dien_giai, so_tien FROM chi_phi_khac WHERE ngay LIKE %s ORDER BY id DESC", conn, params=(pattern_thang_iso,))
+        if not df_cp.empty:
+            df_hien_thi = df_cp.copy()
+            df_hien_thi.columns = ['ID', 'Ngày', 'Diễn Giải', 'Số Tiền (VNĐ)']
+            st.dataframe(
+                df_hien_thi.style.format({"Số Tiền (VNĐ)": "{:,.0f}"}),
+                use_container_width=True, 
+                hide_index=True
+            )
+        else:
+            st.info(f"Chưa có chi phí tự nhập nào được ghi nhận trong {thang_chon_display}.")
+    except:
         st.info(f"Chưa có chi phí tự nhập nào được ghi nhận trong {thang_chon_display}.")
