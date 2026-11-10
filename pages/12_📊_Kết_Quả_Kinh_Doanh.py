@@ -97,13 +97,10 @@ thanh_toan_ncc = 0.0
 chi_phi_tu_nhap = 0.0
 
 # 1. DOANH SỐ (YÊU CẦU MỚI: CHỈ LẤY ĐƠN ĐÃ XUẤT KHO VÀ ĐÃ THANH TOÁN)
-# Trong bảng ls_nhap_xuat_kho, đơn xuất kho có loai_thao_tac = 'Xuất Bán'. 
-# Đơn 'Đã thanh toán' sẽ có cột trang_thai_tt = 'Đã thanh toán'.
 try:
     c.execute("SELECT SUM(thanh_tien), SUM(tien_da_thu) FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Xuất Bán' AND trang_thai_tt = 'Đã thanh toán' AND ngay_thao_tac LIKE %s", (pattern_thang_vn,))
     res = c.fetchone()
     doanh_so = float(res[0]) if res and res[0] else 0.0
-    thuc_thu = float(res[1]) if res and res[1] else 0.0
 except Exception as e:
     pass
 
@@ -130,9 +127,9 @@ try:
 except Exception as e:
     pass
 
-# 3. THANH TOÁN CÔNG NỢ NCC (Lấy từ bảng phiếu chi ls_phieu_chi)
+# 3. THANH TOÁN CÔNG NỢ NCC (Lấy từ bảng ls_nhap_xuat_kho với loại 'Nhập NVL' và trạng thái 'Đã thanh toán')
 try:
-    c.execute("SELECT SUM(tong_chi) FROM public.ls_phieu_chi WHERE ngay_chi LIKE %s", (pattern_thang_vn,))
+    c.execute("SELECT SUM(thanh_tien) FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Nhập NVL' AND trang_thai_tt = 'Đã thanh toán' AND ngay_thao_tac LIKE %s", (pattern_thang_vn,))
     res_ncc = c.fetchone()[0]
     thanh_toan_ncc = float(res_ncc) if res_ncc else 0.0
 except Exception as e:
@@ -149,13 +146,9 @@ except:
 # ==========================================
 # TÍNH TOÁN CÔNG THỨC KINH DOANH
 # ==========================================
-# 1. BÁO CÁO LỢI NHUẬN KINH DOANH (P&L)
+# BÁO CÁO LỢI NHUẬN KINH DOANH (P&L)
 loi_nhuan_gop = doanh_so - gia_von
-loi_nhuan_thang = loi_nhuan_gop - chi_phi_tu_nhap
-
-# 2. BÁO CÁO DÒNG TIỀN (CASHFLOW)
-tong_chi_tien = thanh_toan_ncc + chi_phi_tu_nhap
-dong_tien_thuan = thuc_thu - tong_chi_tien
+loi_nhuan_thang = loi_nhuan_gop - thanh_toan_ncc - chi_phi_tu_nhap
 
 # ==========================================
 # HIỂN THỊ METRICS KẾT QUẢ KINH DOANH
@@ -164,7 +157,7 @@ st.markdown("---")
 st.markdown(f"### 📈 BÁO CÁO LỢI NHUẬN KINH DOANH - {thang_chon_display}")
 st.caption("*(Đánh giá hiệu quả kinh doanh dựa trên Tổng lượng hàng đã xuất, không tính công nợ)*")
 
-# THAY ĐỔI YÊU CẦU: Hiển thị 4 cột
+# Hiển thị 4 cột
 col_dt1, col_dt2, col_dt3, col_dt4 = st.columns(4)
 col_dt1.metric("Tổng Doanh Số (Đã XB & TT)", f"{doanh_so:,.0f} VNĐ")
 col_dt2.metric("Tổng Giá Vốn", f"{gia_von:,.0f} VNĐ")
@@ -174,17 +167,6 @@ col_dt4.metric("Chi Phí Thanh Toán NVL, NCC", f"{thanh_toan_ncc:,.0f} VNĐ")
 st.markdown("<br>", unsafe_allow_html=True)
 color_ln = "#00cc00" if loi_nhuan_thang >= 0 else "#cc0000"
 st.markdown(f"<h2 style='text-align: center; color: {color_ln};'>LỢI NHUẬN THÁNG: {loi_nhuan_thang:,.0f} VNĐ</h2>", unsafe_allow_html=True)
-
-st.markdown("---")
-st.markdown(f"### 💸 THEO DÕI DÒNG TIỀN THỰC TẾ (CASHFLOW)")
-st.caption("*(Đánh giá lượng Tiền mặt thực tế thu về và chi ra trong tháng)*")
-
-col_cf1, col_cf2, col_cf3 = st.columns(3)
-col_cf1.metric("Tiền Mặt Thực Thu (Khách Hàng)", f"{thuc_thu:,.0f} VNĐ")
-col_cf2.metric("Tổng Chi (NCC + Vận hành)", f"{tong_chi_tien:,.0f} VNĐ")
-
-color_cf = "#00cc00" if dong_tien_thuan >= 0 else "#cc0000"
-col_cf3.markdown(f"<h4 style='text-align: center; color: {color_cf}; margin-top: 15px;'>DÒNG TIỀN THUẦN:<br>{dong_tien_thuan:,.0f} VNĐ</h4>", unsafe_allow_html=True)
 
 # ==========================================
 # KHU VỰC NHẬP & THEO DÕI CHI PHÍ TỰ NHẬP
