@@ -96,16 +96,18 @@ gia_von = 0.0
 thanh_toan_ncc = 0.0
 chi_phi_tu_nhap = 0.0
 
-# 1. DOANH SỐ & THỰC THU (Lấy trực tiếp từ bảng ls_nhap_xuat_kho siêu tốc)
+# 1. DOANH SỐ (YÊU CẦU MỚI: CHỈ LẤY ĐƠN ĐÃ XUẤT KHO VÀ ĐÃ THANH TOÁN)
+# Trong bảng ls_nhap_xuat_kho, đơn xuất kho có loai_thao_tac = 'Xuất Bán'. 
+# Đơn 'Đã thanh toán' sẽ có cột trang_thai_tt = 'Đã thanh toán'.
 try:
-    c.execute("SELECT SUM(thanh_tien), SUM(tien_da_thu) FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Xuất Bán' AND ngay_thao_tac LIKE %s", (pattern_thang_vn,))
+    c.execute("SELECT SUM(thanh_tien), SUM(tien_da_thu) FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Xuất Bán' AND trang_thai_tt = 'Đã thanh toán' AND ngay_thao_tac LIKE %s", (pattern_thang_vn,))
     res = c.fetchone()
     doanh_so = float(res[0]) if res and res[0] else 0.0
     thuc_thu = float(res[1]) if res and res[1] else 0.0
 except Exception as e:
     pass
 
-# 2. GIÁ VỐN HÀNG BÁN (Ánh xạ từ danh mục sản phẩm chuẩn)
+# 2. GIÁ VỐN HÀNG BÁN (Ánh xạ từ danh mục sản phẩm chuẩn - chỉ lấy của các đơn Đã xuất kho VÀ Đã thanh toán)
 try:
     df_sp = pd.read_sql("SELECT ten_sp, gia_von FROM dm_san_pham", conn)
     dict_gia_von = dict(zip(df_sp['ten_sp'], df_sp['gia_von']))
@@ -116,8 +118,8 @@ try:
     except:
         pass
     
-    # Quét bảng lịch sử để tính giá vốn những mặt hàng đã xuất bán
-    c.execute("SELECT ten_nl, so_luong FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Xuất Bán' AND ngay_thao_tac LIKE %s", (pattern_thang_vn,))
+    # Quét bảng lịch sử để tính giá vốn những mặt hàng đã xuất bán VÀ Đã thanh toán
+    c.execute("SELECT ten_nl, so_luong FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Xuất Bán' AND trang_thai_tt = 'Đã thanh toán' AND ngay_thao_tac LIKE %s", (pattern_thang_vn,))
     cac_mat_hang = c.fetchall()
     
     for row in cac_mat_hang:
@@ -162,10 +164,12 @@ st.markdown("---")
 st.markdown(f"### 📈 BÁO CÁO LỢI NHUẬN KINH DOANH - {thang_chon_display}")
 st.caption("*(Đánh giá hiệu quả kinh doanh dựa trên Tổng lượng hàng đã xuất, không tính công nợ)*")
 
-col_dt1, col_dt2, col_dt3 = st.columns(3)
-col_dt1.metric("Tổng Doanh Số (Xuất kho)", f"{doanh_so:,.0f} VNĐ")
+# THAY ĐỔI YÊU CẦU: Hiển thị 4 cột
+col_dt1, col_dt2, col_dt3, col_dt4 = st.columns(4)
+col_dt1.metric("Tổng Doanh Số (Đã XB & TT)", f"{doanh_so:,.0f} VNĐ")
 col_dt2.metric("Tổng Giá Vốn", f"{gia_von:,.0f} VNĐ")
-col_dt3.metric("Chi Phí Vận Hành (Tự Nhập)", f"{chi_phi_tu_nhap:,.0f} VNĐ")
+col_dt3.metric("Chi Phí Phát Sinh (Tự Nhập)", f"{chi_phi_tu_nhap:,.0f} VNĐ")
+col_dt4.metric("Chi Phí Thanh Toán NVL, NCC", f"{thanh_toan_ncc:,.0f} VNĐ")
 
 st.markdown("<br>", unsafe_allow_html=True)
 color_ln = "#00cc00" if loi_nhuan_thang >= 0 else "#cc0000"
