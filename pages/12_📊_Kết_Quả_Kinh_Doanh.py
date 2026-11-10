@@ -160,34 +160,35 @@ except:
     chi_phi_tu_nhap = 0.0
 
 # ==========================================
-# TÍNH TOÁN CÔNG THỨC KINH DOANH MỚI
+# TÍNH TOÁN CÔNG THỨC KINH DOANH MỚI (TÁCH BẠCH P&L VÀ DÒNG TIỀN)
 # ==========================================
-# Lợi nhuận ròng = Đơn đã xuất kho (Doanh thu) - Giá vốn trong đơn đã xuất kho
-loi_nhuan_rong = doanh_thu - gia_von
+# 1. BÁO CÁO LỢI NHUẬN (P&L)
+loi_nhuan_gop = doanh_thu - gia_von
+loi_nhuan_thang = loi_nhuan_gop - chi_phi_tu_nhap # Không trừ thanh_toan_ncc ở đây
 
-# Lợi nhuận tháng = Lợi nhuận ròng - Tiền đã thanh toán NVL/NCC - Chi phí tự nhập
-loi_nhuan_thang = loi_nhuan_rong - thanh_toan_ncc - chi_phi_tu_nhap
+# 2. BÁO CÁO DÒNG TIỀN (CASHFLOW)
+tong_chi_tien = thanh_toan_ncc + chi_phi_tu_nhap
 
 # ==========================================
 # HIỂN THỊ METRICS KẾT QUẢ KINH DOANH
 # ==========================================
 st.markdown("---")
-st.markdown(f"### 📈 TỔNG QUAN KẾT QUẢ KINH DOANH - {thang_chon_display}")
+st.markdown(f"### 📈 BÁO CÁO LỢI NHUẬN KINH DOANH - {thang_chon_display}")
 
 col_dt1, col_dt2, col_dt3 = st.columns(3)
-col_dt1.metric("Doanh Thu Tháng (Đã xuất kho)", f"{doanh_thu:,.0f} VNĐ")
-col_dt2.metric("Giá Vốn Hàng Bán (Đã xuất kho)", f"{gia_von:,.0f} VNĐ")
-col_dt3.metric("LỢI NHUẬN RÒNG", f"{loi_nhuan_rong:,.0f} VNĐ")
+col_dt1.metric("Doanh Thu (Đã xuất kho)", f"{doanh_thu:,.0f} VNĐ")
+col_dt2.metric("Giá Vốn Hàng Bán", f"{gia_von:,.0f} VNĐ")
+col_dt3.metric("Chi Phí Vận Hành (Tự Nhập)", f"{chi_phi_tu_nhap:,.0f} VNĐ")
 
 st.markdown("<br>", unsafe_allow_html=True)
-col_cp1, col_cp2 = st.columns(2)
-col_cp1.metric("Đã Thanh Toán NCC/NVL", f"{thanh_toan_ncc:,.0f} VNĐ")
-col_cp2.metric("Chi Phí Tự Nhập", f"{chi_phi_tu_nhap:,.0f} VNĐ")
+color_ln = "#00cc00" if loi_nhuan_thang >= 0 else "#cc0000"
+st.markdown(f"<h2 style='text-align: center; color: {color_ln};'>LỢI NHUẬN THÁNG: {loi_nhuan_thang:,.0f} VNĐ</h2>", unsafe_allow_html=True)
 
 st.markdown("---")
-# Hiển thị màu xanh nếu có lãi, màu đỏ nếu lỗ
-color = "#00cc00" if loi_nhuan_thang >= 0 else "#cc0000"
-st.markdown(f"<h1 style='text-align: center; color: {color};'>LỢI NHUẬN THÁNG: {loi_nhuan_thang:,.0f} VNĐ</h1>", unsafe_allow_html=True)
+st.markdown(f"### 💸 THEO DÕI DÒNG TIỀN CHI RA (CASHFLOW)")
+col_cf1, col_cf2 = st.columns(2)
+col_cf1.metric("Tiền Đã Thanh Toán NCC/NVL", f"{thanh_toan_ncc:,.0f} VNĐ", help="Tiền chi mua tài sản/vật tư lưu kho, đã được bóc tách khỏi Lợi Nhuận.")
+col_cf2.metric("TỔNG CHI TIỀN THỰC TẾ (NCC + Vận hành)", f"{tong_chi_tien:,.0f} VNĐ")
 
 # ==========================================
 # KHU VỰC NHẬP & THEO DÕI CHI PHÍ TỰ NHẬP
