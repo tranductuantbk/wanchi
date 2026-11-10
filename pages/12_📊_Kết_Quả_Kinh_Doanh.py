@@ -96,7 +96,7 @@ gia_von = 0.0
 thanh_toan_ncc = 0.0
 chi_phi_tu_nhap = 0.0
 
-# 1. DOANH SỐ (YÊU CẦU MỚI: CHỈ LẤY ĐƠN ĐÃ XUẤT KHO VÀ ĐÃ THANH TOÁN)
+# 1. DOANH SỐ (CHỈ LẤY ĐƠN ĐÃ XUẤT KHO VÀ ĐÃ THANH TOÁN)
 try:
     c.execute("SELECT SUM(thanh_tien), SUM(tien_da_thu) FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Xuất Bán' AND trang_thai_tt = 'Đã thanh toán' AND ngay_thao_tac LIKE %s", (pattern_thang_vn,))
     res = c.fetchone()
@@ -150,6 +150,9 @@ except:
 loi_nhuan_gop = doanh_so - gia_von
 loi_nhuan_thang = loi_nhuan_gop - thanh_toan_ncc - chi_phi_tu_nhap
 
+# TÍNH TK HKD HIỆN CÓ
+tk_hkd_hien_co = doanh_so - thanh_toan_ncc
+
 # ==========================================
 # HIỂN THỊ METRICS KẾT QUẢ KINH DOANH
 # ==========================================
@@ -157,12 +160,13 @@ st.markdown("---")
 st.markdown(f"### 📈 BÁO CÁO LỢI NHUẬN KINH DOANH - {thang_chon_display}")
 st.caption("*(Đánh giá hiệu quả kinh doanh dựa trên Tổng lượng hàng đã xuất, không tính công nợ)*")
 
-# Hiển thị 4 cột
-col_dt1, col_dt2, col_dt3, col_dt4 = st.columns(4)
+# THAY ĐỔI YÊU CẦU: Hiển thị 5 cột
+col_dt1, col_dt2, col_dt3, col_dt4, col_dt5 = st.columns(5)
 col_dt1.metric("Tổng Doanh Số (Đã XB & TT)", f"{doanh_so:,.0f} VNĐ")
 col_dt2.metric("Tổng Giá Vốn", f"{gia_von:,.0f} VNĐ")
 col_dt3.metric("Chi Phí Phát Sinh (Tự Nhập)", f"{chi_phi_tu_nhap:,.0f} VNĐ")
 col_dt4.metric("Chi Phí Thanh Toán NVL, NCC", f"{thanh_toan_ncc:,.0f} VNĐ")
+col_dt5.metric("TK HKD hiện có", f"{tk_hkd_hien_co:,.0f} VNĐ")
 
 st.markdown("<br>", unsafe_allow_html=True)
 color_ln = "#00cc00" if loi_nhuan_thang >= 0 else "#cc0000"
