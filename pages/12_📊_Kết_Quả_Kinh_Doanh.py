@@ -89,10 +89,13 @@ thang_chon_val = list_months_value[idx]
 m_str, y_str = thang_chon_display.split('/')
 
 # MỞ RỘNG BỘ QUÉT: Bắt mọi định dạng ngày tháng có thể bị nhập sai lệch từ trước
-p1 = f"%{y_str}-{m_str}-%"
+p1 = f"%{y_str}-{m_str}%"
 p2 = f"%/{m_str}/{y_str}%"
-p3 = f"%{y_str}/{m_str}/%"
+p3 = f"%{y_str}/{m_str}%"
 p4 = f"%-{m_str}-{y_str}%"
+
+# ĐIỀU KIỆN TRẠNG THÁI: Tích hợp các trạng thái xuất kho, thanh toán, công nợ mới
+status_cond = "trang_thai IN ('Đã xuất kho', 'Đã thanh toán', 'Chưa thanh toán') OR trang_thai LIKE '%xuất%' OR trang_thai LIKE '%thanh toán%'"
 
 # ==========================================
 # TRÍCH XUẤT DỮ LIỆU TỪ HỆ THỐNG
@@ -104,7 +107,7 @@ chi_phi_tu_nhap = 0.0
 
 # 1. DOANH THU THÁNG (Tính bằng đơn đã xuất kho)
 try:
-    c.execute("SELECT SUM(tong_tien) FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
+    c.execute(f"SELECT SUM(tong_tien) FROM don_hang WHERE ({status_cond}) AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
     dt = c.fetchone()[0]
     doanh_thu = float(dt) if dt else 0.0
 except:
@@ -124,7 +127,7 @@ try:
         pass
     
     # Quét tất cả các đơn hàng đã xuất kho trong tháng để nhân số lượng với Giá Vốn
-    c.execute("SELECT chi_tiet FROM don_hang WHERE trang_thai = 'Đã xuất kho' AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
+    c.execute(f"SELECT chi_tiet FROM don_hang WHERE ({status_cond}) AND (ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s OR ngay LIKE %s)", (p1, p2, p3, p4))
     cac_don_hang = c.fetchall()
     
     for row in cac_don_hang:
