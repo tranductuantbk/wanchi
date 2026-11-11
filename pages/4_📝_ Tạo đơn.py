@@ -150,7 +150,7 @@ def format_vn(value):
 # ==========================================
 # HÀM XUẤT PDF ĐƠN HÀNG (CÓ LOGO)
 # ==========================================
-def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
+def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don, co_xuat_hoa_don=False):
     pdf = FPDF()
     pdf.add_page()
     has_font = os.path.exists(FONT_FILE)
@@ -218,8 +218,14 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don):
     pdf.set_font(font_name, 'B' if has_font else '', 11)
     pdf.cell(sum(col_widths[:-1]), 10, "TỔNG CỘNG:", border=1, align='R')
     pdf.cell(col_widths[-1], 10, format_vn(total), border=1, align='R', ln=True)
+    
+    if co_xuat_hoa_don:
+        pdf.ln(2)
+        pdf.set_font(font_name, 'B' if has_font else '', 11)
+        pdf.cell(0, 6, "Đơn giá bao gồm hóa đơn, vui lòng thanh toán vào tk HKD", ln=True, align='L')
 
     pdf.ln(15)
+    pdf.set_font(font_name, size=11)
     pdf.cell(95, 6, "Người Lập Phiếu", align='C')
     pdf.cell(95, 6, "Khách Hàng", align='C')
     
@@ -299,6 +305,7 @@ with tab1:
                 "Loại Giá": loai_gia_chot,
                 "Số Lượng": tong_so_cai_chuan,
                 "Giá Công ty": int(gia_cty_chuan),
+                "Đơn Giá Gốc": don_gia,
                 "Đơn Giá": don_gia,
                 "Thành Tiền": tong_so_cai_chuan * don_gia
             })
@@ -308,17 +315,27 @@ with tab1:
         st.markdown("---")
         df_gio_chuan = pd.DataFrame(st.session_state.gio_chuan)
         
-        df_gio_chuan.insert(0, "Xóa", False)
+        co_xuat_hoa_don_chuan = st.checkbox("✅ Có xuất hóa đơn (Đơn giá chia 0.95)", key="cb_xuat_hd_chuan")
+        
+        if co_xuat_hoa_don_chuan:
+            df_gio_chuan['Đơn Giá'] = (df_gio_chuan['Đơn Giá Gốc'] / 0.95).round(0).astype(int)
+            df_gio_chuan['Thành Tiền'] = df_gio_chuan['Số Lượng'] * df_gio_chuan['Đơn Giá']
+        else:
+            df_gio_chuan['Đơn Giá'] = df_gio_chuan['Đơn Giá Gốc']
+            df_gio_chuan['Thành Tiền'] = df_gio_chuan['Số Lượng'] * df_gio_chuan['Đơn Giá']
+            
+        df_gio_chuan_hien_thi = df_gio_chuan.drop(columns=['Đơn Giá Gốc'])
+        df_gio_chuan_hien_thi.insert(0, "Xóa", False)
         
         st.info("💡 **Mẹo Pro:** Cột Số Lượng hiển thị là tổng số cái. Cột Giá Công Ty chỉ hiện ở đây để đối chiếu, sẽ không xuất hiện trong PDF và Lịch sử đơn!")
         
         edited_df_chuan = st.data_editor(
-            df_gio_chuan,
+            df_gio_chuan_hien_thi,
             column_config={
                 "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                 "Tên Sản Phẩm": st.column_config.TextColumn(disabled=True),
                 "Loại Giá": st.column_config.TextColumn(disabled=True),
-                "Số Lượng": st.column_config.NumberColumn("Số lượng cái (Tổng)", min_value=1, step=1, disabled=True), # Khóa luôn cột này để ép nhập theo lốc ở trên
+                "Số Lượng": st.column_config.NumberColumn("Số lượng cái (Tổng)", min_value=1, step=1, disabled=True), 
                 "Giá Công ty": st.column_config.NumberColumn(disabled=True),
                 "Đơn Giá": st.column_config.NumberColumn(disabled=True),
                 "Thành Tiền": st.column_config.NumberColumn(disabled=True)
@@ -329,13 +346,9 @@ with tab1:
         )
         
         if edited_df_chuan['Xóa'].any():
-            df_valid = edited_df_chuan[edited_df_chuan['Xóa'] == False].drop(columns=['Xóa'])
-            df_valid['Thành Tiền'] = df_valid['Số Lượng'] * df_valid['Đơn Giá']
-            st.session_state.gio_chuan = df_valid.to_dict('records')
+            indices_to_keep = edited_df_chuan[edited_df_chuan['Xóa'] == False].index
+            st.session_state.gio_chuan = [st.session_state.gio_chuan[i] for i in indices_to_keep]
             st.rerun() 
-            
-        edited_df_chuan['Thành Tiền'] = edited_df_chuan['Số Lượng'] * edited_df_chuan['Đơn Giá']
-        st.session_state.gio_chuan = edited_df_chuan.drop(columns=['Xóa']).to_dict('records')
         
         tong_tien_chuan = float(edited_df_chuan['Thành Tiền'].sum())
         st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien_chuan)} VNĐ")
@@ -355,11 +368,11 @@ with tab1:
         col_btn_c1, col_btn_c2 = st.columns([1, 1])
         with col_btn_c1:
             if st.button("💾 CHỐT ĐƠN & TẠO FILE (ĐẠI LÝ / CÔNG TY)", type="primary", use_container_width=True, key="btn_chot_chuan"):
-                df_print = pd.DataFrame(st.session_state.gio_chuan)
+                df_print = edited_df_chuan.drop(columns=['Xóa'])
                 if 'Giá Công ty' in df_print.columns:
                     df_print = df_print.drop(columns=['Giá Công ty'])
                 
-                st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_print, tong_tien_chuan, "Hàng Chuẩn")
+                st.session_state['pdf_don_chuan'] = generate_order_pdf(ma_don_hien_tai, kh_chuan, sdt_kh_chot, df_print, tong_tien_chuan, "Hàng Chuẩn", co_xuat_hoa_don_chuan)
                 st.session_state['pdf_ten_chuan'] = f"{ma_don_hien_tai}_{kh_chuan}.pdf"
                 
                 img_data_chuan = convert_pdf_to_png(st.session_state['pdf_don_chuan'])
@@ -372,6 +385,7 @@ with tab1:
                     c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ma_don_hien_tai, ngay_gio, kh_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
                     conn.commit()
+                    st.session_state.gio_chuan = []
                     st.success("✅ Chốt đơn thành công! Dữ liệu đã lưu vào lịch sử (không chứa Giá Công Ty). Vui lòng tải file bên dưới.")
                 except Exception as e:
                     conn.rollback()
@@ -443,6 +457,7 @@ with tab2:
                 "Tên Sản Phẩm OME": sp_ome_chon,
                 "Loại Giá": "Giá OME",
                 "Số Lượng": tong_so_cai_ome,
+                "Đơn Giá Gốc": don_gia_ome,
                 "Đơn Giá OME": don_gia_ome,
                 "Thành Tiền": tong_so_cai_ome * don_gia_ome
             })
@@ -451,12 +466,23 @@ with tab2:
     if st.session_state.gio_ome:
         st.markdown("---")
         df_gio_ome = pd.DataFrame(st.session_state.gio_ome)
-        df_gio_ome.insert(0, "Xóa", False)
+        
+        co_xuat_hoa_don_ome = st.checkbox("✅ Có xuất hóa đơn (Đơn giá chia 0.95)", key="cb_xuat_hd_ome")
+        
+        if co_xuat_hoa_don_ome:
+            df_gio_ome['Đơn Giá OME'] = (df_gio_ome['Đơn Giá Gốc'] / 0.95).round(0).astype(int)
+            df_gio_ome['Thành Tiền'] = df_gio_ome['Số Lượng'] * df_gio_ome['Đơn Giá OME']
+        else:
+            df_gio_ome['Đơn Giá OME'] = df_gio_ome['Đơn Giá Gốc']
+            df_gio_ome['Thành Tiền'] = df_gio_ome['Số Lượng'] * df_gio_ome['Đơn Giá OME']
+            
+        df_gio_ome_hien_thi = df_gio_ome.drop(columns=['Đơn Giá Gốc'])
+        df_gio_ome_hien_thi.insert(0, "Xóa", False)
         
         st.info("💡 **Mẹo Pro:** Tích chọn ô **Xóa** để lập tức loại bỏ sản phẩm khỏi đơn!")
         
         edited_df_ome = st.data_editor(
-            df_gio_ome,
+            df_gio_ome_hien_thi,
             column_config={
                 "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
                 "Tên Sản Phẩm OME": st.column_config.TextColumn(disabled=True),
@@ -471,14 +497,10 @@ with tab2:
         )
         
         if edited_df_ome['Xóa'].any():
-            df_valid_ome = edited_df_ome[edited_df_ome['Xóa'] == False].drop(columns=['Xóa'])
-            df_valid_ome['Thành Tiền'] = df_valid_ome['Số Lượng'] * df_valid_ome['Đơn Giá OME']
-            st.session_state.gio_ome = df_valid_ome.to_dict('records')
+            indices_to_keep = edited_df_ome[edited_df_ome['Xóa'] == False].index
+            st.session_state.gio_ome = [st.session_state.gio_ome[i] for i in indices_to_keep]
             st.rerun()
             
-        edited_df_ome['Thành Tiền'] = edited_df_ome['Số Lượng'] * edited_df_ome['Đơn Giá OME']
-        st.session_state.gio_ome = edited_df_ome.drop(columns=['Xóa']).to_dict('records')
-        
         tong_tien_ome = float(edited_df_ome['Thành Tiền'].sum())
         st.write(f"### 💰 TỔNG CỘNG OME: {format_vn(tong_tien_ome)} VNĐ")
         
@@ -497,8 +519,8 @@ with tab2:
                 if khach_hang_ome == "-- Chọn Khách Hàng --":
                     st.error("⚠️ Vui lòng chọn Khách Hàng!")
                 else:
-                    df_print_ome = pd.DataFrame(st.session_state.gio_ome)
-                    st.session_state['pdf_don_ome'] = generate_order_pdf(ma_don_hien_tai, khach_hang_ome, sdt_ome_chot, df_print_ome, tong_tien_ome, "Hàng OME")
+                    df_print_ome = edited_df_ome.drop(columns=['Xóa'])
+                    st.session_state['pdf_don_ome'] = generate_order_pdf(ma_don_hien_tai, khach_hang_ome, sdt_ome_chot, df_print_ome, tong_tien_ome, "Hàng OME", co_xuat_hoa_don_ome)
                     st.session_state['pdf_ten_ome'] = f"{ma_don_hien_tai}_OME_{khach_hang_ome}.pdf"
                     
                     img_data_ome = convert_pdf_to_png(st.session_state['pdf_don_ome'])
@@ -511,6 +533,7 @@ with tab2:
                         c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                                   (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
                         conn.commit()
+                        st.session_state.gio_ome = []
                         st.success("✅ Chốt đơn OME thành công! Dữ liệu đã lưu vào lịch sử. Tải file bên dưới.")
                     except Exception as e: 
                         conn.rollback()
@@ -573,13 +596,25 @@ with tab3:
                             "Tên Sản Phẩm": item.get("Tên SP", item.get("Tên Sản Phẩm", "N/A")),
                             "Loại Giá": f"Từ Báo Giá ({ma_bg_chon})",
                             "Số Lượng": item.get("Số Lượng", 0),
+                            "Đơn Giá Gốc": item.get("Đơn Giá", 0),
                             "Đơn Giá": item.get("Đơn Giá", 0),
                             "Thành Tiền": item.get("Thành Tiền", 0)
                         })
                         
                     df_order_bg = pd.DataFrame(order_items)
-                    st.dataframe(df_order_bg, use_container_width=True, hide_index=True)
-                    tong_tien_bg = float(df_order_bg['Thành Tiền'].sum())
+                    
+                    co_xuat_hoa_don_bg = st.checkbox("✅ Có xuất hóa đơn (Đơn giá chia 0.95)", key="cb_xuat_hd_bg")
+                    
+                    if co_xuat_hoa_don_bg:
+                        df_order_bg['Đơn Giá'] = (df_order_bg['Đơn Giá Gốc'] / 0.95).round(0).astype(int)
+                        df_order_bg['Thành Tiền'] = df_order_bg['Số Lượng'] * df_order_bg['Đơn Giá']
+                    else:
+                        df_order_bg['Đơn Giá'] = df_order_bg['Đơn Giá Gốc']
+                        df_order_bg['Thành Tiền'] = df_order_bg['Số Lượng'] * df_order_bg['Đơn Giá']
+                        
+                    df_order_bg_hien_thi = df_order_bg.drop(columns=['Đơn Giá Gốc'])
+                    st.dataframe(df_order_bg_hien_thi, use_container_width=True, hide_index=True)
+                    tong_tien_bg = float(df_order_bg_hien_thi['Thành Tiền'].sum())
                     
                     st.write(f"### 💰 TỔNG CỘNG CHỐT DEAL: {format_vn(tong_tien_bg)} VNĐ")
                     
@@ -593,7 +628,7 @@ with tab3:
                     )
                     
                     if st.button("🚀 CHỐT ĐƠN & TẠO FILE TỪ BÁO GIÁ", type="primary", use_container_width=True, key="btn_chot_bg"):
-                        st.session_state['pdf_don_bg'] = generate_order_pdf(ma_don_hien_tai, bg_info['ten_kh'], bg_info['so_dien_thoai'], df_order_bg, tong_tien_bg, "Hàng Chuẩn") 
+                        st.session_state['pdf_don_bg'] = generate_order_pdf(ma_don_hien_tai, bg_info['ten_kh'], bg_info['so_dien_thoai'], df_order_bg_hien_thi, tong_tien_bg, "Hàng Chuẩn", co_xuat_hoa_don_bg) 
                         st.session_state['pdf_ten_bg'] = f"{ma_don_hien_tai}_TuBaoGia_{bg_info['ten_kh']}.pdf"
                         
                         img_data_bg = convert_pdf_to_png(st.session_state['pdf_don_bg'])
@@ -601,7 +636,7 @@ with tab3:
                             st.session_state['img_don_bg'] = img_data_bg
                         
                         try:
-                            chi_tiet_json_bg = df_order_bg.to_json(orient='records')
+                            chi_tiet_json_bg = df_order_bg_hien_thi.to_json(orient='records')
                             ngay_gio = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                             c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                                       (ma_don_hien_tai, ngay_gio, bg_info['ten_kh'], f'Từ Báo Giá {ma_bg_chon}', tong_tien_bg, chi_tiet_json_bg))
@@ -696,9 +731,12 @@ with tab4:
 
                     loai_pdf_header = "Hàng Chuẩn" if "Báo Giá" in row_data['loai_don'] else row_data['loai_don']
                     
+                    # Kiểm tra xem đơn hàng cũ có được xuất với giá trị đã chia 0.95 không (Dựa vào đơn giá gốc nếu lưu lại)
+                    co_xuat_hd_cu = False
+                    
                     loai_xuat_his = st.radio("Lựa chọn định dạng để XUẤT LẠI:", ["Chỉ xuất PDF", "Chỉ xuất Ảnh (PNG)", "Cả PDF và Ảnh"], horizontal=True, key=f"radio_his_{chon_don}", index=1)
                     
-                    pdf_re = generate_order_pdf(chon_don, row_data['ten_kh'], sdt_his, df_chi_tiet, float(row_data['tong_tien']), loai_pdf_header)
+                    pdf_re = generate_order_pdf(chon_don, row_data['ten_kh'], sdt_his, df_chi_tiet, float(row_data['tong_tien']), loai_pdf_header, co_xuat_hd_cu)
                     pdf_name_re = f"{chon_don}_{row_data['ten_kh']}.pdf"
                     
                     col_his1, col_his2 = st.columns(2)
