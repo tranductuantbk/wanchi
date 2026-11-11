@@ -114,10 +114,12 @@ with tab1:
     try:
         df_sp = pd.read_sql("SELECT ma_sp, ten_sp, gia_khach_le FROM dm_san_pham", conn)
         dict_gia = dict(zip(df_sp['ten_sp'], df_sp['gia_khach_le']))
+        dict_gia_lower = {str(k).strip().lower(): v for k, v in dict_gia.items()}
         dict_ma = dict(zip(df_sp['ten_sp'], df_sp['ma_sp']))
         danh_sach_sp = df_sp['ten_sp'].tolist()
     except Exception:
         dict_gia = {}
+        dict_gia_lower = {}
         dict_ma = {}
         danh_sach_sp = []
 
@@ -132,11 +134,12 @@ with tab1:
         
         if st.form_submit_button("➕ Thêm vào bảng Hóa đơn"):
             if sp_chon != "-- Chọn Sản Phẩm --":
-                # Xử lý tự động thêm "Hộp Nhựa" nếu chưa có
-                ten_vt_hien_thi = sp_chon if str(sp_chon).strip().startswith("Hộp Nhựa") else f"Hộp Nhựa {sp_chon.strip()}"
+                # Xử lý tự động thêm "Hộp Nhựa" nếu chưa có và viết hoa chữ cái đầu mỗi từ
+                sp_str = str(sp_chon).strip()
+                ten_vt_hien_thi = sp_str.title() if sp_str.lower().startswith("hộp nhựa") else f"Hộp Nhựa {sp_str}".title()
                 
                 st.session_state.bang_hoa_don.append({
-                    "Mã vt": dict_ma.get(sp_chon, ""),  # Tự động chèn Mã vật tư
+                    "Mã vt": "",  # Bỏ trống cột Mã vt không hiển thị mã
                     "Tên vt": ten_vt_hien_thi,
                     "Đvt": "Cái",
                     "Số lượng": sl_chon,
@@ -158,10 +161,10 @@ with tab1:
         gia_list = []
         tien_list = []
         for _, row in df_bang.iterrows():
-            sp = row['Tên vt']
-            # Lọc bỏ "Hộp Nhựa " để tìm về đúng giá gốc trong DB
-            sp_goc = sp[9:] if str(sp).startswith("Hộp Nhựa ") else sp
-            gia_goc = dict_gia.get(sp, dict_gia.get(sp_goc, 0))
+            sp = str(row['Tên vt']).strip()
+            # Lọc bỏ "Hộp Nhựa " để tìm về đúng giá gốc trong DB (không phân biệt hoa thường)
+            sp_goc = sp[9:].strip() if sp.lower().startswith("hộp nhựa ") else sp
+            gia_goc = dict_gia.get(sp, dict_gia.get(sp_goc, dict_gia_lower.get(sp.lower(), dict_gia_lower.get(sp_goc.lower(), 0))))
             
             gia_tinh = round(float(gia_goc), 0)  # Lấy trực tiếp giá công ty
             gia_list.append(gia_tinh)
@@ -169,6 +172,8 @@ with tab1:
             
         df_bang['Giá'] = gia_list
         df_bang['Tiền'] = tien_list
+        df_bang['Mã vt'] = ""
+        df_bang['Tên vt'] = df_bang['Tên vt'].astype(str).apply(lambda x: x.strip().title())
         
         # Sắp xếp đúng thứ tự cột như mẫu Kế toán
         cols = ["Xóa", "Mã vt", "Tên vt", "Đvt", "Số lượng", "Giá", "Tiền", "Giá ngoại tệ", "Tiền ngoại tệ", "%CK", "Chiết khấu", "Thuế suất", "Thuế"]
@@ -184,7 +189,7 @@ with tab1:
                 "Tiền": st.column_config.NumberColumn("Tiền", format="%.0f", disabled=True),
                 "Tên vt": st.column_config.TextColumn(disabled=True),
                 "Đvt": st.column_config.TextColumn(disabled=True),
-                "Mã vt": st.column_config.TextColumn()
+                "Mã vt": st.column_config.TextColumn(disabled=True)
             },
             hide_index=True, use_container_width=True
         )
@@ -227,7 +232,9 @@ with tab1:
                         st.error(f"Lỗi hệ thống: {e}")
                 
                 # TẠO FILE EXCEL IMPORT
-                df_export = edited_bang.drop(columns=['Xóa'])
+                df_export = edited_bang.drop(columns=['Xóa']).copy()
+                df_export['Mã vt'] = ""
+                df_export['Tên vt'] = df_export['Tên vt'].astype(str).apply(lambda x: x.strip().title())
                 try:
                     import openpyxl
                     output = io.BytesIO()
@@ -360,12 +367,6 @@ with tab3:
             st.warning(f"⚠️ Không tìm thấy dữ liệu sản phẩm cho Mã Đơn {ma_don_import}")
         else:
             try:
-                # Lấy bản đồ Mã vật tư để gán vào Excel
-                try:
-                    df_sp_tab3 = pd.read_sql("SELECT ma_sp, ten_sp FROM dm_san_pham", conn)
-                    dict_ma_tab3 = dict(zip(df_sp_tab3['ten_sp'], df_sp_tab3['ma_sp']))
-                except: dict_ma_tab3 = {}
-                
                 items_import = json.loads(df_dh_import.iloc[0]['chi_tiet'])
                 df_items_thue = pd.DataFrame(items_import)
 
@@ -388,17 +389,17 @@ with tab3:
                 with col_p2:
                     st.markdown(f"<h3 style='color: #0066cc; margin-top: 25px;'>Tổng tiền: {tong_tien_import:,.0f}</h3>", unsafe_allow_html=True)
                 
-                # Tự động map mã vật tư
-                ma_vt_list = [dict_ma_tab3.get(ten, "") for ten in df_items_thue['ten_sp']]
+                # Bỏ trống hoàn toàn cột Mã vật tư
+                ma_vt_list = ["" for _ in df_items_thue['ten_sp']]
 
-                # Tự động thêm "Hộp Nhựa" vào Tên Sản Phẩm nếu chưa có
+                # Tự động thêm "Hộp Nhựa" vào Tên Sản Phẩm nếu chưa có và viết hoa chữ cái đầu mỗi từ
                 ten_vt_list = []
                 for ten in df_items_thue['ten_sp']:
                     ten_str = str(ten).strip()
-                    if not ten_str.startswith("Hộp Nhựa"):
-                        ten_vt_list.append(f"Hộp Nhựa {ten_str}")
+                    if not ten_str.lower().startswith("hộp nhựa"):
+                        ten_vt_list.append(f"Hộp Nhựa {ten_str}".title())
                     else:
-                        ten_vt_list.append(ten_str)
+                        ten_vt_list.append(ten_str.title())
 
                 df_import_thue = pd.DataFrame({
                     "Mã vt": ma_vt_list,
