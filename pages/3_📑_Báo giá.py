@@ -219,7 +219,8 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
     pdf.cell(0, 10, title, ln=True, align='C')
     if subtitle:
         pdf.set_font(font_name, size=11)
-        pdf.cell(0, 8, subtitle, ln=True, align='C')
+        for line in subtitle.split('\n'):
+            pdf.cell(0, 6, line, ln=True, align='C')
     pdf.ln(5)
 
     if columns_to_print is None: columns_to_print = dataframe.columns.tolist()
@@ -446,9 +447,9 @@ with tab1:
                         ma_bg = f"BG{ngay_gio_obj.strftime('%y%m%d%H%M')}"
                         ngay_gio_str = ngay_gio_obj.strftime("%d/%m/%Y %H:%M")
                     
-                    # Bỏ cột "Giá công ty" ra khỏi PDF
+                    # Bỏ cột "Giá công ty" ra khỏi PDF, tách dòng Khách hàng và SĐT riêng biệt
                     st.session_state['pdf_data_t1'] = generate_generic_pdf(
-                        df_hien_thi, "BÁO GIÁ SẢN PHẨM", f"Mã phiếu: {ma_bg} | Khách hàng: {ten_kh} | SĐT: {sdt_kh}", 
+                        df_hien_thi, "BÁO GIÁ SẢN PHẨM", f"Mã phiếu: {ma_bg}\nKhách hàng: {ten_kh}\nSĐT: {sdt_kh}", 
                         ["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], col_widths=[30, 70, 20, 35, 35], total_amount=tong_cuoi)
                     st.session_state['pdf_name_t1'] = f"{ma_bg}_{ten_kh}.pdf"
                     
@@ -529,11 +530,11 @@ with tab2:
                     
                     col_his1, col_his2 = st.columns(2)
                     with col_his1:
-                        # Đảm bảo PDF in lại chuẩn
+                        # Đảm bảo PDF in lại chuẩn, tách dòng Khách hàng và SĐT riêng biệt
                         pdf_re = generate_generic_pdf(
                             dataframe=df_chi_tiet, 
                             title="BÁO GIÁ SẢN PHẨM" if row_data['loai_bao_gia'] == 'Tiêu chuẩn' else "BÁO GIÁ DỊCH VỤ", 
-                            subtitle=f"Mã phiếu: {ma_tim_kiem} | Khách hàng: {row_data['ten_kh']} | SĐT: {row_data['so_dien_thoai']}", 
+                            subtitle=f"Mã phiếu: {ma_tim_kiem}\nKhách hàng: {row_data['ten_kh']}\nSĐT: {row_data['so_dien_thoai']}", 
                             columns_to_print=["Mã SP", "Tên SP", "Số Lượng", "Đơn Giá", "Thành Tiền"], 
                             col_widths=[30, 70, 20, 35, 35], 
                             total_amount=row_data['tong_tien']
