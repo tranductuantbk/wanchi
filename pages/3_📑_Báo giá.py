@@ -220,7 +220,10 @@ def generate_generic_pdf(dataframe, title, subtitle="", columns_to_print=None, c
     if subtitle:
         pdf.set_font(font_name, size=11)
         for line in subtitle.split('\n'):
-            pdf.cell(0, 6, line, ln=True, align='C')
+            if line.strip().startswith("Mã phiếu"):
+                pdf.cell(0, 8, line, ln=True, align='C')
+            else:
+                pdf.cell(0, 6, line, ln=True, align='L')
     pdf.ln(5)
 
     if columns_to_print is None: columns_to_print = dataframe.columns.tolist()
