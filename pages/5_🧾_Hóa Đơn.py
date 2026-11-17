@@ -101,11 +101,7 @@ with tab1:
     except:
         danh_sach_dai_ly = ["-- Chọn Đại Lý --"]
     
-    col_kh1, col_kh2 = st.columns([2, 1])
-    with col_kh1:
-        ten_kh_input = st.selectbox("👤 Chọn Tên Đại Lý:", danh_sach_dai_ly)
-    with col_kh2:
-        ma_don_input = st.text_input("📝 Mã Hóa Đơn (Tự động nếu để trống):", placeholder="VD: HD-001").strip()
+    ten_kh_input = st.selectbox("👤 Chọn Tên Đại Lý:", danh_sach_dai_ly)
     
     st.markdown("---")
     st.subheader("2. Bảng Hóa Đơn / Import Thuế")
@@ -212,11 +208,11 @@ with tab1:
             if ten_kh_input == "-- Chọn Đại Lý --":
                 st.error("⚠️ Vui lòng chọn Tên Đại Lý để ghi nhận công nợ!")
             else:
-                ma_don_chot = ma_don_input if ma_don_input else f"HD-{int(time.time())}"
+                ma_don_chot = f"HD-{int(time.time())}"
                 
                 check_hd = pd.read_sql("SELECT ma_don FROM hoa_don WHERE ma_don = %s", conn, params=(ma_don_chot,))
                 if not check_hd.empty:
-                    st.error(f"⚠️ Hóa đơn với mã {ma_don_chot} đã tồn tại! Vui lòng chọn mã khác.")
+                    st.error(f"⚠️ Hóa đơn với mã {ma_don_chot} đã tồn tại! Vui lòng thử lại.")
                 else:
                     try:
                         ngay_hd = date.today().strftime("%Y-%m-%d")
@@ -334,13 +330,13 @@ with tab2:
             df_summary = pd.DataFrame({
                 "Tên Đại Lý": [loc_kh],
                 "Tổng Tiền Hóa Đơn": [tong_tien_hd],
-                "Số Tiền Khách Còn Nợ": [tien_no_hien_tai]
+                "Tổng Số Tiền Đại Lý Còn Nợ": [tien_no_hien_tai]
             })
             
             st.dataframe(
                 df_summary.style.format({
                     "Tổng Tiền Hóa Đơn": "{:,.0f} VNĐ",
-                    "Số Tiền Khách Còn Nợ": "{:,.0f} VNĐ"
+                    "Tổng Số Tiền Đại Lý Còn Nợ": "{:,.0f} VNĐ"
                 }),
                 use_container_width=True, hide_index=True
             )
