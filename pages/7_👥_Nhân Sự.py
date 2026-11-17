@@ -596,7 +596,7 @@ else:
                         if '/' in ky_luong_str:
                             thang_str, nam_str = ky_luong_str.split('/')
                             thang_str = thang_str.zfill(2)
-                            for ngay_le in ["30/04", "01/05", "02/09"]:
+                            for ngay_le in ["30/04", "01/05", "02/09", "24/11"]:
                                 le_dd, le_mm = ngay_le.split('/')
                                 if le_mm == thang_str:
                                     tien_thuong_le += (l_cb + 100000)
@@ -779,7 +779,7 @@ else:
                     st.info("- Ngày thường = (CB + Năng lực + Thâm niên) / 9.5 * 150%\n- Chủ nhật = (CB + Năng lực + Thâm niên) / 9.5 * 200%\n- Quên ra ca: Không tính ngày công, không tính tăng ca, tự động ghi nhận 1 lỗi quên ra ca.\n*(Hệ thống sẽ tự động tính và lưu vào Hồ sơ nhân sự)*")
                     
                     st.markdown("**5. Cách tính thưởng Lễ, Tết, Mừng sinh nhật & Phụ cấp chức vụ**")
-                    st.info("- **Lễ 30/4, 1/5, 2/9**: Lương CB + 100.000đ.\n- **Thưởng Tết**: Lương CB x 26 ngày.\n- **Mừng sinh nhật**: 300.000đ.\n- **Quản lý / Kỹ thuật trưởng**: Tự động cộng thêm 200.000đ/tháng (Có thể chỉnh sửa số tiền này lúc tính lương).\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết và Mừng sinh nhật có nút tích chọn ở phần Tính lương)*")
+                    st.info("- **Lễ 30/4, 1/5, 2/9, 24/11**: Lương CB + 100.000đ.\n- **Thưởng Tết**: Lương CB x 26 ngày.\n- **Mừng sinh nhật**: 300.000đ.\n- **Quản lý / Kỹ thuật trưởng**: Tự động cộng thêm 200.000đ/tháng (Có thể chỉnh sửa số tiền này lúc tính lương).\n*(Hệ thống tự động cộng thưởng Lễ khi chọn đúng tháng. Thưởng Tết và Mừng sinh nhật có nút tích chọn ở phần Tính lương)*")
                 with c2:
                     st.markdown("**2. Quy tắc Đi trễ & Về sớm**")
                     gio_tre_moi = st.time_input("Sau giờ này tính là đi trễ", datetime.strptime(cf['gio_tre'], "%H:%M").time())
