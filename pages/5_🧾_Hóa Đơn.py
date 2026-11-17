@@ -1,12 +1,107 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
+from fpdf import FPDF
+import os
+import urllib.request
 import time
 import json
 import io 
 from db_utils import get_connection, check_password
 
 st.set_page_config(page_title="Hóa Đơn & Công Nợ", page_icon="🧾", layout="wide")
+
+# ==========================================
+# CẤU HÌNH FONT PDF & CHUYỂN ĐỔI ẢNH
+# ==========================================
+FONT_FILE = "Roboto-Regular.ttf"
+FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf"
+
+@st.cache_resource
+def download_font():
+    if not os.path.exists(FONT_FILE):
+        try: urllib.request.urlretrieve(FONT_URL, FONT_FILE)
+        except: return False
+    return True
+download_font()
+
+try:
+    import fitz  # PyMuPDF
+    HAS_FITZ = True
+except ImportError:
+    HAS_FITZ = False
+
+def convert_pdf_to_png(pdf_bytes):
+    """Hàm phụ trợ chuyển byte PDF thành byte Ảnh PNG độ nét cao"""
+    if not HAS_FITZ:
+        st.error("⚠️ Hệ thống thiếu thư viện 'PyMuPDF' để xuất ảnh. Vui lòng chạy lệnh: pip install PyMuPDF")
+        return None
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page = doc.load_page(0)
+        pix = page.get_pixmap(dpi=200)
+        return pix.tobytes("png")
+    except Exception as e:
+        st.error(f"Lỗi khi chuyển đổi ảnh: {e}")
+        return None
+
+def generate_doi_chieu_pdf(ten_kh, df_unpaid, tong_tien_hd, tien_no_hien_tai):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    has_font = os.path.exists(FONT_FILE)
+    if has_font:
+        pdf.add_font("Roboto", "", FONT_FILE, uni=True)
+        pdf.add_font("Roboto", "B", FONT_FILE, uni=True)
+        font_name = "Roboto"
+    else:
+        font_name = "Helvetica"
+
+    def f_vn(val): return f"{val:,.0f}".replace(",", ".")
+
+    # Tiêu đề phiếu đối chiếu
+    pdf.set_font(font_name, 'B' if has_font else '', 15)
+    pdf.cell(0, 10, "BẢNG ĐỐI CHIẾU CÔNG NỢ HÓA ĐƠN ĐẠI LÝ", ln=1, align='C')
+    
+    pdf.set_font(font_name, '', 11)
+    pdf.cell(0, 7, f"Ngày lập file: {date.today().strftime('%d/%m/%Y')}", ln=1, align='C')
+    pdf.ln(3)
+    
+    pdf.set_font(font_name, 'B' if has_font else '', 12)
+    pdf.cell(0, 8, f"Khách hàng (Đại lý): {ten_kh}", ln=1, align='L')
+    pdf.ln(2)
+
+    # Header bảng chi tiết các đơn
+    pdf.set_fill_color(230, 230, 230)
+    pdf.set_font(font_name, 'B' if has_font else '', 11)
+    pdf.cell(15, 9, "STT", border=1, align='C', fill=True)
+    pdf.cell(35, 9, "Ngày Lập", border=1, align='C', fill=True)
+    pdf.cell(45, 9, "Mã Đơn", border=1, align='C', fill=True)
+    pdf.cell(50, 9, "Khách Hàng", border=1, align='C', fill=True)
+    pdf.cell(45, 9, "Tổng Tiền Hóa Đơn", border=1, align='C', fill=True, ln=1)
+
+    # Nội dung các dòng hóa đơn
+    pdf.set_font(font_name, '', 11)
+    for idx, (_, row) in enumerate(df_unpaid.iterrows(), 1):
+        pdf.cell(15, 8, str(idx), border=1, align='C')
+        pdf.cell(35, 8, str(row['ngay']), border=1, align='C')
+        pdf.cell(45, 8, str(row['ma_don']), border=1, align='C')
+        pdf.cell(50, 8, str(row['ten_kh']), border=1, align='C')
+        pdf.cell(45, 8, f"{f_vn(float(row['tong_tien']))} VNĐ", border=1, align='R', ln=1)
+
+    pdf.ln(4)
+    # Tổng kết đối chiếu
+    pdf.set_font(font_name, 'B' if has_font else '', 12)
+    pdf.cell(145, 9, "Tổng Tiền Hóa Đơn:", border=1, align='R', fill=True)
+    pdf.cell(45, 9, f"{f_vn(tong_tien_hd)} VNĐ", border=1, align='R', fill=True, ln=1)
+
+    pdf.cell(145, 9, "Tổng Số Tiền Đại Lý Còn Nợ:", border=1, align='R', fill=True)
+    pdf.cell(45, 9, f"{f_vn(tien_no_hien_tai)} VNĐ", border=1, align='R', fill=True, ln=1)
+
+    try:
+        return bytes(pdf.output())
+    except:
+        return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
 # Ổ KHÓA BẢO VỆ 2 LỚP
@@ -264,86 +359,129 @@ with tab2:
     else:
         loc_kh = st.selectbox("🔍 Lọc theo Đại lý", ["Tất cả"] + df_hd['ten_kh'].unique().tolist())
 
-        df_hien_thi_hd = df_hd.copy()
+        # Bảng kê trên chỉ hiển thị những đơn chưa thanh toán (ẩn các đơn đã thanh toán)
+        df_chua_tra = df_hd[df_hd['da_thu'] < df_hd['tong_tien']].copy()
+
+        df_hien_thi_hd = df_chua_tra.copy()
         if loc_kh != "Tất cả":
             df_hien_thi_hd = df_hien_thi_hd[df_hien_thi_hd['ten_kh'] == loc_kh]
 
-        # Chuẩn bị hiển thị, thêm cột chọn tick để thanh toán
-        df_hien_thi_hd.insert(0, "Chọn", False)
-        
-        # Chỉ giữ lại các cột cần thiết cho bảng theo dõi
-        df_hien_thi_hd = df_hien_thi_hd[['Chọn', 'ngay', 'ma_don', 'ten_kh', 'tong_tien', 'da_thu']]
-        df_hien_thi_hd.columns = ['Chọn', 'Ngày Lập', 'Mã Đơn', 'Khách Hàng', 'Tổng Tiền Hóa Đơn', 'da_thu_hidden']
+        if df_hien_thi_hd.empty:
+            st.success("✅ Hiện tại không còn hóa đơn nào chưa thanh toán!")
+        else:
+            # Chuẩn bị hiển thị, thêm cột chọn tick để thanh toán
+            df_hien_thi_hd.insert(0, "Chọn", False)
+            
+            # Chỉ giữ lại các cột cần thiết cho bảng theo dõi
+            df_hien_thi_hd = df_hien_thi_hd[['Chọn', 'ngay', 'ma_don', 'ten_kh', 'tong_tien', 'da_thu']]
+            df_hien_thi_hd.columns = ['Chọn', 'Ngày Lập', 'Mã Đơn', 'Khách Hàng', 'Tổng Tiền Hóa Đơn', 'da_thu_hidden']
 
-        # Sử dụng Data Editor để có thể tick chọn
-        edited_df = st.data_editor(
-            df_hien_thi_hd.drop(columns=['da_thu_hidden']),
-            column_config={
-                "Chọn": st.column_config.CheckboxColumn("Tick", default=False),
-                "Ngày Lập": st.column_config.TextColumn(disabled=True),
-                "Mã Đơn": st.column_config.TextColumn(disabled=True),
-                "Khách Hàng": st.column_config.TextColumn(disabled=True),
-                "Tổng Tiền Hóa Đơn": st.column_config.NumberColumn(format="%.0f", disabled=True)
-            },
-            use_container_width=True, hide_index=True, key="editor_thanh_toan_hd"
-        )
-        
-        # Xử lý Nút Thanh Toán
-        don_chon = edited_df[edited_df['Chọn'] == True]['Mã Đơn'].tolist()
-        if don_chon:
-            if st.button("✅ XÁC NHẬN ĐÃ THANH TOÁN CÁC ĐƠN ĐÃ CHỌN", type="primary"):
-                try:
-                    for ma in don_chon:
-                        c.execute("UPDATE hoa_don SET da_thu = tong_tien WHERE ma_don = %s", (ma,))
-                    conn.commit()
-                    st.success(f"🎉 Đã thanh toán thành công các đơn: {', '.join(don_chon)}")
-                    time.sleep(1.5)
-                    st.rerun()
-                except Exception as e:
-                    conn.rollback()
-                    st.error(f"Lỗi thanh toán: {e}")
-
-        # Hiển thị Bảng Công Nợ Thuế khi lọc theo Đại lý
-        if loc_kh != "Tất cả":
-            st.markdown("---")
-            st.subheader(f"📊 Bảng Chi Tiết Công Nợ - Khách Hàng: **{loc_kh}**")
-            
-            # Lọc lại df đã update để tính nợ
-            df_hien_thi_no = df_hd[df_hd['ten_kh'] == loc_kh]
-            
-            tong_tien_hd = df_hien_thi_no['tong_tien'].sum()
-            tong_da_thu = df_hien_thi_no['da_thu'].sum()
-            
-            # Logic tính toán nợ theo thuế
-            tien_no_ban_dau = (tong_tien_hd / 0.95) - tong_tien_hd
-            
-            # Cấn trừ số tiền tương ứng các hóa đơn đã tick thanh toán
-            tien_no_thue_da_tra = 0
-            don_da_thanh_toan = df_hien_thi_no[df_hien_thi_no['da_thu'] == df_hien_thi_no['tong_tien']]
-            
-            if not don_da_thanh_toan.empty:
-                tong_tien_hd_da_tra = don_da_thanh_toan['tong_tien'].sum()
-                tien_no_thue_da_tra = (tong_tien_hd_da_tra / 0.95) - tong_tien_hd_da_tra
-            
-            tien_no_hien_tai = tien_no_ban_dau - tien_no_thue_da_tra
-
-            df_summary = pd.DataFrame({
-                "Tên Đại Lý": [loc_kh],
-                "Tổng Tiền Hóa Đơn": [tong_tien_hd],
-                "Tổng Số Tiền Đại Lý Còn Nợ": [tien_no_hien_tai]
-            })
-            
-            st.dataframe(
-                df_summary.style.format({
-                    "Tổng Tiền Hóa Đơn": "{:,.0f} VNĐ",
-                    "Tổng Số Tiền Đại Lý Còn Nợ": "{:,.0f} VNĐ"
-                }),
-                use_container_width=True, hide_index=True
+            # Sử dụng Data Editor để có thể tick chọn
+            edited_df = st.data_editor(
+                df_hien_thi_hd.drop(columns=['da_thu_hidden']),
+                column_config={
+                    "Chọn": st.column_config.CheckboxColumn("Tick", default=False),
+                    "Ngày Lập": st.column_config.TextColumn(disabled=True),
+                    "Mã Đơn": st.column_config.TextColumn(disabled=True),
+                    "Khách Hàng": st.column_config.TextColumn(disabled=True),
+                    "Tổng Tiền Hóa Đơn": st.column_config.NumberColumn(format="%.0f", disabled=True)
+                },
+                use_container_width=True, hide_index=True, key="editor_thanh_toan_hd"
             )
             
-            if not don_da_thanh_toan.empty:
-                danh_sach_ma_da_tra = don_da_thanh_toan['ma_don'].tolist()
-                st.info(f"✅ Các mã đơn đã thanh toán công nợ: **{', '.join(danh_sach_ma_da_tra)}**")
+            # Xử lý Nút Thanh Toán
+            don_chon = edited_df[edited_df['Chọn'] == True]['Mã Đơn'].tolist()
+            if don_chon:
+                if st.button("✅ XÁC NHẬN ĐÃ THANH TOÁN CÁC ĐƠN ĐÃ CHỌN", type="primary"):
+                    try:
+                        for ma in don_chon:
+                            c.execute("UPDATE hoa_don SET da_thu = tong_tien WHERE ma_don = %s", (ma,))
+                        conn.commit()
+                        st.success(f"🎉 Đã thanh toán thành công các đơn: {', '.join(don_chon)}")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"Lỗi thanh toán: {e}")
+
+        # Hiển thị Bảng Công Nợ Thuế & Xuất File Đối Chiếu
+        st.markdown("---")
+        ten_doi_chieu = loc_kh if loc_kh != "Tất cả" else "Tất cả Đại lý"
+        st.subheader(f"📊 Bảng Chi Tiết Công Nợ - Khách Hàng: **{ten_doi_chieu}**")
+        
+        # Lọc các đơn chưa thanh toán để tính tổng tiền hóa đơn đang nợ và tiền nợ thuế tương ứng
+        df_no_hien_tai = df_chua_tra if loc_kh == "Tất cả" else df_chua_tra[df_chua_tra['ten_kh'] == loc_kh]
+        df_da_tra = df_hd[df_hd['da_thu'] >= df_hd['tong_tien']] if loc_kh == "Tất cả" else df_hd[(df_hd['ten_kh'] == loc_kh) & (df_hd['da_thu'] >= df_hd['tong_tien'])]
+        
+        tong_tien_hd = float(df_no_hien_tai['tong_tien'].sum()) if not df_no_hien_tai.empty else 0.0
+        tien_no_hien_tai = (tong_tien_hd / 0.95) - tong_tien_hd
+
+        df_summary = pd.DataFrame({
+            "Tên Đại Lý": [ten_doi_chieu],
+            "Tổng Tiền Hóa Đơn": [tong_tien_hd],
+            "Tổng Số Tiền Đại Lý Còn Nợ": [tien_no_hien_tai]
+        })
+        
+        st.dataframe(
+            df_summary.style.format({
+                "Tổng Tiền Hóa Đơn": "{:,.0f} VNĐ",
+                "Tổng Số Tiền Đại Lý Còn Nợ": "{:,.0f} VNĐ"
+            }),
+            use_container_width=True, hide_index=True
+        )
+        
+        if not df_da_tra.empty:
+            danh_sach_ma_da_tra = df_da_tra['ma_don'].tolist()
+            st.info(f"✅ Các mã đơn đã thanh toán công nợ: **{', '.join(danh_sach_ma_da_tra)}**")
+
+        # --- TÙY CHỌN XUẤT FILE ĐỐI CHIẾU PDF / ẢNH (MẶC ĐỊNH ẢNH) ---
+        if not df_no_hien_tai.empty:
+            st.markdown("#### 📁 Xuất File Đối Chiếu Công Nợ:")
+            loai_xuat_dc = st.radio(
+                "Lựa chọn định dạng xuất file:",
+                ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"],
+                horizontal=True,
+                key="radio_xuat_doi_chieu",
+                index=1  # Mặc định chọn xuất file Ảnh (PNG)
+            )
+            
+            col_dc1, col_dc2, col_dc3 = st.columns([1, 1, 1])
+            with col_dc1:
+                if st.button("📄 TẠO FILE ĐỐI CHIẾU CÔNG NỢ", type="primary", use_container_width=True):
+                    pdf_bytes = generate_doi_chieu_pdf(ten_doi_chieu, df_no_hien_tai, tong_tien_hd, tien_no_hien_tai)
+                    safe_name = ten_doi_chieu.replace(" ", "_")
+                    ngay_str = date.today().strftime("%d%m%Y")
+                    
+                    st.session_state['pdf_doi_chieu'] = pdf_bytes
+                    st.session_state['pdf_doi_chieu_name'] = f"Doi_Chieu_Cong_No_{safe_name}_{ngay_str}.pdf"
+                    
+                    img_bytes = convert_pdf_to_png(pdf_bytes)
+                    if img_bytes:
+                        st.session_state['img_doi_chieu'] = img_bytes
+                    st.success("✅ Đã tạo file đối chiếu! Bấm nút bên cạnh để tải về.")
+
+            if 'pdf_doi_chieu' in st.session_state:
+                if "PDF" in loai_xuat_dc or "Cả" in loai_xuat_dc:
+                    with col_dc2:
+                        st.download_button(
+                            label="🖨️ TẢI FILE ĐỐI CHIẾU (PDF)",
+                            data=st.session_state['pdf_doi_chieu'],
+                            file_name=st.session_state['pdf_doi_chieu_name'],
+                            mime="application/pdf",
+                            type="primary",
+                            use_container_width=True
+                        )
+                if ("Ảnh" in loai_xuat_dc or "Cả" in loai_xuat_dc) and st.session_state.get('img_doi_chieu'):
+                    with col_dc3:
+                        img_name_dc = st.session_state['pdf_doi_chieu_name'].replace('.pdf', '.png')
+                        st.download_button(
+                            label="🖼️ TẢI FILE ĐỐI CHIẾU (ẢNH)",
+                            data=st.session_state['img_doi_chieu'],
+                            file_name=img_name_dc,
+                            mime="image/png",
+                            type="primary",
+                            use_container_width=True
+                        )
 
 # ==========================================
 # TAB 3: IMPORT THUẾ WANCHI (CÔNG CỤ PHỤ)
