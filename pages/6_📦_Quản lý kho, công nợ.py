@@ -1636,18 +1636,51 @@ with tab_kh:
                 df_hien_thi_kh = df_kh_no[df_kh_no['khach_hang'] == kh_chon].copy()
                 tong_tien_no_don_hang = df_hien_thi_kh['tien_con_no'].sum()
                 
-                # Fetch pending (unapplied) payments cho khách hàng này
-                c.execute("SELECT SUM(tien_da_thu) FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Thu Tiền' AND khach_hang = %s AND trang_thai_tt = 'Chưa cấn trừ'", (kh_chon,))
-                res = c.fetchone()
-                tien_thu_chua_can_tru = float(res[0]) if res and res[0] else 0.0
+                # Fetch pending (unapplied) payments cho khách hàng này kèm chi tiết
+                c.execute("SELECT id, ngay_thao_tac, tien_da_thu, ghi_chu FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Thu Tiền' AND khach_hang = %s AND trang_thai_tt = 'Chưa cấn trừ' ORDER BY id DESC", (kh_chon,))
+                tien_tam_records = c.fetchall()
+                tien_thu_chua_can_tru = sum([r[2] for r in tien_tam_records]) if tien_tam_records else 0.0
                 tong_no_thuc_te = tong_tien_no_don_hang - tien_thu_chua_can_tru
                 
                 st.warning(f"🚨 **TỔNG NỢ TỪ CÁC ĐƠN HÀNG: {format_vn(tong_tien_no_don_hang)} VNĐ**")
+                
                 if tien_thu_chua_can_tru > 0:
                     st.info(f"💵 **Tiền khách đã thanh toán (Lưu tạm / Chưa cấn trừ): {format_vn(tien_thu_chua_can_tru)} VNĐ**")
                     st.error(f"🔥 **KHÁCH CÒN NỢ THỰC TẾ: {format_vn(tong_no_thuc_te)} VNĐ**")
+                    
+                    st.markdown("---")
+                    st.write("🛠️ **Quản lý tiền thanh toán tạm (Có thể thu hồi nếu nhập sai)**")
+                    df_tam = pd.DataFrame(tien_tam_records, columns=["ID", "Ngày", "Số Tiền (VNĐ)", "Ghi Chú"])
+                    df_tam.insert(0, "Hủy (Thu hồi)", False)
+                    
+                    edited_tam = st.data_editor(
+                        df_tam,
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "Hủy (Thu hồi)": st.column_config.CheckboxColumn("Thu Hồi Khoản Này", default=False),
+                            "ID": st.column_config.NumberColumn(disabled=True),
+                            "Ngày": st.column_config.TextColumn(disabled=True),
+                            "Số Tiền (VNĐ)": st.column_config.NumberColumn(disabled=True, format="%.0f"),
+                            "Ghi Chú": st.column_config.TextColumn(disabled=True)
+                        },
+                        key=f"editor_tam_{kh_chon}"
+                    )
+                    
+                    selected_tam = edited_tam[edited_tam["Hủy (Thu hồi)"] == True]
+                    if not selected_tam.empty:
+                        if st.button("❌ XÁC NHẬN THU HỒI CÁC KHOẢN TIỀN ĐÃ CHỌN", type="secondary"):
+                            ids_to_delete = selected_tam["ID"].tolist()
+                            if len(ids_to_delete) == 1:
+                                c.execute("DELETE FROM public.ls_nhap_xuat_kho WHERE id = %s", (ids_to_delete[0],))
+                            else:
+                                c.execute(f"DELETE FROM public.ls_nhap_xuat_kho WHERE id IN {tuple(ids_to_delete)}")
+                            conn.commit()
+                            st.success("✅ Đã thu hồi khoản tiền lưu tạm thành công!")
+                            time.sleep(1.5); st.rerun()
                 
                 # --- XUẤT FILE ĐỐI SOÁT ---
+                st.markdown("---")
                 st.markdown("**📁 Tùy chọn in phiếu đối soát để gửi khách:**")
                 loai_xuat_ds = st.radio(
                     "Định dạng xuất Phiếu Đối Soát:", 
@@ -1705,6 +1738,9 @@ with tab_kh:
                     with col_thu2:
                         st.write("")
                         btn_thanh_toan = st.form_submit_button("✅ CHỈ XÁC NHẬN THANH TOÁN (Lưu tạm, chưa trừ nợ)", type="secondary", use_container_width=True)
+                        
+                        st.write("---")
+                        xac_nhan_can_tru = st.checkbox("⚠️ Xác nhận chắc chắn muốn cấn trừ số tiền này vào nợ đơn hàng")
                         btn_can_tru = st.form_submit_button("🔄 CẤN TRỪ NỢ (Gạch nợ thẳng vào các đơn)", type="primary", use_container_width=True)
                         
                     # LƯU CHỈ THANH TOÁN (LƯU TẠM)
@@ -1723,7 +1759,9 @@ with tab_kh:
                             
                     # CẤN TRỪ VÀO ĐƠN HÀNG
                     if btn_can_tru:
-                        if so_tien_thu > 0:
+                        if not xac_nhan_can_tru:
+                            st.error("⚠️ Vui lòng đánh dấu vào ô 'Xác nhận chắc chắn...' trước khi bấm CẤN TRỪ NỢ.")
+                        elif so_tien_thu > 0:
                             if so_tien_thu > tong_tien_no_don_hang:
                                 st.error(f"⚠️ Số tiền cấn trừ lớn hơn tổng nợ của các đơn ({format_vn(tong_tien_no_don_hang)} đ). Vui lòng nhập lại!")
                             else:
