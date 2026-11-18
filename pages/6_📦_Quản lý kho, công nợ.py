@@ -1634,9 +1634,18 @@ with tab_kh:
             
             if kh_chon != "-- Chọn Khách Hàng --":
                 df_hien_thi_kh = df_kh_no[df_kh_no['khach_hang'] == kh_chon].copy()
-                tong_tien_no_kh = df_hien_thi_kh['tien_con_no'].sum()
+                tong_tien_no_don_hang = df_hien_thi_kh['tien_con_no'].sum()
                 
-                st.warning(f"🚨 **TỔNG NỢ HIỆN TẠI CỦA {kh_chon.upper()}: {format_vn(tong_tien_no_kh)} VNĐ**")
+                # Fetch pending (unapplied) payments cho khách hàng này
+                c.execute("SELECT SUM(tien_da_thu) FROM public.ls_nhap_xuat_kho WHERE loai_thao_tac = 'Thu Tiền' AND khach_hang = %s AND trang_thai_tt = 'Chưa cấn trừ'", (kh_chon,))
+                res = c.fetchone()
+                tien_thu_chua_can_tru = float(res[0]) if res and res[0] else 0.0
+                tong_no_thuc_te = tong_tien_no_don_hang - tien_thu_chua_can_tru
+                
+                st.warning(f"🚨 **TỔNG NỢ TỪ CÁC ĐƠN HÀNG: {format_vn(tong_tien_no_don_hang)} VNĐ**")
+                if tien_thu_chua_can_tru > 0:
+                    st.info(f"💵 **Tiền khách đã thanh toán (Lưu tạm / Chưa cấn trừ): {format_vn(tien_thu_chua_can_tru)} VNĐ**")
+                    st.error(f"🔥 **KHÁCH CÒN NỢ THỰC TẾ: {format_vn(tong_no_thuc_te)} VNĐ**")
                 
                 # --- XUẤT FILE ĐỐI SOÁT ---
                 st.markdown("**📁 Tùy chọn in phiếu đối soát để gửi khách:**")
@@ -1653,7 +1662,20 @@ with tab_kh:
                         df_in = df_hien_thi_kh[['ngay_thao_tac', 'ten_nl', 'ghi_chu', 'thanh_tien', 'tien_da_thu', 'tien_con_no']].copy()
                         df_in.columns = ["Ngày Xuất", "Sản Phẩm", "Ghi Chú", "Thành Tiền", "Đã Thu Tiền (VNĐ)", "Còn Nợ (VNĐ)"]
                         
-                        pdf_ds = generate_doi_soat_kh_pdf(kh_chon, tong_tien_no_kh, df_in)
+                        # Nếu có tiền thanh toán dư chưa cấn trừ, chèn thêm 1 dòng hiển thị trừ nợ trên phiếu
+                        if tien_thu_chua_can_tru > 0:
+                            new_row = pd.DataFrame([{
+                                "Ngày Xuất": lay_gio_vn().strftime("%d/%m/%Y"),
+                                "Sản Phẩm": "Tiền khách đã thanh toán trước (Chưa cấn trừ)",
+                                "Ghi Chú": "Trừ vào tổng nợ",
+                                "Thành Tiền": 0,
+                                "Đã Thu Tiền (VNĐ)": tien_thu_chua_can_tru,
+                                "Còn Nợ (VNĐ)": -tien_thu_chua_can_tru
+                            }])
+                            df_in = pd.concat([df_in, new_row], ignore_index=True)
+                        
+                        # Pass tổng nợ thực tế (đã trừ khoản lưu tạm) cho PDF
+                        pdf_ds = generate_doi_soat_kh_pdf(kh_chon, tong_no_thuc_te, df_in)
                         st.session_state['pdf_doi_soat'] = pdf_ds
                         st.session_state['file_ds_name'] = f"DoiSoat_{kh_chon}.pdf"
                         
@@ -1676,18 +1698,34 @@ with tab_kh:
                 # --- THANH TOÁN TRẢ TỪNG PHẦN ---
                 st.markdown("#### 💰 Thanh toán & Cấn trừ nợ")
                 with st.form("form_thu_tien_kh"):
-                    col_thu1, col_thu2 = st.columns([2, 1])
+                    col_thu1, col_thu2 = st.columns([1.5, 2])
                     with col_thu1:
-                        so_tien_thu = st.number_input("Nhập số tiền khách hàng thanh toán (VNĐ):", min_value=0.0, step=100000.0)
+                        ngay_thanh_toan = st.date_input("Ngày thanh toán", lay_gio_vn().date(), format="DD/MM/YYYY")
+                        so_tien_thu = st.number_input("Nhập số tiền (VNĐ):", min_value=0.0, step=100000.0)
                     with col_thu2:
                         st.write("")
-                        st.write("")
-                        btn_thu = st.form_submit_button("✅ XÁC NHẬN THU TIỀN & CẤN TRỪ NỢ", type="primary", use_container_width=True)
+                        btn_thanh_toan = st.form_submit_button("✅ CHỈ XÁC NHẬN THANH TOÁN (Lưu tạm, chưa trừ nợ)", type="secondary", use_container_width=True)
+                        btn_can_tru = st.form_submit_button("🔄 CẤN TRỪ NỢ (Gạch nợ thẳng vào các đơn)", type="primary", use_container_width=True)
                         
-                    if btn_thu:
+                    # LƯU CHỈ THANH TOÁN (LƯU TẠM)
+                    if btn_thanh_toan:
                         if so_tien_thu > 0:
-                            if so_tien_thu > tong_tien_no_kh:
-                                st.error(f"⚠️ Số tiền nhập vào lớn hơn tổng nợ ({format_vn(tong_tien_no_kh)} đ). Vui lòng nhập lại!")
+                            ngay_tt_str = ngay_thanh_toan.strftime("%d/%m/%Y")
+                            c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
+                                         (ngay_thao_tac, loai_thao_tac, khach_hang, tien_da_thu, ghi_chu, trang_thai_tt) 
+                                         VALUES (%s, 'Thu Tiền', %s, %s, 'Khách thanh toán (Chưa cấn trừ)', 'Chưa cấn trừ')""", 
+                                      (ngay_tt_str, kh_chon, so_tien_thu))
+                            conn.commit()
+                            st.success(f"✅ Đã xác nhận khách thanh toán {format_vn(so_tien_thu)} VNĐ. (Tiền được lưu tạm, nợ đơn hàng chưa giảm)")
+                            time.sleep(2.5); st.rerun()
+                        else:
+                            st.warning("Vui lòng nhập số tiền lớn hơn 0.")
+                            
+                    # CẤN TRỪ VÀO ĐƠN HÀNG
+                    if btn_can_tru:
+                        if so_tien_thu > 0:
+                            if so_tien_thu > tong_tien_no_don_hang:
+                                st.error(f"⚠️ Số tiền cấn trừ lớn hơn tổng nợ của các đơn ({format_vn(tong_tien_no_don_hang)} đ). Vui lòng nhập lại!")
                             else:
                                 tien_dang_thu = so_tien_thu
                                 for _, row in df_hien_thi_kh.iterrows():
@@ -1701,9 +1739,19 @@ with tab_kh:
                                     else:
                                         c.execute("UPDATE public.ls_nhap_xuat_kho SET tien_da_thu = tien_da_thu + %s WHERE id = %s", (tien_dang_thu, row['id']))
                                         tien_dang_thu = 0
+                                
+                                # Nếu khách có tiền dư từ trước, thao tác này tự động xử lý trừ tiền dư (tránh cộng dồn sai lệch tổng nợ thực tế)
+                                tien_tru_vao_du = min(so_tien_thu, tien_thu_chua_can_tru)
+                                if tien_tru_vao_du > 0:
+                                    ngay_tt_str = ngay_thanh_toan.strftime("%d/%m/%Y")
+                                    c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
+                                                 (ngay_thao_tac, loai_thao_tac, khach_hang, tien_da_thu, ghi_chu, trang_thai_tt) 
+                                                 VALUES (%s, 'Thu Tiền', %s, %s, 'Sử dụng tiền dư để cấn trừ vào đơn', 'Chưa cấn trừ')""", 
+                                              (ngay_tt_str, kh_chon, -tien_tru_vao_du))
+                                
                                 conn.commit()
-                                st.success(f"✅ Đã cấn trừ thành công {format_vn(so_tien_thu)} VNĐ vào công nợ của {kh_chon}!")
-                                time.sleep(1.5); st.rerun()
+                                st.success(f"✅ Đã cấn trừ thành công {format_vn(so_tien_thu)} VNĐ vào công nợ đơn hàng của {kh_chon}!")
+                                time.sleep(2.5); st.rerun()
                         else:
                             st.warning("Vui lòng nhập số tiền lớn hơn 0.")
 
@@ -1738,10 +1786,21 @@ with tab_kh:
                     if not ids_to_update:
                         st.error("⚠️ Vui lòng tích chọn ít nhất 1 đơn!")
                     else:
+                        tien_duoc_gach = selected_kh_rows["Còn Nợ (Cần Thu)"].sum()
+                        
                         if len(ids_to_update) == 1:
                             c.execute("UPDATE public.ls_nhap_xuat_kho SET tien_da_thu = thanh_tien, trang_thai_tt='Đã thanh toán' WHERE id = %s", (ids_to_update[0],))
                         else:
                             c.execute(f"UPDATE public.ls_nhap_xuat_kho SET tien_da_thu = thanh_tien, trang_thai_tt='Đã thanh toán' WHERE id IN {tuple(ids_to_update)}")
+                        
+                        # Giảm khoản tiền lưu tạm nếu có
+                        tien_tru_vao_du = min(tien_duoc_gach, tien_thu_chua_can_tru)
+                        if tien_tru_vao_du > 0:
+                            c.execute("""INSERT INTO public.ls_nhap_xuat_kho 
+                                         (ngay_thao_tac, loai_thao_tac, khach_hang, tien_da_thu, ghi_chu, trang_thai_tt) 
+                                         VALUES (%s, 'Thu Tiền', %s, %s, 'Sử dụng tiền dư để gạch nợ thủ công', 'Chưa cấn trừ')""", 
+                                      (lay_gio_vn().strftime("%d/%m/%Y"), kh_chon, -tien_tru_vao_du))
+                                      
                         conn.commit()
                         st.success("✅ Đã gạch nợ thành công!")
                         time.sleep(1.5); st.rerun()
