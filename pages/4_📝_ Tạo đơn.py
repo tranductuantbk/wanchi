@@ -674,9 +674,10 @@ with tab4:
         if not df_his.empty:
             # Tạo bản sao dữ liệu để chỉnh sửa
             df_hien_thi_his = df_his.drop(columns=['chi_tiet']).copy()
-            df_hien_thi_his.insert(0, "Chọn Xóa", False) 
+            df_hien_thi_his.insert(0, "Chọn Xóa", False)
+            df_hien_thi_his.insert(1, "Chỉnh Sửa", False)
             
-            st.info("💡 **Mẹo:** Tích chọn vào các đơn hàng làm sai hoặc đã thu hồi để hiển thị nút xóa.")
+            st.info("💡 **Mẹo:** Tích chọn vào cột **🗑️ Chọn Xóa** để xóa đơn sai, hoặc tích chọn cột **✏️ Chỉnh Sửa** để mở nút sửa số lượng / thêm sản phẩm cho hóa đơn.")
             
             edited_his = st.data_editor(
                 df_hien_thi_his,
@@ -684,6 +685,7 @@ with tab4:
                 use_container_width=True,
                 column_config={
                     "Chọn Xóa": st.column_config.CheckboxColumn("🗑️ Chọn Xóa", default=False),
+                    "Chỉnh Sửa": st.column_config.CheckboxColumn("✏️ Chỉnh Sửa", default=False),
                     "ma_don": st.column_config.TextColumn("Mã Đơn", disabled=True),
                     "ngay_tao": st.column_config.TextColumn("Ngày Tạo", disabled=True),
                     "ten_kh": st.column_config.TextColumn("Khách Hàng", disabled=True),
@@ -695,6 +697,7 @@ with tab4:
             )
             
             selected_to_delete = edited_his[edited_his["Chọn Xóa"] == True]
+            selected_to_edit = edited_his[edited_his["Chỉnh Sửa"] == True]
             
             if not selected_to_delete.empty:
                 if st.button("🚨 XÓA CÁC ĐƠN ĐÃ CHỌN", type="primary", use_container_width=True):
@@ -705,13 +708,243 @@ with tab4:
                         else:
                             c.execute(f"DELETE FROM don_hang WHERE ma_don IN {tuple(ma_don_list)}")
                         conn.commit()
+                        if st.session_state.get('editing_ma_don') in ma_don_list:
+                            del st.session_state['editing_ma_don']
+                            if 'editing_items' in st.session_state: del st.session_state['editing_items']
                         st.success("✅ Đã xóa thành công các đơn hàng được chọn khỏi lịch sử!")
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as e:
                         conn.rollback()
                         st.error(f"⚠️ Lỗi xóa dữ liệu: {e}")
-            
+
+            if not selected_to_edit.empty:
+                if len(selected_to_edit) > 1:
+                    st.warning("⚠️ Vui lòng chỉ tích chọn **1 đơn hàng** ở cột **✏️ Chỉnh Sửa** tại một thời điểm.")
+                else:
+                    ma_don_edit_btn = selected_to_edit.iloc[0]["ma_don"]
+                    if st.button(f"✏️ CHỈNH SỬA HÓA ĐƠN ({ma_don_edit_btn})", type="primary", use_container_width=True, key="btn_open_edit_his"):
+                        row_target = df_his[df_his['ma_don'] == ma_don_edit_btn].iloc[0]
+                        st.session_state['editing_ma_don'] = ma_don_edit_btn
+                        st.session_state['editing_items'] = json.loads(row_target['chi_tiet']) if pd.notna(row_target['chi_tiet']) and row_target['chi_tiet'] else []
+                        if 'pdf_don_sua' in st.session_state: del st.session_state['pdf_don_sua']
+                        if 'img_don_sua' in st.session_state: del st.session_state['img_don_sua']
+                        st.rerun()
+
+            # ==========================================
+            # KHU VỰC CHỈNH SỬA HÓA ĐƠN (SỬA / THÊM SẢN PHẨM)
+            # ==========================================
+            if st.session_state.get('editing_ma_don'):
+                ma_don_sua = st.session_state['editing_ma_don']
+                match_rows = df_his[df_his['ma_don'] == ma_don_sua]
+                if not match_rows.empty:
+                    row_edit = match_rows.iloc[0]
+                    is_ome_edit = (row_edit['loai_don'] == 'Hàng OME')
+                    col_ten_sp = "Tên Sản Phẩm OME" if is_ome_edit else "Tên Sản Phẩm"
+                    col_don_gia = "Đơn Giá OME" if is_ome_edit else "Đơn Giá"
+
+                    st.markdown("---")
+                    col_hdr1, col_hdr2 = st.columns([4, 1])
+                    col_hdr1.subheader(f"✏️ Đang Chỉnh Sửa Hóa Đơn: {ma_don_sua} — Khách: {row_edit['ten_kh']}")
+                    if col_hdr2.button("❌ Đóng trình sửa", use_container_width=True, key="btn_close_edit_his"):
+                        del st.session_state['editing_ma_don']
+                        if 'editing_items' in st.session_state: del st.session_state['editing_items']
+                        if 'pdf_don_sua' in st.session_state: del st.session_state['pdf_don_sua']
+                        if 'img_don_sua' in st.session_state: del st.session_state['img_don_sua']
+                        st.rerun()
+
+                    st.info("💡 Bạn có thể sửa trực tiếp **Số Lượng**, **Đơn Giá**, tích **Xóa** sản phẩm cũ trong bảng dưới, hoặc **thêm sản phẩm mới** vào đơn.")
+
+                    # 1. BẢNG CHỈNH SỬA SẢN PHẨM HIỆN CÓ TRONG ĐƠN
+                    current_items = st.session_state.get('editing_items', [])
+                    if current_items:
+                        df_edit_items = pd.DataFrame(current_items)
+                        df_edit_view = df_edit_items.copy()
+                        df_edit_view.insert(0, "Xóa", False)
+
+                        edited_items_df = st.data_editor(
+                            df_edit_view,
+                            hide_index=True,
+                            use_container_width=True,
+                            column_config={
+                                "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
+                                col_ten_sp: st.column_config.TextColumn(disabled=True),
+                                "Loại Giá": st.column_config.TextColumn(disabled=True),
+                                "Số Lượng": st.column_config.NumberColumn("Số Lượng (Cái)", min_value=1, step=1, disabled=False),
+                                col_don_gia: st.column_config.NumberColumn("Đơn Giá", min_value=0, step=100, disabled=False),
+                                "Thành Tiền": st.column_config.NumberColumn("Thành Tiền", disabled=True)
+                            },
+                            key=f"editor_items_{ma_don_sua}"
+                        )
+
+                        # Xử lý xóa dòng nếu người dùng tích chọn Xóa
+                        if edited_items_df['Xóa'].any():
+                            kept_df = edited_items_df[edited_items_df['Xóa'] == False].drop(columns=['Xóa']).copy()
+                            kept_df['Thành Tiền'] = kept_df['Số Lượng'] * kept_df[col_don_gia]
+                            st.session_state['editing_items'] = kept_df.to_dict(orient='records')
+                            st.rerun()
+
+                        # Tự động cập nhật Thành Tiền theo Số Lượng & Đơn Giá vừa sửa
+                        edited_items_df['Thành Tiền'] = edited_items_df['Số Lượng'] * edited_items_df[col_don_gia]
+                        tong_tien_edit_moi = float(edited_items_df['Thành Tiền'].sum())
+                    else:
+                        edited_items_df = pd.DataFrame(columns=["Xóa", col_ten_sp, "Loại Giá", "Số Lượng", col_don_gia, "Thành Tiền"])
+                        tong_tien_edit_moi = 0.0
+                        st.warning("⚠️ Đơn hàng hiện chưa có sản phẩm nào. Vui lòng thêm sản phẩm bên dưới.")
+
+                    # 2. KHUNG THÊM SẢN PHẨM MỚI VÀO ĐƠN ĐANG SỬA
+                    st.markdown("**➕ Thêm Sản Phẩm Mới Vào Hóa Đơn**")
+                    co_vat_sp_moi = st.checkbox("✅ Tính đơn giá xuất hóa đơn (chia 0.95) cho sản phẩm thêm mới", key=f"cb_vat_edit_{ma_don_sua}")
+
+                    if is_ome_edit:
+                        col_add1, col_add2 = st.columns([3, 1])
+                        sp_them_ome = col_add1.selectbox("Chọn Sản Phẩm OME:", ["-- Chọn Sản Phẩm --"] + df_sp_ome['ten_sp'].tolist(), key=f"sel_add_ome_{ma_don_sua}")
+                        so_loc_them_ome = col_add2.number_input("📦 Số Lốc:", min_value=1, step=1, key=f"loc_add_ome_{ma_don_sua}")
+
+                        tong_cai_them_ome = 0
+                        if sp_them_ome != "-- Chọn Sản Phẩm --":
+                            info_sp_o = df_sp_ome[df_sp_ome['ten_sp'] == sp_them_ome].iloc[0]
+                            loc_o = 1
+                            if 'quy_cach_loc' in info_sp_o and pd.notna(info_sp_o['quy_cach_loc']):
+                                try: loc_o = int(info_sp_o['quy_cach_loc'])
+                                except: loc_o = 1
+                            if loc_o <= 0: loc_o = 1
+                            tong_cai_them_ome = so_loc_them_ome * loc_o
+                            st.info(f"👉 **Quy đổi:** {so_loc_them_ome} lốc × {loc_o} cái/lốc = **{tong_cai_them_ome} cái**")
+
+                        if st.button("➕ Thêm sản phẩm vào đơn", key=f"btn_add_item_ome_{ma_don_sua}"):
+                            if sp_them_ome == "-- Chọn Sản Phẩm --":
+                                st.error("⚠️ Vui lòng chọn sản phẩm OME cần thêm!")
+                            else:
+                                # Lưu lại các thay đổi số lượng/giá hiện có trước khi thêm dòng mới
+                                synced_df = edited_items_df.drop(columns=['Xóa']).copy() if not edited_items_df.empty else pd.DataFrame()
+                                synced_list = synced_df.to_dict(orient='records') if not synced_df.empty else []
+
+                                info_sp_o = df_sp_ome[df_sp_ome['ten_sp'] == sp_them_ome].iloc[0]
+                                gia_o = int(info_sp_o['gia_ome'])
+                                if co_vat_sp_moi:
+                                    gia_o = int(round(gia_o / 0.95, 0))
+
+                                synced_list.append({
+                                    "Tên Sản Phẩm OME": sp_them_ome,
+                                    "Loại Giá": "Giá OME",
+                                    "Số Lượng": tong_cai_them_ome,
+                                    "Đơn Giá OME": gia_o,
+                                    "Thành Tiền": tong_cai_them_ome * gia_o
+                                })
+                                st.session_state['editing_items'] = synced_list
+                                st.rerun()
+                    else:
+                        # Xác định nhóm giá mặc định theo khách hàng
+                        kh_match = df_kh[df_kh['ten_kh'] == row_edit['ten_kh']]
+                        loai_gia_mac_dinh = "Giá Công ty"
+                        if not kh_match.empty:
+                            nhom_kh_edit = kh_match.iloc[0].get('nhom_kh', 'Công ty')
+                            if nhom_kh_edit == "Đại lý": loai_gia_mac_dinh = "Giá Đại Lý"
+                            elif nhom_kh_edit == "Ưu đãi": loai_gia_mac_dinh = "Giá Ưu Đãi (Giảm 20%)"
+
+                        col_add1, col_add2, col_add3 = st.columns([2.5, 1.5, 1])
+                        sp_them_chuan = col_add1.selectbox("Chọn Sản Phẩm:", ["-- Chọn Sản Phẩm --"] + df_sp_chuan['ten_sp'].tolist(), key=f"sel_add_chuan_{ma_don_sua}")
+                        ds_loai_gia = ["Giá Công ty", "Giá Đại Lý", "Giá Ưu Đãi (Giảm 20%)"]
+                        idx_gia = ds_loai_gia.index(loai_gia_mac_dinh) if loai_gia_mac_dinh in ds_loai_gia else 0
+                        loai_gia_them = col_add2.selectbox("Áp dụng nhóm giá:", ds_loai_gia, index=idx_gia, key=f"gia_add_chuan_{ma_don_sua}")
+                        so_loc_them_chuan = col_add3.number_input("📦 Số Lốc:", min_value=1, step=1, key=f"loc_add_chuan_{ma_don_sua}")
+
+                        tong_cai_them_chuan = 0
+                        if sp_them_chuan != "-- Chọn Sản Phẩm --":
+                            info_sp_c = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_them_chuan].iloc[0]
+                            loc_c = 1
+                            if 'quy_cach_loc' in info_sp_c and pd.notna(info_sp_c['quy_cach_loc']):
+                                try: loc_c = int(info_sp_c['quy_cach_loc'])
+                                except: loc_c = 1
+                            if loc_c <= 0: loc_c = 1
+                            tong_cai_them_chuan = so_loc_them_chuan * loc_c
+                            st.info(f"👉 **Quy đổi:** {so_loc_them_chuan} lốc × {loc_c} cái/lốc = **{tong_cai_them_chuan} cái** ({loai_gia_them})")
+
+                        if st.button("➕ Thêm sản phẩm vào đơn", key=f"btn_add_item_chuan_{ma_don_sua}"):
+                            if sp_them_chuan == "-- Chọn Sản Phẩm --":
+                                st.error("⚠️ Vui lòng chọn sản phẩm cần thêm!")
+                            else:
+                                synced_df = edited_items_df.drop(columns=['Xóa']).copy() if not edited_items_df.empty else pd.DataFrame()
+                                synced_list = synced_df.to_dict(orient='records') if not synced_df.empty else []
+
+                                info_sp_c = df_sp_chuan[df_sp_chuan['ten_sp'] == sp_them_chuan].iloc[0]
+                                gia_dl = info_sp_c.get('gia_dai_ly', 0)
+                                gia_le = info_sp_c.get('gia_khach_le', 0)
+
+                                if loai_gia_them == "Giá Đại Lý":
+                                    gia_c = int(gia_dl)
+                                elif "Ưu Đãi" in loai_gia_them:
+                                    gia_c = int(round(gia_le * 0.80, -1))
+                                else:
+                                    gia_c = int(gia_le)
+
+                                if co_vat_sp_moi:
+                                    gia_c = int(round(gia_c / 0.95, 0))
+
+                                synced_list.append({
+                                    "Tên Sản Phẩm": sp_them_chuan,
+                                    "Loại Giá": loai_gia_them,
+                                    "Số Lượng": tong_cai_them_chuan,
+                                    "Đơn Giá": gia_c,
+                                    "Thành Tiền": tong_cai_them_chuan * gia_c
+                                })
+                                st.session_state['editing_items'] = synced_list
+                                st.rerun()
+
+                    # 3. TỔNG TIỀN MỚI & LƯU CẬP NHẬT VÀO DATABASE
+                    st.write(f"### 💰 TỔNG CỘNG SAU CHỈNH SỬA: {format_vn(tong_tien_edit_moi)} VNĐ")
+                    co_xuat_hd_sua = st.checkbox("✅ In ghi chú xuất hóa đơn (TK HKD) trên file xuất lại", key=f"cb_in_hd_sua_{ma_don_sua}")
+
+                    if st.button("💾 LƯU THAY ĐỔI HÓA ĐƠN & CẬP NHẬT FILE", type="primary", use_container_width=True, key=f"btn_save_edit_{ma_don_sua}"):
+                        if edited_items_df.empty:
+                            st.error("⚠️ Hóa đơn phải có ít nhất 1 sản phẩm! Nếu muốn hủy đơn, vui lòng dùng nút Xóa ở bảng trên.")
+                        else:
+                            df_final_edit = edited_items_df.drop(columns=['Xóa']).copy()
+                            df_final_edit['Thành Tiền'] = df_final_edit['Số Lượng'] * df_final_edit[col_don_gia]
+                            tong_tien_luu = float(df_final_edit['Thành Tiền'].sum())
+                            chi_tiet_json_luu = df_final_edit.to_json(orient='records')
+
+                            try:
+                                c.execute(
+                                    "UPDATE don_hang SET tong_tien = %s, chi_tiet = %s WHERE ma_don = %s",
+                                    (tong_tien_luu, chi_tiet_json_luu, ma_don_sua)
+                                )
+                                conn.commit()
+                                st.session_state['editing_items'] = df_final_edit.to_dict(orient='records')
+
+                                # Tạo lại PDF & Ảnh hóa đơn mới sau khi sửa
+                                sdt_edit = ""
+                                if row_edit['loai_don'] == 'Hàng Chuẩn':
+                                    sdt_edit = df_kh[df_kh['ten_kh'] == row_edit['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == row_edit['ten_kh']].empty else ""
+                                elif row_edit['loai_don'] == 'Hàng OME':
+                                    sdt_edit = df_kh_ome[df_kh_ome['ten_kh'] == row_edit['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_edit['ten_kh']].empty else ""
+                                else:
+                                    sdt_edit = "Theo Báo Giá"
+
+                                loai_pdf_edit = "Hàng Chuẩn" if "Báo Giá" in row_edit['loai_don'] else row_edit['loai_don']
+                                st.session_state['pdf_don_sua'] = generate_order_pdf(ma_don_sua, row_edit['ten_kh'], sdt_edit, df_final_edit, tong_tien_luu, loai_pdf_edit, co_xuat_hd_sua)
+                                st.session_state['pdf_ten_sua'] = f"{ma_don_sua}_{row_edit['ten_kh']}_Sua.pdf"
+                                img_sua = convert_pdf_to_png(st.session_state['pdf_don_sua'])
+                                if img_sua:
+                                    st.session_state['img_don_sua'] = img_sua
+                                elif 'img_don_sua' in st.session_state:
+                                    del st.session_state['img_don_sua']
+
+                                st.success(f"✅ Đã cập nhật thành công hóa đơn **{ma_don_sua}**! Tổng tiền mới: **{format_vn(tong_tien_luu)} VNĐ**.")
+                            except Exception as e:
+                                conn.rollback()
+                                st.error(f"⚠️ Lỗi khi lưu cập nhật vào Database: {e}")
+
+                    if 'pdf_don_sua' in st.session_state:
+                        col_sua_dl1, col_sua_dl2 = st.columns(2)
+                        with col_sua_dl1:
+                            st.download_button("📥 TẢI PDF HÓA ĐƠN ĐÃ SỬA", data=st.session_state['pdf_don_sua'], file_name=st.session_state['pdf_ten_sua'], mime="application/pdf", type="primary", use_container_width=True)
+                        if st.session_state.get('img_don_sua'):
+                            with col_sua_dl2:
+                                img_name_sua = st.session_state['pdf_ten_sua'].replace('.pdf', '.png')
+                                st.download_button("🖼️ TẢI ẢNH HÓA ĐƠN ĐÃ SỬA", data=st.session_state['img_don_sua'], file_name=img_name_sua, mime="image/png", type="primary", use_container_width=True)
+
             st.markdown("---")
             st.subheader("🖨️ Tải Lại Hóa Đơn Cũ")
             options = ["-- Chọn đơn hàng --"] + df_his['ma_don'].tolist()
@@ -719,6 +952,13 @@ with tab4:
             
             if chon_don != "-- Chọn đơn hàng --":
                 row_data = df_his[df_his['ma_don'] == chon_don].iloc[0]
+                if st.button(f"✏️ Chỉnh Sửa Hóa Đơn {chon_don}", key=f"btn_edit_from_reprint_{chon_don}"):
+                    st.session_state['editing_ma_don'] = chon_don
+                    st.session_state['editing_items'] = json.loads(row_data['chi_tiet']) if pd.notna(row_data['chi_tiet']) and row_data['chi_tiet'] else []
+                    if 'pdf_don_sua' in st.session_state: del st.session_state['pdf_don_sua']
+                    if 'img_don_sua' in st.session_state: del st.session_state['img_don_sua']
+                    st.rerun()
+
                 if pd.notna(row_data['chi_tiet']):
                     df_chi_tiet = pd.DataFrame(json.loads(row_data['chi_tiet']))
                     st.dataframe(df_chi_tiet, use_container_width=True, hide_index=True)
