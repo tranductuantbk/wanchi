@@ -86,6 +86,7 @@ def kiem_tra_du_lieu_thuc_te(connection):
 if not kiem_tra_du_lieu_thuc_te(conn):
     # Nếu mất kết nối, thử xóa cache và gọi Neon dậy 1 lần
     st.cache_resource.clear()
+    st.cache_data.clear()
     conn = get_connection()
     
     # Nếu gọi lần 2 vẫn không được -> Đóng băng hệ thống
@@ -99,48 +100,65 @@ if not kiem_tra_du_lieu_thuc_te(conn):
 c = conn.cursor()
 # ==========================================
 
-# KHỞI TẠO BẢNG ĐƠN HÀNG (CÓ BỘ MỞ KHÓA)
-try:
-    c.execute('''CREATE TABLE IF NOT EXISTS don_hang (id SERIAL PRIMARY KEY)''')
-    conn.commit()
-except: conn.rollback()
-
-cac_cot = {
-    "ma_don": "TEXT", "ngay_tao": "TEXT", "ten_kh": "TEXT", 
-    "loai_don": "TEXT", "tong_tien": "REAL", "chi_tiet": "TEXT", "trang_thai": "TEXT DEFAULT 'Mới tạo'"
-}
-for cot, kieu in cac_cot.items():
-    try: 
-        c.execute(f"ALTER TABLE don_hang ADD COLUMN {cot} {kieu}")
+# KHỞI TẠO BẢNG ĐƠN HÀNG (CHỈ CHẠY 1 LẦN MỖI PHIÊN ĐỂ TRÁNH CHẬM KHI CLICK)
+if not st.session_state.get('_da_khoi_tao_bang_don_hang'):
+    try:
+        c.execute('''CREATE TABLE IF NOT EXISTS don_hang (id SERIAL PRIMARY KEY)''')
         conn.commit()
     except: conn.rollback()
 
-# LẤY DỮ LIỆU TỪ CÁC KHO (Thêm truy vấn quy_cach_loc)
-try: df_kh = pd.read_sql("SELECT ten_kh, nhom_kh, so_dien_thoai FROM dm_khach_hang", conn)
-except: df_kh = pd.DataFrame(columns=['ten_kh', 'nhom_kh', 'so_dien_thoai'])
+    cac_cot = {
+        "ma_don": "TEXT", "ngay_tao": "TEXT", "ten_kh": "TEXT", 
+        "loai_don": "TEXT", "tong_tien": "REAL", "chi_tiet": "TEXT", "trang_thai": "TEXT DEFAULT 'Mới tạo'"
+    }
+    for cot, kieu in cac_cot.items():
+        try: 
+            c.execute(f"ALTER TABLE don_hang ADD COLUMN {cot} {kieu}")
+            conn.commit()
+        except: conn.rollback()
+    st.session_state['_da_khoi_tao_bang_don_hang'] = True
 
-try: df_kh_ome = pd.read_sql("SELECT ten_kh, so_dien_thoai FROM dm_khach_hang_ome", conn)
-except: df_kh_ome = pd.DataFrame(columns=['ten_kh', 'so_dien_thoai'])
+# LẤY DỮ LIỆU TỪ CÁC KHO (CÓ CACHE NGẮN ĐỂ TẢI CỰC NHANH KHI THAO TÁC)
+@st.cache_data(ttl=60)
+def load_danh_muc(_conn):
+    try: _df_kh = pd.read_sql("SELECT ten_kh, nhom_kh, so_dien_thoai FROM dm_khach_hang", _conn)
+    except: _df_kh = pd.DataFrame(columns=['ten_kh', 'nhom_kh', 'so_dien_thoai'])
 
-try: df_sp_chuan = pd.read_sql("SELECT ten_sp, gia_dai_ly, gia_khach_le, quy_cach_loc FROM dm_san_pham", conn)
-except: df_sp_chuan = pd.DataFrame(columns=['ten_sp', 'gia_dai_ly', 'gia_khach_le', 'quy_cach_loc'])
+    try: _df_kh_ome = pd.read_sql("SELECT ten_kh, so_dien_thoai FROM dm_khach_hang_ome", _conn)
+    except: _df_kh_ome = pd.DataFrame(columns=['ten_kh', 'so_dien_thoai'])
 
-try: df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome, quy_cach_loc FROM dm_san_pham_ome", conn)
-except: df_sp_ome = pd.DataFrame(columns=['ten_sp', 'gia_ome', 'quy_cach_loc'])
+    try: _df_sp_chuan = pd.read_sql("SELECT ten_sp, gia_dai_ly, gia_khach_le, quy_cach_loc FROM dm_san_pham", _conn)
+    except: _df_sp_chuan = pd.DataFrame(columns=['ten_sp', 'gia_dai_ly', 'gia_khach_le', 'quy_cach_loc'])
+
+    try: _df_sp_ome = pd.read_sql("SELECT ten_sp, gia_ome, quy_cach_loc FROM dm_san_pham_ome", _conn)
+    except: _df_sp_ome = pd.DataFrame(columns=['ten_sp', 'gia_ome', 'quy_cach_loc'])
+    return _df_kh, _df_kh_ome, _df_sp_chuan, _df_sp_ome
+
+@st.cache_data(ttl=60)
+def load_lich_su_bao_gia(_conn):
+    return pd.read_sql("SELECT id, ma_bao_gia, ngay_tao, ten_kh, so_dien_thoai, tong_tien, chi_tiet FROM public.lich_su_bao_gia ORDER BY id DESC", _conn)
+
+@st.cache_data(ttl=60)
+def load_don_hang(_conn):
+    return pd.read_sql("SELECT ma_don, ngay_tao, ten_kh, loai_don, tong_tien, trang_thai, chi_tiet FROM don_hang ORDER BY id DESC", _conn)
+
+df_kh, df_kh_ome, df_sp_chuan, df_sp_ome = load_danh_muc(conn)
 
 # Lấy Mã Đơn Tiếp Theo 
 def lay_ma_don_moi():
     try:
-        c.execute("SELECT ma_don FROM don_hang ORDER BY id DESC LIMIT 1")
-        last_ma = c.fetchone()
-        if last_ma and last_ma[0] and last_ma[0].startswith("DH-"):
-            num = int(last_ma[0].split("-")[1])
-            return f"DH-{num + 1:04d}"
+        df_tmp = load_don_hang(conn)
+        if not df_tmp.empty:
+            last_ma = df_tmp.iloc[0]['ma_don']
+            if last_ma and str(last_ma).startswith("DH-"):
+                num = int(str(last_ma).split("-")[1])
+                return f"DH-{num + 1:04d}"
     except: pass
     return "DH-0001"
 
 if 'gio_chuan' not in st.session_state: st.session_state.gio_chuan = []
 if 'gio_ome' not in st.session_state: st.session_state.gio_ome = []
+if 'his_editor_ver' not in st.session_state: st.session_state['his_editor_ver'] = 0
 ma_don_hien_tai = lay_ma_don_moi()
 
 def format_vn(value):
@@ -385,6 +403,7 @@ with tab1:
                     c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                               (ma_don_hien_tai, ngay_gio, kh_chuan, 'Hàng Chuẩn', tong_tien_chuan, chi_tiet_json))
                     conn.commit()
+                    load_don_hang.clear()
                     st.session_state.gio_chuan = []
                     st.success("✅ Chốt đơn thành công! Dữ liệu đã lưu vào lịch sử (không chứa Giá Công Ty). Vui lòng tải file bên dưới.")
                 except Exception as e:
@@ -533,6 +552,7 @@ with tab2:
                         c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                                   (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
                         conn.commit()
+                        load_don_hang.clear()
                         st.session_state.gio_ome = []
                         st.success("✅ Chốt đơn OME thành công! Dữ liệu đã lưu vào lịch sử. Tải file bên dưới.")
                     except Exception as e: 
@@ -567,8 +587,9 @@ with tab3:
     st.info(f"Hệ thống sẽ lấy dữ liệu từ Báo Giá và cấp cho nó một Mã Đơn Hàng chính thức (**{ma_don_hien_tai}**) để ghi nhận doanh thu và xuất kho.")
     
     try:
-        df_bg = pd.read_sql("SELECT id, ma_bao_gia, ngay_tao, ten_kh, so_dien_thoai, tong_tien, chi_tiet FROM public.lich_su_bao_gia ORDER BY id DESC", conn)
+        df_bg = load_lich_su_bao_gia(conn)
         if not df_bg.empty:
+            df_bg = df_bg.copy()
             df_bg['ma_bao_gia'] = df_bg['ma_bao_gia'].fillna("Mã Cũ")
             options_bg = ["-- Chọn Báo Giá --"]
             for _, r in df_bg.iterrows():
@@ -641,6 +662,7 @@ with tab3:
                             c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
                                       (ma_don_hien_tai, ngay_gio, bg_info['ten_kh'], f'Từ Báo Giá {ma_bg_chon}', tong_tien_bg, chi_tiet_json_bg))
                             conn.commit()
+                            load_don_hang.clear()
                             st.success(f"✅ Đã chuyển đổi thành công! Mã Báo Giá {ma_bg_chon} đã trở thành Đơn Hàng chính thức: **{ma_don_hien_tai}**")
                         except Exception as e:
                             conn.rollback()
@@ -667,17 +689,30 @@ with tab3:
 # ------------------------------------------
 # TAB 4: LỊCH SỬ ĐƠN HÀNG
 # ------------------------------------------
+def mo_trinh_sua_don(ma_don_chon, chi_tiet_raw, nguon="reprint"):
+    st.session_state['editing_ma_don'] = ma_don_chon
+    st.session_state['editing_source'] = nguon
+    st.session_state['editing_items'] = json.loads(chi_tiet_raw) if pd.notna(chi_tiet_raw) and chi_tiet_raw else []
+    if 'pdf_don_sua' in st.session_state: del st.session_state['pdf_don_sua']
+    if 'img_don_sua' in st.session_state: del st.session_state['img_don_sua']
+
+def dong_trinh_sua_don():
+    for k in ['editing_ma_don', 'editing_items', 'editing_source', 'pdf_don_sua', 'img_don_sua']:
+        if k in st.session_state:
+            del st.session_state[k]
+    st.session_state['his_editor_ver'] = st.session_state.get('his_editor_ver', 0) + 1
+
 with tab4:
     st.subheader("📂 Danh sách Đơn Hàng đã tạo")
     try:
-        df_his = pd.read_sql("SELECT ma_don, ngay_tao, ten_kh, loai_don, tong_tien, trang_thai, chi_tiet FROM don_hang ORDER BY id DESC", conn)
+        df_his = load_don_hang(conn)
         if not df_his.empty:
             # Tạo bản sao dữ liệu để chỉnh sửa
             df_hien_thi_his = df_his.drop(columns=['chi_tiet']).copy()
             df_hien_thi_his.insert(0, "Chọn Xóa", False)
             df_hien_thi_his.insert(1, "Chỉnh Sửa", False)
             
-            st.info("💡 **Mẹo:** Tích chọn vào cột **🗑️ Chọn Xóa** để xóa đơn sai, hoặc tích chọn cột **✏️ Chỉnh Sửa** để mở nút sửa số lượng / thêm sản phẩm cho hóa đơn.")
+            st.info("💡 **Mẹo:** Tích chọn vào cột **🗑️ Chọn Xóa** để xóa đơn sai, hoặc tích 1 lần vào cột **✏️ Chỉnh Sửa** để mở ngay khung sửa số lượng / thêm sản phẩm.")
             
             edited_his = st.data_editor(
                 df_hien_thi_his,
@@ -693,7 +728,7 @@ with tab4:
                     "tong_tien": st.column_config.NumberColumn("Tổng Tiền", disabled=True),
                     "trang_thai": st.column_config.TextColumn("Trạng Thái", disabled=True)
                 },
-                key="editor_lich_su_don"
+                key=f"editor_lich_su_don_{st.session_state['his_editor_ver']}"
             )
             
             selected_to_delete = edited_his[edited_his["Chọn Xóa"] == True]
@@ -708,28 +743,30 @@ with tab4:
                         else:
                             c.execute(f"DELETE FROM don_hang WHERE ma_don IN {tuple(ma_don_list)}")
                         conn.commit()
+                        load_don_hang.clear()
                         if st.session_state.get('editing_ma_don') in ma_don_list:
-                            del st.session_state['editing_ma_don']
-                            if 'editing_items' in st.session_state: del st.session_state['editing_items']
+                            dong_trinh_sua_don()
+                        else:
+                            st.session_state['his_editor_ver'] += 1
                         st.success("✅ Đã xóa thành công các đơn hàng được chọn khỏi lịch sử!")
-                        time.sleep(1.5)
+                        time.sleep(1.0)
                         st.rerun()
                     except Exception as e:
                         conn.rollback()
                         st.error(f"⚠️ Lỗi xóa dữ liệu: {e}")
 
-            if not selected_to_edit.empty:
-                if len(selected_to_edit) > 1:
-                    st.warning("⚠️ Vui lòng chỉ tích chọn **1 đơn hàng** ở cột **✏️ Chỉnh Sửa** tại một thời điểm.")
-                else:
-                    ma_don_edit_btn = selected_to_edit.iloc[0]["ma_don"]
-                    if st.button(f"✏️ CHỈNH SỬA HÓA ĐƠN ({ma_don_edit_btn})", type="primary", use_container_width=True, key="btn_open_edit_his"):
-                        row_target = df_his[df_his['ma_don'] == ma_don_edit_btn].iloc[0]
-                        st.session_state['editing_ma_don'] = ma_don_edit_btn
-                        st.session_state['editing_items'] = json.loads(row_target['chi_tiet']) if pd.notna(row_target['chi_tiet']) and row_target['chi_tiet'] else []
-                        if 'pdf_don_sua' in st.session_state: del st.session_state['pdf_don_sua']
-                        if 'img_don_sua' in st.session_state: del st.session_state['img_don_sua']
-                        st.rerun()
+            # MỞ NGAY TRÌNH SỬA TRONG 1 LẦN CLICK KHI TÍCH Ô "CHỈNH SỬA"
+            if len(selected_to_edit) > 1:
+                st.warning("⚠️ Vui lòng chỉ tích chọn **1 đơn hàng** ở cột **✏️ Chỉnh Sửa** tại một thời điểm.")
+            elif len(selected_to_edit) == 1:
+                ma_don_tick = selected_to_edit.iloc[0]["ma_don"]
+                if st.session_state.get('editing_ma_don') != ma_don_tick:
+                    row_target = df_his[df_his['ma_don'] == ma_don_tick].iloc[0]
+                    mo_trinh_sua_don(ma_don_tick, row_target['chi_tiet'], nguon="table")
+            elif st.session_state.get('editing_source') == 'table':
+                for k in ['editing_ma_don', 'editing_items', 'editing_source', 'pdf_don_sua', 'img_don_sua']:
+                    if k in st.session_state:
+                        del st.session_state[k]
 
             # ==========================================
             # KHU VỰC CHỈNH SỬA HÓA ĐƠN (SỬA / THÊM SẢN PHẨM)
@@ -746,12 +783,7 @@ with tab4:
                     st.markdown("---")
                     col_hdr1, col_hdr2 = st.columns([4, 1])
                     col_hdr1.subheader(f"✏️ Đang Chỉnh Sửa Hóa Đơn: {ma_don_sua} — Khách: {row_edit['ten_kh']}")
-                    if col_hdr2.button("❌ Đóng trình sửa", use_container_width=True, key="btn_close_edit_his"):
-                        del st.session_state['editing_ma_don']
-                        if 'editing_items' in st.session_state: del st.session_state['editing_items']
-                        if 'pdf_don_sua' in st.session_state: del st.session_state['pdf_don_sua']
-                        if 'img_don_sua' in st.session_state: del st.session_state['img_don_sua']
-                        st.rerun()
+                    col_hdr2.button("❌ Đóng trình sửa", use_container_width=True, key="btn_close_edit_his", on_click=dong_trinh_sua_don)
 
                     st.info("💡 Bạn có thể sửa trực tiếp **Số Lượng**, **Đơn Giá**, tích **Xóa** sản phẩm cũ trong bảng dưới, hoặc **thêm sản phẩm mới** vào đơn.")
 
@@ -911,6 +943,7 @@ with tab4:
                                     (tong_tien_luu, chi_tiet_json_luu, ma_don_sua)
                                 )
                                 conn.commit()
+                                load_don_hang.clear()
                                 st.session_state['editing_items'] = df_final_edit.to_dict(orient='records')
 
                                 # Tạo lại PDF & Ảnh hóa đơn mới sau khi sửa
@@ -952,12 +985,12 @@ with tab4:
             
             if chon_don != "-- Chọn đơn hàng --":
                 row_data = df_his[df_his['ma_don'] == chon_don].iloc[0]
-                if st.button(f"✏️ Chỉnh Sửa Hóa Đơn {chon_don}", key=f"btn_edit_from_reprint_{chon_don}"):
-                    st.session_state['editing_ma_don'] = chon_don
-                    st.session_state['editing_items'] = json.loads(row_data['chi_tiet']) if pd.notna(row_data['chi_tiet']) and row_data['chi_tiet'] else []
-                    if 'pdf_don_sua' in st.session_state: del st.session_state['pdf_don_sua']
-                    if 'img_don_sua' in st.session_state: del st.session_state['img_don_sua']
-                    st.rerun()
+                st.button(
+                    f"✏️ Chỉnh Sửa Hóa Đơn {chon_don}",
+                    key=f"btn_edit_from_reprint_{chon_don}",
+                    on_click=mo_trinh_sua_don,
+                    args=(chon_don, row_data['chi_tiet'], "reprint")
+                )
 
                 if pd.notna(row_data['chi_tiet']):
                     df_chi_tiet = pd.DataFrame(json.loads(row_data['chi_tiet']))
