@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 from fpdf import FPDF
 import os
 import urllib.request
@@ -151,33 +151,37 @@ c = conn.cursor()
 # ==========================================
 # KHỞI TẠO BẢNG DATABASE CHO CLOUD (POSTGRESQL)
 # ==========================================
-try:
-    c.execute('''CREATE TABLE IF NOT EXISTS hoa_don (
-                    id SERIAL PRIMARY KEY,
-                    ngay TEXT,
-                    ma_don TEXT,
-                    so_phieu TEXT,
-                    ten_kh TEXT,
-                    tong_tien REAL,
-                    da_thu REAL,
-                    con_no REAL,
-                    import_thue TEXT DEFAULT 'Không',
-                    ghi_chu TEXT
-                )''')
-    conn.commit()
-except Exception as e:
-    conn.rollback()
+if not st.session_state.get('_da_khoi_tao_bang_hoa_don'):
+    try:
+        c.execute('''CREATE TABLE IF NOT EXISTS hoa_don (
+                        id SERIAL PRIMARY KEY,
+                        ngay TEXT,
+                        ma_don TEXT,
+                        so_phieu TEXT,
+                        ten_kh TEXT,
+                        tong_tien REAL,
+                        da_thu REAL,
+                        con_no REAL,
+                        import_thue TEXT DEFAULT 'Không',
+                        ghi_chu TEXT,
+                        chi_tiet TEXT
+                    )''')
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
 
-# Ép nâng cấp cột cho an toàn
-try:
-    c.execute("ALTER TABLE hoa_don ADD COLUMN ma_don TEXT")
-    conn.commit()
-except: conn.rollback()
+    # Ép nâng cấp cột cho an toàn
+    for col_sql in [
+        "ALTER TABLE hoa_don ADD COLUMN ma_don TEXT",
+        "ALTER TABLE hoa_don ADD COLUMN import_thue TEXT DEFAULT 'Không'",
+        "ALTER TABLE hoa_don ADD COLUMN chi_tiet TEXT"
+    ]:
+        try:
+            c.execute(col_sql)
+            conn.commit()
+        except: conn.rollback()
 
-try:
-    c.execute("ALTER TABLE hoa_don ADD COLUMN import_thue TEXT DEFAULT 'Không'")
-    conn.commit()
-except: conn.rollback()
+    st.session_state['_da_khoi_tao_bang_hoa_don'] = True
 
 # ==========================================
 
@@ -309,50 +313,75 @@ with tab1:
                 if not check_hd.empty:
                     st.error(f"⚠️ Hóa đơn với mã {ma_don_chot} đã tồn tại! Vui lòng thử lại.")
                 else:
+                    # TẠO FILE EXCEL IMPORT & LƯU CHI TIẾT SẢN PHẨM
+                    df_export = edited_bang.drop(columns=['Xóa']).copy()
+                    df_export['Mã vt'] = ""
+                    df_export['Tên vt'] = df_export['Tên vt'].astype(str).apply(lambda x: x.strip().title())
+                    chi_tiet_hd_json = df_export.to_json(orient='records')
+
                     try:
                         ngay_hd = date.today().strftime("%Y-%m-%d")
-                        # Lưu vào theo dõi công nợ
+                        # Lưu vào theo dõi công nợ (kèm chi_tiet để hỗ trợ chỉnh sửa về sau)
                         c.execute("""INSERT INTO hoa_don 
-                                     (ngay, ma_don, so_phieu, ten_kh, tong_tien, da_thu, con_no, import_thue, ghi_chu) 
-                                     VALUES (%s, %s, %s, %s, %s, 0, 0, 'Không', '')""",
-                                  (ngay_hd, ma_don_chot, ma_don_chot, ten_kh_input, float(tong_tien_chot)))
+                                     (ngay, ma_don, so_phieu, ten_kh, tong_tien, da_thu, con_no, import_thue, ghi_chu, chi_tiet) 
+                                     VALUES (%s, %s, %s, %s, %s, 0, 0, 'Không', '', %s)""",
+                                  (ngay_hd, ma_don_chot, ma_don_chot, ten_kh_input, float(tong_tien_chot), chi_tiet_hd_json))
                         conn.commit()
                         st.success(f"🎉 Đã lưu thành công hóa đơn [{ma_don_chot}] vào Bảng Theo Dõi!")
                     except Exception as e:
                         conn.rollback()
                         st.error(f"Lỗi hệ thống: {e}")
                 
-                # TẠO FILE EXCEL IMPORT
-                df_export = edited_bang.drop(columns=['Xóa']).copy()
-                df_export['Mã vt'] = ""
-                df_export['Tên vt'] = df_export['Tên vt'].astype(str).apply(lambda x: x.strip().title())
-                try:
-                    import openpyxl
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_export.to_excel(writer, index=False, sheet_name='Import_Thue')
-                    excel_data = output.getvalue()
-                    
-                    st.download_button(
-                        label="📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE EXCEL IMPORT THUẾ",
-                        data=excel_data,
-                        file_name=f"Import_Thue_{ma_don_chot}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary"
-                    )
-                    st.session_state.bang_hoa_don = [] # Xóa trống sau khi chốt
-                except ImportError:
-                    st.error("⚠️ Đám mây đang thiếu thư viện `openpyxl`. Vui lòng cài đặt!")
-                    csv_data = df_export.to_csv(index=False).encode('utf-8-sig') 
-                    st.download_button("📥 Tải Tạm File CSV", data=csv_data, file_name=f"Import_Thue_{ma_don_chot}.csv", mime="text/csv", type="secondary")
+                    try:
+                        import openpyxl
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df_export.to_excel(writer, index=False, sheet_name='Import_Thue')
+                        excel_data = output.getvalue()
+                        
+                        st.download_button(
+                            label="📥 BẤM VÀO ĐÂY ĐỂ TẢI FILE EXCEL IMPORT THUẾ",
+                            data=excel_data,
+                            file_name=f"Import_Thue_{ma_don_chot}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            type="primary"
+                        )
+                        st.session_state.bang_hoa_don = [] # Xóa trống sau khi chốt
+                    except ImportError:
+                        st.error("⚠️ Đám mây đang thiếu thư viện `openpyxl`. Vui lòng cài đặt!")
+                        csv_data = df_export.to_csv(index=False).encode('utf-8-sig') 
+                        st.download_button("📥 Tải Tạm File CSV", data=csv_data, file_name=f"Import_Thue_{ma_don_chot}.csv", mime="text/csv", type="secondary")
 
 # ==========================================
 # TAB 2: BẢNG THEO DÕI HÓA ĐƠN ĐẠI LÝ
 # ==========================================
+def mo_sua_hoa_don_dl(hd_row_dict):
+    st.session_state['edit_hd_id'] = int(hd_row_dict['id'])
+    st.session_state['edit_hd_info'] = hd_row_dict
+    raw_ct = hd_row_dict.get('chi_tiet')
+    if raw_ct and pd.notna(raw_ct):
+        try:
+            st.session_state['edit_hd_items'] = json.loads(raw_ct)
+        except Exception:
+            st.session_state['edit_hd_items'] = []
+    else:
+        st.session_state['edit_hd_items'] = []
+    if 'excel_hd_sua' in st.session_state:
+        del st.session_state['excel_hd_sua']
+
+def dong_sua_hoa_don_dl():
+    for k in ['edit_hd_id', 'edit_hd_info', 'edit_hd_items', 'excel_hd_sua', 'excel_hd_sua_name']:
+        if k in st.session_state:
+            del st.session_state[k]
+    st.session_state['hd_editor_ver'] = st.session_state.get('hd_editor_ver', 0) + 1
+
+if 'hd_editor_ver' not in st.session_state:
+    st.session_state['hd_editor_ver'] = 0
+
 with tab2:
     st.subheader("Bảng Theo Dõi Hóa Đơn Đại Lý")
     
-    df_hd = pd.read_sql("SELECT id, ngay, COALESCE(ma_don, so_phieu) as ma_don, ten_kh, tong_tien, da_thu FROM hoa_don ORDER BY id DESC", conn)
+    df_hd = pd.read_sql("SELECT id, ngay, COALESCE(ma_don, so_phieu) as ma_don, ten_kh, tong_tien, da_thu, ghi_chu, chi_tiet FROM hoa_don ORDER BY id DESC", conn)
     
     if df_hd.empty:
         st.info("Chưa có dữ liệu hóa đơn nào được lưu.")
@@ -369,16 +398,16 @@ with tab2:
         if df_hien_thi_hd.empty:
             st.success("✅ Hiện tại không còn hóa đơn nào chưa thanh toán!")
         else:
-            # Chuẩn bị hiển thị, thêm cột chọn tick để thanh toán
-            df_hien_thi_hd.insert(0, "Chọn", False)
-            
-            # Chỉ giữ lại các cột cần thiết cho bảng theo dõi
-            df_hien_thi_hd = df_hien_thi_hd[['Chọn', 'ngay', 'ma_don', 'ten_kh', 'tong_tien', 'da_thu']]
-            df_hien_thi_hd.columns = ['Chọn', 'Ngày Lập', 'Mã Đơn', 'Khách Hàng', 'Tổng Tiền Hóa Đơn', 'da_thu_hidden']
+            df_hien_thi_hd = df_hien_thi_hd.reset_index(drop=True)
+            df_view_hd = df_hien_thi_hd[['ngay', 'ma_don', 'ten_kh', 'tong_tien']].copy()
+            df_view_hd.insert(0, "Chọn", False)
+            df_view_hd.columns = ['Chọn', 'Ngày Lập', 'Mã Đơn', 'Khách Hàng', 'Tổng Tiền Hóa Đơn']
+
+            st.caption("💡 Tích chọn hóa đơn ở cột **Tick** để **Thanh toán**, **Chỉnh sửa** hoặc **Xóa**.")
 
             # Sử dụng Data Editor để có thể tick chọn
             edited_df = st.data_editor(
-                df_hien_thi_hd.drop(columns=['da_thu_hidden']),
+                df_view_hd,
                 column_config={
                     "Chọn": st.column_config.CheckboxColumn("Tick", default=False),
                     "Ngày Lập": st.column_config.TextColumn(disabled=True),
@@ -386,23 +415,230 @@ with tab2:
                     "Khách Hàng": st.column_config.TextColumn(disabled=True),
                     "Tổng Tiền Hóa Đơn": st.column_config.NumberColumn(format="%.0f", disabled=True)
                 },
-                use_container_width=True, hide_index=True, key="editor_thanh_toan_hd"
+                use_container_width=True,
+                hide_index=True,
+                key=f"editor_thanh_toan_hd_{st.session_state['hd_editor_ver']}"
             )
             
-            # Xử lý Nút Thanh Toán
-            don_chon = edited_df[edited_df['Chọn'] == True]['Mã Đơn'].tolist()
-            if don_chon:
-                if st.button("✅ XÁC NHẬN ĐÃ THANH TOÁN CÁC ĐƠN ĐÃ CHỌN", type="primary"):
-                    try:
-                        for ma in don_chon:
-                            c.execute("UPDATE hoa_don SET da_thu = tong_tien WHERE ma_don = %s", (ma,))
-                        conn.commit()
-                        st.success(f"🎉 Đã thanh toán thành công các đơn: {', '.join(don_chon)}")
-                        time.sleep(1.5)
+            # Lấy danh sách các dòng đã tick chọn
+            selected_idx = edited_df[edited_df['Chọn'] == True].index.tolist()
+            if selected_idx:
+                selected_rows = df_hien_thi_hd.loc[selected_idx]
+                don_chon = selected_rows['ma_don'].tolist()
+                id_chon = [int(x) for x in selected_rows['id'].tolist()]
+
+                col_act1, col_act2, col_act3 = st.columns([2, 1.5, 1.5])
+                with col_act1:
+                    if st.button("✅ XÁC NHẬN ĐÃ THANH TOÁN", type="primary", use_container_width=True, key="btn_tt_hd_dl"):
+                        try:
+                            for hd_id in id_chon:
+                                c.execute("UPDATE hoa_don SET da_thu = tong_tien WHERE id = %s", (hd_id,))
+                            conn.commit()
+                            if st.session_state.get('edit_hd_id') in id_chon:
+                                dong_sua_hoa_don_dl()
+                            else:
+                                st.session_state['hd_editor_ver'] += 1
+                            st.success(f"🎉 Đã thanh toán thành công các đơn: {', '.join(don_chon)}")
+                            time.sleep(1.2)
+                            st.rerun()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"Lỗi thanh toán: {e}")
+
+                with col_act2:
+                    if len(id_chon) == 1:
+                        row_to_edit = selected_rows.iloc[0].to_dict()
+                        st.button(
+                            f"✏️ CHỈNH SỬA HÓA ĐƠN",
+                            use_container_width=True,
+                            key="btn_edit_hd_dl",
+                            on_click=mo_sua_hoa_don_dl,
+                            args=(row_to_edit,)
+                        )
+                    else:
+                        st.button("✏️ CHỈNH SỬA HÓA ĐƠN", disabled=True, use_container_width=True, help="Chỉ chọn 1 hóa đơn để chỉnh sửa")
+
+                with col_act3:
+                    if st.button("🗑️ XÓA HÓA ĐƠN ĐÃ CHỌN", use_container_width=True, key="btn_del_hd_dl"):
+                        try:
+                            for hd_id in id_chon:
+                                c.execute("DELETE FROM hoa_don WHERE id = %s", (hd_id,))
+                            conn.commit()
+                            if st.session_state.get('edit_hd_id') in id_chon:
+                                dong_sua_hoa_don_dl()
+                            else:
+                                st.session_state['hd_editor_ver'] += 1
+                            st.success(f"🗑️ Đã xóa thành công hóa đơn: {', '.join(don_chon)}")
+                            time.sleep(1.2)
+                            st.rerun()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"⚠️ Lỗi khi xóa hóa đơn: {e}")
+
+        # ==========================================
+        # KHU VỰC CHỈNH SỬA HÓA ĐƠN ĐẠI LÝ
+        # ==========================================
+        if st.session_state.get('edit_hd_id'):
+            edit_id = st.session_state['edit_hd_id']
+            match_hd = df_hd[df_hd['id'] == edit_id]
+            if not match_hd.empty:
+                hd_cur = match_hd.iloc[0]
+                st.markdown("---")
+                col_eh1, col_eh2 = st.columns([4, 1])
+                col_eh1.subheader(f"✏️ Chỉnh Sửa Hóa Đơn: {hd_cur['ma_don']} — {hd_cur['ten_kh']}")
+                col_eh2.button("❌ Đóng trình sửa", use_container_width=True, key="btn_close_edit_hd", on_click=dong_sua_hoa_don_dl)
+
+                # Danh sách đại lý cho dropdown chọn lại khi sai khách hàng
+                ds_dl_edit = [x for x in danh_sach_dai_ly if x != "-- Chọn Đại Lý --"]
+                ten_kh_hien_tai = str(hd_cur['ten_kh'])
+                if ten_kh_hien_tai not in ds_dl_edit:
+                    ds_dl_edit = [ten_kh_hien_tai] + ds_dl_edit
+
+                # Parse ngày hiện tại
+                try:
+                    ngay_mac_dinh = datetime.strptime(str(hd_cur['ngay']), "%Y-%m-%d").date()
+                except Exception:
+                    ngay_mac_dinh = date.today()
+
+                col_e1, col_e2, col_e3 = st.columns(3)
+                ngay_moi = col_e1.date_input("📅 Ngày lập hóa đơn:", value=ngay_mac_dinh, key=f"edit_ngay_{edit_id}")
+                ma_don_moi = col_e2.text_input("🔖 Mã đơn:", value=str(hd_cur['ma_don']), key=f"edit_ma_{edit_id}").strip()
+                ten_kh_moi = col_e3.selectbox("👤 Khách hàng (Đại lý):", ds_dl_edit, index=ds_dl_edit.index(ten_kh_hien_tai), key=f"edit_kh_{edit_id}")
+
+                # Nếu hóa đơn có lưu chi tiết sản phẩm -> cho phép sửa/thêm/xóa sản phẩm và tự tính lại Tổng tiền
+                edit_items = st.session_state.get('edit_hd_items', [])
+                tong_tien_tu_chi_tiet = None
+                edited_ct_df = None
+
+                if edit_items:
+                    st.markdown("**📦 Chỉnh sửa sản phẩm trong hóa đơn:**")
+                    df_ct = pd.DataFrame(edit_items)
+                    df_ct_view = df_ct.copy()
+                    df_ct_view.insert(0, "Xóa", False)
+
+                    edited_ct_df = st.data_editor(
+                        df_ct_view,
+                        column_config={
+                            "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
+                            "Tên vt": st.column_config.TextColumn(disabled=True),
+                            "Đvt": st.column_config.TextColumn(disabled=True),
+                            "Mã vt": st.column_config.TextColumn(disabled=True),
+                            "Số lượng": st.column_config.NumberColumn("Số lượng", min_value=1, step=1),
+                            "Giá": st.column_config.NumberColumn("Giá", min_value=0, step=100, format="%.0f"),
+                            "Tiền": st.column_config.NumberColumn("Tiền", format="%.0f", disabled=True)
+                        },
+                        hide_index=True,
+                        use_container_width=True,
+                        key=f"editor_ct_hd_{edit_id}"
+                    )
+
+                    if edited_ct_df['Xóa'].any():
+                        kept_ct = edited_ct_df[edited_ct_df['Xóa'] == False].drop(columns=['Xóa']).copy()
+                        kept_ct['Tiền'] = (kept_ct['Số lượng'].astype(float) * kept_ct['Giá'].astype(float)).round(0)
+                        st.session_state['edit_hd_items'] = kept_ct.to_dict('records')
                         st.rerun()
-                    except Exception as e:
-                        conn.rollback()
-                        st.error(f"Lỗi thanh toán: {e}")
+
+                    edited_ct_df['Tiền'] = (edited_ct_df['Số lượng'].astype(float) * edited_ct_df['Giá'].astype(float)).round(0)
+                    tong_tien_tu_chi_tiet = float(edited_ct_df['Tiền'].sum())
+
+                    # Thêm sản phẩm mới vào hóa đơn đang sửa
+                    col_add_sp1, col_add_sp2, col_add_sp3 = st.columns([3, 1, 1])
+                    sp_them_hd = col_add_sp1.selectbox("➕ Thêm sản phẩm vào hóa đơn:", ["-- Chọn Sản Phẩm --"] + danh_sach_sp, key=f"add_sp_hd_{edit_id}")
+                    sl_them_hd = col_add_sp2.number_input("Số lượng:", min_value=1, step=1, key=f"add_sl_hd_{edit_id}")
+                    with col_add_sp3:
+                        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("➕ Thêm SP", use_container_width=True, key=f"btn_add_sp_hd_{edit_id}"):
+                            if sp_them_hd != "-- Chọn Sản Phẩm --":
+                                synced_ct = edited_ct_df.drop(columns=['Xóa']).copy()
+                                synced_list = synced_ct.to_dict('records')
+                                sp_str = str(sp_them_hd).strip()
+                                ten_vt_moi = sp_str.title() if sp_str.lower().startswith("hộp nhựa") else f"Hộp Nhựa {sp_str}".title()
+                                gia_sp = round(float(dict_gia.get(sp_them_hd, dict_gia_lower.get(sp_str.lower(), 0))), 0)
+                                synced_list.append({
+                                    "Mã vt": "",
+                                    "Tên vt": ten_vt_moi,
+                                    "Đvt": "Cái",
+                                    "Số lượng": sl_them_hd,
+                                    "Giá": gia_sp,
+                                    "Tiền": round(gia_sp * sl_them_hd, 0),
+                                    "Giá ngoại tệ": None,
+                                    "Tiền ngoại tệ": None,
+                                    "%CK": None,
+                                    "Chiết khấu": None,
+                                    "Thuế suất": None,
+                                    "Thuế": None
+                                })
+                                st.session_state['edit_hd_items'] = synced_list
+                                st.rerun()
+
+                col_e4, col_e5, col_e6 = st.columns(3)
+                gia_tri_tong_mac_dinh = tong_tien_tu_chi_tiet if tong_tien_tu_chi_tiet is not None else float(hd_cur['tong_tien'])
+                tong_tien_moi = col_e4.number_input(
+                    "💰 Tổng tiền hóa đơn (VNĐ):",
+                    min_value=0.0,
+                    step=1000.0,
+                    value=gia_tri_tong_mac_dinh,
+                    format="%.0f",
+                    key=f"edit_tong_{edit_id}"
+                )
+                da_thu_moi = col_e5.number_input(
+                    "💵 Đã thu (VNĐ):",
+                    min_value=0.0,
+                    step=1000.0,
+                    value=float(hd_cur['da_thu']),
+                    format="%.0f",
+                    key=f"edit_dathu_{edit_id}"
+                )
+                ghi_chu_moi = col_e6.text_input("📝 Ghi chú:", value=str(hd_cur['ghi_chu'] or ""), key=f"edit_ghichu_{edit_id}")
+
+                if st.button("💾 LƯU THAY ĐỔI HÓA ĐƠN", type="primary", use_container_width=True, key=f"btn_save_hd_{edit_id}"):
+                    if not ma_don_moi:
+                        st.error("⚠️ Mã đơn không được để trống!")
+                    else:
+                        try:
+                            chi_tiet_luu = None
+                            if edited_ct_df is not None and not edited_ct_df.empty:
+                                df_ct_luu = edited_ct_df.drop(columns=['Xóa']).copy()
+                                df_ct_luu['Tiền'] = (df_ct_luu['Số lượng'].astype(float) * df_ct_luu['Giá'].astype(float)).round(0)
+                                chi_tiet_luu = df_ct_luu.to_json(orient='records')
+                                st.session_state['edit_hd_items'] = df_ct_luu.to_dict('records')
+                                # Tạo sẵn file Excel Import Thuế mới sau khi sửa
+                                try:
+                                    import openpyxl
+                                    out_sua = io.BytesIO()
+                                    with pd.ExcelWriter(out_sua, engine='openpyxl') as writer:
+                                        df_ct_luu.to_excel(writer, index=False, sheet_name='Import_Thue')
+                                    st.session_state['excel_hd_sua'] = out_sua.getvalue()
+                                    st.session_state['excel_hd_sua_name'] = f"Import_Thue_{ma_don_moi}_Sua.xlsx"
+                                except ImportError:
+                                    pass
+                            else:
+                                chi_tiet_luu = hd_cur['chi_tiet'] if pd.notna(hd_cur['chi_tiet']) else None
+
+                            c.execute("""UPDATE hoa_don 
+                                         SET ngay = %s, ma_don = %s, so_phieu = %s, ten_kh = %s, tong_tien = %s, da_thu = %s, ghi_chu = %s, chi_tiet = %s
+                                         WHERE id = %s""",
+                                      (ngay_moi.strftime("%Y-%m-%d"), ma_don_moi, ma_don_moi, ten_kh_moi, float(tong_tien_moi), float(da_thu_moi), ghi_chu_moi, chi_tiet_luu, edit_id))
+                            conn.commit()
+                            st.session_state['hd_editor_ver'] += 1
+                            st.success(f"✅ Đã cập nhật thành công hóa đơn **{ma_don_moi}**!")
+                            if 'excel_hd_sua' not in st.session_state:
+                                time.sleep(1.0)
+                                dong_sua_hoa_don_dl()
+                                st.rerun()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"⚠️ Lỗi khi lưu chỉnh sửa: {e}")
+
+                if st.session_state.get('excel_hd_sua'):
+                    st.download_button(
+                        label="📥 TẢI LẠI FILE EXCEL IMPORT THUẾ ĐÃ SỬA",
+                        data=st.session_state['excel_hd_sua'],
+                        file_name=st.session_state['excel_hd_sua_name'],
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        use_container_width=True
+                    )
 
         # Hiển thị Bảng Công Nợ Thuế & Xuất File Đối Chiếu
         st.markdown("---")
