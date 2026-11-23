@@ -613,11 +613,12 @@ def generate_phieu_nhap_pdf(ma_phieu, ten_ncc, df_items, tong_tien, ghi_chu, nga
     pdf.cell(0, 10, "PHIẾU NHẬP KHO", ln=True, align="C")
     
     pdf.set_font(font_name, "", 11)
-    pdf.cell(0, 6, f"Mã Phiếu: {ma_phieu}", ln=True, align="C")
+    pdf.cell(0, 6, f"Mã Phiếu: {ma_phieu}   |   Ngày nhập: {ngay_nhap}", ln=True, align="C")
     pdf.ln(5)
     
-    pdf.cell(0, 8, f"Ngày tạo phiếu: {ngay_nhap}", ln=True, align="L")
-    pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True, align="L")
+    pdf.cell(0, 8, f"Nhà cung cấp: {ten_ncc}", ln=True)
+    if ghi_chu:
+        pdf.cell(0, 8, f"Ghi chú: {ghi_chu}", ln=True)
     pdf.ln(3)
     
     if not df_items.empty:
