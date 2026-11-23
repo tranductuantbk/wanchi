@@ -938,10 +938,10 @@ with tab1:
         except Exception as e: st.error(f"Lỗi: {e}")
 
 with tab2:
-    chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📝 0. Tạo Đơn Nhập Hàng", "📥 1. Nhập NVL, NCC", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)", "🔄 4. Chuyển đơn (Đại lý)"], horizontal=True)
+    chuyem_muc = st.radio("Chọn nghiệp vụ Kho:", ["📝 0. Tạo Phiếu Nhập Hàng", "📥 1. Nhập NVL, NCC", "📦 2. Nhập Thành Phẩm", "🚚 3. Xuất Kho (Theo Đơn Hàng)", "🔄 4. Chuyển đơn (Đại lý)"], horizontal=True)
     st.markdown("---")
 
-    if "0. Tạo Đơn Nhập Hàng" in chuyem_muc:
+    if "0. Tạo Phiếu Nhập Hàng" in chuyem_muc:
         st.markdown("#### 📝 Lập Phiếu Nhập Kho (Đơn thuần tạo phiếu)")
         
         if 'gio_nhap_kho' not in st.session_state:
@@ -1006,11 +1006,7 @@ with tab2:
                 tong_tien = float(edited_gio['Thành Tiền'].sum())
                 st.write(f"### 💰 TỔNG CỘNG: {format_vn(tong_tien)} VNĐ")
                 
-                col_tt1, col_tt2 = st.columns(2)
-                with col_tt1:
-                    trang_thai_tt = st.selectbox("Trạng thái thanh toán", ["Chưa thanh toán", "Đã thanh toán"])
-                with col_tt2:
-                    ghi_chu = st.text_area("📝 Ghi chú (sẽ in thành bảng riêng bên dưới):")
+                ghi_chu = st.text_area("📝 Ghi chú (sẽ in thành bảng riêng bên dưới):")
                 
                 loai_xuat_nhap = st.radio(
                     "Định dạng xuất file:", 
