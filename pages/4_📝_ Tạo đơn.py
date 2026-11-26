@@ -197,7 +197,7 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don, co_x
     pdf.ln(12)
 
     pdf.set_font(font_name, 'B' if has_font else '', 16)
-    pdf.cell(0, 10, "HÓA ĐƠN BÁN HÀNG" if loai_don != "Hàng OME" else "HÓA ĐƠN GIA CÔNG (OME)", ln=True, align='C')
+    pdf.cell(0, 10, "HÓA ĐƠN BÁN HÀNG" if loai_don not in ("Hàng OEM", "Hàng OME") else "HÓA ĐƠN GIA CÔNG (OEM)", ln=True, align='C')
     
     pdf.set_font(font_name, size=11)
     pdf.cell(0, 8, f"Mã Đơn: {ma_dh}   |   Ngày: {lay_gio_vn().strftime('%d/%m/%Y')}", ln=True, align='C')
@@ -220,9 +220,9 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don, co_x
     pdf.set_font(font_name, size=10)
     stt = 1
     for _, row in df_items.iterrows():
-        ten_sp = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OME', 'N/A')))
+        ten_sp = str(row.get('Tên Sản Phẩm', row.get('Tên Sản Phẩm OEM', row.get('Tên Sản Phẩm OME', 'N/A'))))
         so_luong = row.get('Số Lượng', 0)
-        don_gia = row.get('Đơn Giá', row.get('Đơn Giá OME', 0))
+        don_gia = row.get('Đơn Giá', row.get('Đơn Giá OEM', row.get('Đơn Giá OME', 0)))
         thanh_tien = row.get('Thành Tiền', 0)
         
         pdf.cell(col_widths[0], 8, str(stt), border=1, align='C')
@@ -256,7 +256,7 @@ def generate_order_pdf(ma_dh, kh_name, kh_phone, df_items, total, loai_don, co_x
 # ==========================================
 # GIAO DIỆN TẠO ĐƠN (4 TABS)
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["🛒 Tạo Đơn Hàng Wanchi", "🛠️ Tạo Đơn Hàng OME", "📑 Tạo Đơn Hàng Báo Giá", "📂 Lịch Sử Đơn Hàng"])
+tab1, tab2, tab3, tab4 = st.tabs(["🛒 Tạo Đơn Hàng Wanchi", "🛠️ Tạo Đơn Hàng OEM", "📑 Tạo Đơn Hàng Báo Giá", "📂 Lịch Sử Đơn Hàng"])
 
 # ------------------------------------------
 # TAB 1: ĐƠN HÀNG WANCHI (CHUẨN)
@@ -431,24 +431,24 @@ with tab1:
                     st.download_button("🖼️ TẢI FILE ẢNH HÓA ĐƠN", data=st.session_state['img_don_chuan'], file_name=img_name_chuan, mime="image/png", type="primary", use_container_width=True)
 
 # ------------------------------------------
-# TAB 2: ĐƠN HÀNG OME
+# TAB 2: ĐƠN HÀNG OEM
 # ------------------------------------------
 with tab2:
     st.subheader(f"Mã Đơn Tiếp Theo: {ma_don_hien_tai}")
     
-    khach_hang_ome = st.selectbox("🙋‍♂️ Chọn Khách Hàng OME:", ["-- Chọn Khách Hàng --"] + df_kh_ome['ten_kh'].tolist(), key="kh_ome")
+    khach_hang_ome = st.selectbox("🙋‍♂️ Chọn Khách Hàng OEM:", ["-- Chọn Khách Hàng --"] + df_kh_ome['ten_kh'].tolist(), key="kh_ome")
     sdt_ome_chot = ""
     if khach_hang_ome != "-- Chọn Khách Hàng --":
         sdt_ome_chot = df_kh_ome[df_kh_ome['ten_kh'] == khach_hang_ome].iloc[0].get('so_dien_thoai', '')
 
-    st.markdown("**⚙️ Chọn Sản Phẩm OME & Nhập Số Lốc**")
+    st.markdown("**⚙️ Chọn Sản Phẩm OEM & Nhập Số Lốc**")
     col_o1, col_o2 = st.columns([3, 1])
-    sp_ome_chon = col_o1.selectbox("Tên Sản Phẩm OME:", ["-- Chọn Sản Phẩm --"] + df_sp_ome['ten_sp'].tolist(), key="chon_sp_ome")
+    sp_ome_chon = col_o1.selectbox("Tên Sản Phẩm OEM:", ["-- Chọn Sản Phẩm --"] + df_sp_ome['ten_sp'].tolist(), key="chon_sp_ome")
     so_loc_ome_chon = col_o2.number_input("📦 Số Lốc:", min_value=1, step=1, key="sl_loc_ome")
     
     tong_so_cai_ome = 0
 
-    # TỰ ĐỘNG TÍNH TRÒN LỐC CHO HÀNG OME
+    # TỰ ĐỘNG TÍNH TRÒN LỐC CHO HÀNG OEM
     if sp_ome_chon != "-- Chọn Sản Phẩm --":
         info_ome = df_sp_ome[df_sp_ome['ten_sp'] == sp_ome_chon].iloc[0]
         loc_ome = 1
@@ -463,9 +463,9 @@ with tab2:
             st.info(f"👉 **Hệ thống tự tính:** {so_loc_ome_chon} lốc (Quy cách đóng gói: **{loc_ome} cái/lốc**) = **Xuất {tong_so_cai_ome} cái**")
             st.success("✅ Số lượng đã đảm bảo xuất xuất tròn lốc.")
 
-    if st.button("➕ Thêm vào đơn OME", type="primary", key="btn_add_ome"):
+    if st.button("➕ Thêm vào đơn OEM", type="primary", key="btn_add_ome"):
         if sp_ome_chon == "-- Chọn Sản Phẩm --":
-            st.error("⚠️ Vui lòng chọn sản phẩm OME!")
+            st.error("⚠️ Vui lòng chọn sản phẩm OEM!")
         elif tong_so_cai_ome == 0:
             st.error("⚠️ Vui lòng nhập Số Lốc hợp lệ!")
         else:
@@ -473,11 +473,11 @@ with tab2:
             don_gia_ome = info_ome['gia_ome']
             
             st.session_state.gio_ome.append({
-                "Tên Sản Phẩm OME": sp_ome_chon,
-                "Loại Giá": "Giá OME",
+                "Tên Sản Phẩm OEM": sp_ome_chon,
+                "Loại Giá": "Giá OEM",
                 "Số Lượng": tong_so_cai_ome,
                 "Đơn Giá Gốc": don_gia_ome,
-                "Đơn Giá OME": don_gia_ome,
+                "Đơn Giá OEM": don_gia_ome,
                 "Thành Tiền": tong_so_cai_ome * don_gia_ome
             })
             st.rerun()
@@ -489,11 +489,11 @@ with tab2:
         co_xuat_hoa_don_ome = st.checkbox("✅ Có xuất hóa đơn (Đơn giá chia 0.95)", key="cb_xuat_hd_ome")
         
         if co_xuat_hoa_don_ome:
-            df_gio_ome['Đơn Giá OME'] = (df_gio_ome['Đơn Giá Gốc'] / 0.95).round(0).astype(int)
-            df_gio_ome['Thành Tiền'] = df_gio_ome['Số Lượng'] * df_gio_ome['Đơn Giá OME']
+            df_gio_ome['Đơn Giá OEM'] = (df_gio_ome['Đơn Giá Gốc'] / 0.95).round(0).astype(int)
+            df_gio_ome['Thành Tiền'] = df_gio_ome['Số Lượng'] * df_gio_ome['Đơn Giá OEM']
         else:
-            df_gio_ome['Đơn Giá OME'] = df_gio_ome['Đơn Giá Gốc']
-            df_gio_ome['Thành Tiền'] = df_gio_ome['Số Lượng'] * df_gio_ome['Đơn Giá OME']
+            df_gio_ome['Đơn Giá OEM'] = df_gio_ome['Đơn Giá Gốc']
+            df_gio_ome['Thành Tiền'] = df_gio_ome['Số Lượng'] * df_gio_ome['Đơn Giá OEM']
             
         df_gio_ome_hien_thi = df_gio_ome.drop(columns=['Đơn Giá Gốc'])
         df_gio_ome_hien_thi.insert(0, "Xóa", False)
@@ -504,10 +504,10 @@ with tab2:
             df_gio_ome_hien_thi,
             column_config={
                 "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
-                "Tên Sản Phẩm OME": st.column_config.TextColumn(disabled=True),
+                "Tên Sản Phẩm OEM": st.column_config.TextColumn(disabled=True),
                 "Loại Giá": st.column_config.TextColumn(disabled=True),
                 "Số Lượng": st.column_config.NumberColumn("Số lượng cái (Tổng)", min_value=1, step=1, disabled=True),
-                "Đơn Giá OME": st.column_config.NumberColumn(disabled=True),
+                "Đơn Giá OEM": st.column_config.NumberColumn(disabled=True),
                 "Thành Tiền": st.column_config.NumberColumn(disabled=True)
             },
             hide_index=True,
@@ -521,11 +521,11 @@ with tab2:
             st.rerun()
             
         tong_tien_ome = float(edited_df_ome['Thành Tiền'].sum())
-        st.write(f"### 💰 TỔNG CỘNG OME: {format_vn(tong_tien_ome)} VNĐ")
+        st.write(f"### 💰 TỔNG CỘNG OEM: {format_vn(tong_tien_ome)} VNĐ")
         
         st.markdown("**📁 Tùy chọn xuất file:**")
         loai_xuat_t2 = st.radio(
-            "Lựa chọn định dạng xuất Hóa đơn OME:", 
+            "Lựa chọn định dạng xuất Hóa đơn OEM:", 
             ["Chỉ xuất file PDF", "Chỉ xuất file Ảnh (PNG)", "Xuất cả PDF và Ảnh"], 
             horizontal=True, 
             key="radio_xuat_t2",
@@ -534,13 +534,13 @@ with tab2:
         
         col_btn_o1, col_btn_o2 = st.columns([1, 1])
         with col_btn_o1:
-            if st.button("💾 CHỐT ĐƠN & TẠO FILE (HÀNG OME)", type="primary", use_container_width=True, key="btn_chot_ome"):
+            if st.button("💾 CHỐT ĐƠN & TẠO FILE (HÀNG OEM)", type="primary", use_container_width=True, key="btn_chot_ome"):
                 if khach_hang_ome == "-- Chọn Khách Hàng --":
                     st.error("⚠️ Vui lòng chọn Khách Hàng!")
                 else:
                     df_print_ome = edited_df_ome.drop(columns=['Xóa'])
-                    st.session_state['pdf_don_ome'] = generate_order_pdf(ma_don_hien_tai, khach_hang_ome, sdt_ome_chot, df_print_ome, tong_tien_ome, "Hàng OME", co_xuat_hoa_don_ome)
-                    st.session_state['pdf_ten_ome'] = f"{ma_don_hien_tai}_OME_{khach_hang_ome}.pdf"
+                    st.session_state['pdf_don_ome'] = generate_order_pdf(ma_don_hien_tai, khach_hang_ome, sdt_ome_chot, df_print_ome, tong_tien_ome, "Hàng OEM", co_xuat_hoa_don_ome)
+                    st.session_state['pdf_ten_ome'] = f"{ma_don_hien_tai}_OEM_{khach_hang_ome}.pdf"
                     
                     img_data_ome = convert_pdf_to_png(st.session_state['pdf_don_ome'])
                     if img_data_ome:
@@ -550,17 +550,17 @@ with tab2:
                         chi_tiet_json_ome = df_print_ome.to_json(orient='records')
                         ngay_gio_ome = lay_gio_vn().strftime("%d/%m/%Y %H:%M")
                         c.execute("INSERT INTO don_hang (ma_don, ngay_tao, ten_kh, loai_don, tong_tien, chi_tiet) VALUES (%s, %s, %s, %s, %s, %s)", 
-                                  (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OME', tong_tien_ome, chi_tiet_json_ome))
+                                  (ma_don_hien_tai, ngay_gio_ome, khach_hang_ome, 'Hàng OEM', tong_tien_ome, chi_tiet_json_ome))
                         conn.commit()
                         load_don_hang.clear()
                         st.session_state.gio_ome = []
-                        st.success("✅ Chốt đơn OME thành công! Dữ liệu đã lưu vào lịch sử. Tải file bên dưới.")
+                        st.success("✅ Chốt đơn OEM thành công! Dữ liệu đã lưu vào lịch sử. Tải file bên dưới.")
                     except Exception as e: 
                         conn.rollback()
                         st.error(f"⚠️ Lỗi Database: {e}")
         
         with col_btn_o2:
-            if st.button("🗑️ Xóa sạch đơn OME", use_container_width=True, key="btn_xoa_ome"):
+            if st.button("🗑️ Xóa sạch đơn OEM", use_container_width=True, key="btn_xoa_ome"):
                 st.session_state.gio_ome = []
                 if 'pdf_don_ome' in st.session_state: del st.session_state['pdf_don_ome']
                 if 'img_don_ome' in st.session_state: del st.session_state['img_don_ome']
@@ -692,7 +692,21 @@ with tab3:
 def mo_trinh_sua_don(ma_don_chon, chi_tiet_raw, nguon="reprint"):
     st.session_state['editing_ma_don'] = ma_don_chon
     st.session_state['editing_source'] = nguon
-    st.session_state['editing_items'] = json.loads(chi_tiet_raw) if pd.notna(chi_tiet_raw) and chi_tiet_raw else []
+    items_raw = json.loads(chi_tiet_raw) if pd.notna(chi_tiet_raw) and chi_tiet_raw else []
+    normalized_items = []
+    for item in items_raw:
+        new_item = {}
+        for k, v in item.items():
+            if k == "Tên Sản Phẩm OME":
+                new_item["Tên Sản Phẩm OEM"] = v
+            elif k == "Đơn Giá OME":
+                new_item["Đơn Giá OEM"] = v
+            elif k == "Loại Giá" and v == "Giá OME":
+                new_item["Loại Giá"] = "Giá OEM"
+            else:
+                new_item[k] = v
+        normalized_items.append(new_item)
+    st.session_state['editing_items'] = normalized_items
     if 'pdf_don_sua' in st.session_state: del st.session_state['pdf_don_sua']
     if 'img_don_sua' in st.session_state: del st.session_state['img_don_sua']
 
@@ -776,9 +790,9 @@ with tab4:
                 match_rows = df_his[df_his['ma_don'] == ma_don_sua]
                 if not match_rows.empty:
                     row_edit = match_rows.iloc[0]
-                    is_ome_edit = (row_edit['loai_don'] == 'Hàng OME')
-                    col_ten_sp = "Tên Sản Phẩm OME" if is_ome_edit else "Tên Sản Phẩm"
-                    col_don_gia = "Đơn Giá OME" if is_ome_edit else "Đơn Giá"
+                    is_ome_edit = row_edit['loai_don'] in ('Hàng OEM', 'Hàng OME')
+                    col_ten_sp = "Tên Sản Phẩm OEM" if is_ome_edit else "Tên Sản Phẩm"
+                    col_don_gia = "Đơn Giá OEM" if is_ome_edit else "Đơn Giá"
 
                     st.markdown("---")
                     col_hdr1, col_hdr2 = st.columns([4, 1])
@@ -830,7 +844,7 @@ with tab4:
 
                     if is_ome_edit:
                         col_add1, col_add2 = st.columns([3, 1])
-                        sp_them_ome = col_add1.selectbox("Chọn Sản Phẩm OME:", ["-- Chọn Sản Phẩm --"] + df_sp_ome['ten_sp'].tolist(), key=f"sel_add_ome_{ma_don_sua}")
+                        sp_them_ome = col_add1.selectbox("Chọn Sản Phẩm OEM:", ["-- Chọn Sản Phẩm --"] + df_sp_ome['ten_sp'].tolist(), key=f"sel_add_ome_{ma_don_sua}")
                         so_loc_them_ome = col_add2.number_input("📦 Số Lốc:", min_value=1, step=1, key=f"loc_add_ome_{ma_don_sua}")
 
                         tong_cai_them_ome = 0
@@ -846,7 +860,7 @@ with tab4:
 
                         if st.button("➕ Thêm sản phẩm vào đơn", key=f"btn_add_item_ome_{ma_don_sua}"):
                             if sp_them_ome == "-- Chọn Sản Phẩm --":
-                                st.error("⚠️ Vui lòng chọn sản phẩm OME cần thêm!")
+                                st.error("⚠️ Vui lòng chọn sản phẩm OEM cần thêm!")
                             else:
                                 # Lưu lại các thay đổi số lượng/giá hiện có trước khi thêm dòng mới
                                 synced_df = edited_items_df.drop(columns=['Xóa']).copy() if not edited_items_df.empty else pd.DataFrame()
@@ -858,10 +872,10 @@ with tab4:
                                     gia_o = int(round(gia_o / 0.95, 0))
 
                                 synced_list.append({
-                                    "Tên Sản Phẩm OME": sp_them_ome,
-                                    "Loại Giá": "Giá OME",
+                                    "Tên Sản Phẩm OEM": sp_them_ome,
+                                    "Loại Giá": "Giá OEM",
                                     "Số Lượng": tong_cai_them_ome,
-                                    "Đơn Giá OME": gia_o,
+                                    "Đơn Giá OEM": gia_o,
                                     "Thành Tiền": tong_cai_them_ome * gia_o
                                 })
                                 st.session_state['editing_items'] = synced_list
@@ -950,7 +964,7 @@ with tab4:
                                 sdt_edit = ""
                                 if row_edit['loai_don'] == 'Hàng Chuẩn':
                                     sdt_edit = df_kh[df_kh['ten_kh'] == row_edit['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == row_edit['ten_kh']].empty else ""
-                                elif row_edit['loai_don'] == 'Hàng OME':
+                                elif row_edit['loai_don'] in ('Hàng OEM', 'Hàng OME'):
                                     sdt_edit = df_kh_ome[df_kh_ome['ten_kh'] == row_edit['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_edit['ten_kh']].empty else ""
                                 else:
                                     sdt_edit = "Theo Báo Giá"
@@ -998,7 +1012,7 @@ with tab4:
                     
                     sdt_his = "" 
                     if row_data['loai_don'] == 'Hàng Chuẩn': sdt_his = df_kh[df_kh['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh[df_kh['ten_kh'] == row_data['ten_kh']].empty else ""
-                    elif row_data['loai_don'] == 'Hàng OME': sdt_his = df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].empty else ""
+                    elif row_data['loai_don'] in ('Hàng OEM', 'Hàng OME'): sdt_his = df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].iloc[0].get('so_dien_thoai', '') if not df_kh_ome[df_kh_ome['ten_kh'] == row_data['ten_kh']].empty else ""
                     else:
                         sdt_his = "Theo Báo Giá"
 
