@@ -16,7 +16,7 @@ if role == "employee":
     st.error("🛑 BẠN KHÔNG CÓ QUYỀN TRUY CẬP: Danh sách khách hàng là dữ liệu mật, chỉ dành cho Quản lý WANCHI.")
     st.stop()
 
-st.header("👥 Quản Lý Danh Mục Khách Hàng & OME")
+st.header("👥 Quản Lý Danh Mục Khách Hàng & OEM")
 
 # ==========================================
 # 🛡️ LÁ CHẮN CHỐNG MẤT DỮ LIỆU (DATABASE GUARD)
@@ -79,7 +79,7 @@ conn.commit()
 # ==========================================
 # GIAO DIỆN 4 TABS
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["➕ Thêm KH", "📋 Danh Sách KH", "➕ Thêm KH OME", "📋 Danh Sách KH OME"])
+tab1, tab2, tab3, tab4 = st.tabs(["➕ Thêm KH", "📋 Danh Sách KH", "➕ Thêm KH OEM", "📋 Danh Sách KH OEM"])
 
 # ------------------------------------------
 # TAB 1: THÊM KHÁCH HÀNG
@@ -174,73 +174,73 @@ with tab2:
     else: st.info("Danh sách khách hàng đang trống.")
 
 # ------------------------------------------
-# TAB 3 & 4: KHÁCH HÀNG OME (GIỮ NGUYÊN)
+# TAB 3 & 4: KHÁCH HÀNG OEM (GIỮ NGUYÊN)
 # ------------------------------------------
 with tab3:
-    st.subheader("Thêm Khách Hàng Mới (Gia Công OME)")
+    st.subheader("Thêm Khách Hàng Mới (Gia Công OEM)")
     with st.form("form_them_kh_ome", clear_on_submit=True):
         col_o1, col_o2 = st.columns(2)
         with col_o1:
-            ten_kh_ome = st.text_input("Tên Khách hàng OME (*)")
+            ten_kh_ome = st.text_input("Tên Khách hàng OEM (*)")
             sdt_ome = st.text_input("Số điện thoại")
         with col_o2:
             dia_chi_ome = st.text_input("Địa chỉ / Đơn vị")
             st.write("") 
 
-        if st.form_submit_button("💾 Lưu KH OME", type="primary"):
+        if st.form_submit_button("💾 Lưu KH OEM", type="primary"):
             if not ten_kh_ome.strip():
-                st.warning("⚠️ Vui lòng nhập tên khách hàng OME!")
+                st.warning("⚠️ Vui lòng nhập tên khách hàng OEM!")
             else:
                 c.execute("SELECT ten_kh FROM dm_khach_hang_ome WHERE ten_kh = %s", (ten_kh_ome.strip(),))
                 if c.fetchone():
-                    st.error(f"⚠️ Khách OME '{ten_kh_ome}' đã tồn tại!")
+                    st.error(f"⚠️ Khách OEM '{ten_kh_ome}' đã tồn tại!")
                 else:
                     try:
                         c.execute("""INSERT INTO dm_khach_hang_ome (ten_kh, so_dien_thoai, dia_chi) 
                                      VALUES (%s, %s, %s)""", (ten_kh_ome.strip(), sdt_ome, dia_chi_ome))
-                        st.success(f"✅ Đã thêm KH OME: **{ten_kh_ome}**")
+                        st.success(f"✅ Đã thêm KH OEM: **{ten_kh_ome}**")
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as e:
                         st.error(f"Lỗi: {e}")
 
 with tab4:
-    st.subheader("Cập Nhật & Xóa KH OME")
+    st.subheader("Cập Nhật & Xóa KH OEM")
     df_kh_ome = pd.read_sql("SELECT * FROM dm_khach_hang_ome ORDER BY id DESC", conn)
     
     if not df_kh_ome.empty:
-        st.markdown("💡 *Click đúp vào ô để sửa SĐT hoặc Địa chỉ khách OME.*")
+        st.markdown("💡 *Click đúp vào ô để sửa SĐT hoặc Địa chỉ khách OEM.*")
         edited_kh_ome = st.data_editor(
             df_kh_ome, key="bang_khach_hang_ome",
             column_config={
                 "id": None, 
-                "ten_kh": st.column_config.TextColumn("Tên Khách Hàng OME", disabled=True),
+                "ten_kh": st.column_config.TextColumn("Tên Khách Hàng OEM", disabled=True),
                 "so_dien_thoai": st.column_config.TextColumn("Số Điện Thoại"),
                 "dia_chi": st.column_config.TextColumn("Địa Chỉ"),
             },
             use_container_width=True, hide_index=True
         )
 
-        if st.button("💾 Lưu Sửa Đổi (KH OME)", type="primary"):
+        if st.button("💾 Lưu Sửa Đổi (KH OEM)", type="primary"):
             for index, row in edited_kh_ome.iterrows():
                 c.execute("""UPDATE dm_khach_hang_ome 
                              SET so_dien_thoai=%s, dia_chi=%s 
                              WHERE id=%s""",
                           (row['so_dien_thoai'], row['dia_chi'], int(row['id'])))
-            st.success("✅ Đã cập nhật KH OME thành công!")
+            st.success("✅ Đã cập nhật KH OEM thành công!")
             time.sleep(1)
             st.rerun()
 
         st.markdown("---")
-        st.subheader("🗑️ Xóa KH OME")
+        st.subheader("🗑️ Xóa KH OEM")
         col_oxoa1, col_oxoa2 = st.columns([3, 1])
-        with col_oxoa1: kh_ome_can_xoa = st.selectbox("Chọn KH OME cần xóa:", ["-- Chọn --"] + df_kh_ome['ten_kh'].tolist(), key="del_kh_ome")
+        with col_oxoa1: kh_ome_can_xoa = st.selectbox("Chọn KH OEM cần xóa:", ["-- Chọn --"] + df_kh_ome['ten_kh'].tolist(), key="del_kh_ome")
         with col_oxoa2:
             st.write(""); st.write("")
-            if st.button("🚨 Xóa KH OME", type="primary", use_container_width=True, key="btn_del_ome"):
+            if st.button("🚨 Xóa KH OEM", type="primary", use_container_width=True, key="btn_del_ome"):
                 if kh_ome_can_xoa != "-- Chọn --":
                     c.execute("DELETE FROM dm_khach_hang_ome WHERE ten_kh=%s", (kh_ome_can_xoa,))
-                    st.success(f"✅ Đã xóa KH OME: {kh_ome_can_xoa}")
+                    st.success(f"✅ Đã xóa KH OEM: {kh_ome_can_xoa}")
                     time.sleep(1.5)
                     st.rerun()
-    else: st.info("Danh sách khách OME trống.")
+    else: st.info("Danh sách khách OEM trống.")
