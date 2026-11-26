@@ -56,10 +56,18 @@ try:
                     id SERIAL PRIMARY KEY,
                     ngay TEXT,
                     dien_giai TEXT,
-                    so_tien REAL
+                    so_tien REAL,
+                    tru_tk_hkd BOOLEAN DEFAULT FALSE
                 )''')
     conn.commit()
 except Exception as e:
+    conn.rollback()
+
+# Tự động nâng cấp cột tru_tk_hkd nếu bảng cũ chưa có
+try:
+    c.execute("ALTER TABLE chi_phi_khac ADD COLUMN tru_tk_hkd BOOLEAN DEFAULT FALSE")
+    conn.commit()
+except:
     conn.rollback()
 
 # ==========================================
@@ -95,6 +103,7 @@ thuc_thu = 0.0
 gia_von = 0.0
 thanh_toan_ncc = 0.0
 chi_phi_tu_nhap = 0.0
+chi_phi_tu_nhap_hkd = 0.0
 
 # 1. DOANH SỐ (CHỈ LẤY ĐƠN ĐÃ XUẤT KHO VÀ ĐÃ THANH TOÁN)
 try:
@@ -143,6 +152,14 @@ try:
 except:
     pass
 
+# 4B. CHI PHÍ TỰ NHẬP CHI TỪ TK HKD
+try:
+    c.execute("SELECT SUM(so_tien) FROM public.chi_phi_khac WHERE ngay LIKE %s AND tru_tk_hkd = TRUE", (pattern_thang_iso,))
+    res_cp_hkd = c.fetchone()[0]
+    chi_phi_tu_nhap_hkd = float(res_cp_hkd) if res_cp_hkd else 0.0
+except:
+    pass
+
 # ==========================================
 # TÍNH TOÁN CÔNG THỨC KINH DOANH
 # ==========================================
@@ -150,8 +167,8 @@ except:
 loi_nhuan_gop = doanh_so - gia_von
 loi_nhuan_thang = loi_nhuan_gop - thanh_toan_ncc - chi_phi_tu_nhap
 
-# TÍNH TK HKD HIỆN CÓ
-tk_hkd_hien_co = doanh_so - thanh_toan_ncc
+# TÍNH TK HKD HIỆN CÓ (Trừ thanh toán NCC và các chi phí tự nhập có chọn TK HKD)
+tk_hkd_hien_co = doanh_so - thanh_toan_ncc - chi_phi_tu_nhap_hkd
 
 # ==========================================
 # HIỂN THỊ METRICS KẾT QUẢ KINH DOANH
@@ -187,12 +204,13 @@ with col_form:
         cp_ngay = st.date_input("Ngày phát sinh", date.today(), format="DD/MM/YYYY")
         cp_diengiai = st.text_area("Diễn giải (VD: Tiền điện, nước, rác...)")
         cp_sotien = st.number_input("Số tiền (VNĐ)", min_value=0.0, step=10000.0)
+        cp_tru_hkd = st.checkbox("💳 Chi từ TK HKD (Trừ trực tiếp vào TK HKD)", value=False)
         
         if st.form_submit_button("💾 Lưu Chi Phí", type="primary", use_container_width=True):
             if cp_sotien > 0 and cp_diengiai:
                 try:
-                    c.execute("INSERT INTO chi_phi_khac (ngay, dien_giai, so_tien) VALUES (%s, %s, %s)",
-                              (cp_ngay.strftime("%Y-%m-%d"), cp_diengiai, cp_sotien))
+                    c.execute("INSERT INTO chi_phi_khac (ngay, dien_giai, so_tien, tru_tk_hkd) VALUES (%s, %s, %s, %s)",
+                              (cp_ngay.strftime("%Y-%m-%d"), cp_diengiai, cp_sotien, cp_tru_hkd))
                     conn.commit()
                     st.success("✅ Đã lưu chi phí thành công!")
                     time.sleep(1)
@@ -207,15 +225,42 @@ with col_form:
 with col_table:
     st.markdown(f"**Bảng chi phí đã nhập trong {thang_chon_display}**")
     try:
-        df_cp = pd.read_sql("SELECT id, ngay, dien_giai, so_tien FROM chi_phi_khac WHERE ngay LIKE %s ORDER BY id DESC", conn, params=(pattern_thang_iso,))
+        df_cp = pd.read_sql("SELECT id, ngay, dien_giai, so_tien, COALESCE(tru_tk_hkd, FALSE) AS tru_tk_hkd FROM chi_phi_khac WHERE ngay LIKE %s ORDER BY id DESC", conn, params=(pattern_thang_iso,))
         if not df_cp.empty:
             df_hien_thi = df_cp.copy()
-            df_hien_thi.columns = ['ID', 'Ngày', 'Diễn Giải', 'Số Tiền (VNĐ)']
-            st.dataframe(
-                df_hien_thi.style.format({"Số Tiền (VNĐ)": "{:,.0f}"}),
+            df_hien_thi.insert(0, "Xóa", False)
+            df_hien_thi.columns = ['Xóa', 'ID', 'Ngày', 'Diễn Giải', 'Số Tiền (VNĐ)', 'TK HKD']
+            
+            st.caption("💡 Tích chọn vào cột **🗑️ Xóa** nếu muốn xóa dòng nhập sai.")
+            edited_cp = st.data_editor(
+                df_hien_thi,
+                column_config={
+                    "Xóa": st.column_config.CheckboxColumn("🗑️ Xóa", default=False),
+                    "ID": st.column_config.NumberColumn("ID", disabled=True),
+                    "Ngày": st.column_config.TextColumn("Ngày", disabled=True),
+                    "Diễn Giải": st.column_config.TextColumn("Diễn Giải", disabled=True),
+                    "Số Tiền (VNĐ)": st.column_config.NumberColumn("Số Tiền (VNĐ)", format="%.0f", disabled=True),
+                    "TK HKD": st.column_config.CheckboxColumn("Trừ TK HKD", disabled=True)
+                },
                 use_container_width=True, 
-                hide_index=True
+                hide_index=True,
+                key=f"editor_chi_phi_{thang_chon_display}"
             )
+
+            selected_del = edited_cp[edited_cp["Xóa"] == True]
+            if not selected_del.empty:
+                if st.button("🚨 Xóa các dòng đã chọn", type="primary", use_container_width=True, key="btn_xoa_chi_phi"):
+                    ids_to_del = [int(x) for x in selected_del["ID"].tolist()]
+                    try:
+                        for cp_id in ids_to_del:
+                            c.execute("DELETE FROM chi_phi_khac WHERE id = %s", (cp_id,))
+                        conn.commit()
+                        st.success(f"✅ Đã xóa thành công {len(ids_to_del)} dòng chi phí!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"Lỗi khi xóa chi phí: {e}")
         else:
             st.info(f"Chưa có chi phí tự nhập nào được ghi nhận trong {thang_chon_display}.")
     except:
