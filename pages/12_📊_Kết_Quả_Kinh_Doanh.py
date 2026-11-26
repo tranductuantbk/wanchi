@@ -144,17 +144,17 @@ try:
 except Exception as e:
     pass
 
-# 4. CHI PHÍ TỰ NHẬP (Từ bảng chi_phi_khac)
+# 4. CHI PHÍ TỰ NHẬP (Chỉ lấy các khoản KHÔNG chọn chi từ TK HKD)
 try:
-    c.execute("SELECT SUM(so_tien) FROM public.chi_phi_khac WHERE ngay LIKE %s", (pattern_thang_iso,))
+    c.execute("SELECT SUM(so_tien) FROM public.chi_phi_khac WHERE ngay LIKE %s AND COALESCE(tru_tk_hkd, FALSE) = FALSE", (pattern_thang_iso,))
     res_cp = c.fetchone()[0]
     chi_phi_tu_nhap = float(res_cp) if res_cp else 0.0
 except:
     pass
 
-# 4B. CHI PHÍ TỰ NHẬP CHI TỪ TK HKD
+# 4B. CHI PHÍ CHI TỪ TK HKD (Chỉ trừ vào TK HKD, không ghi nhận vào Chi Phí Phát Sinh Tự Nhập)
 try:
-    c.execute("SELECT SUM(so_tien) FROM public.chi_phi_khac WHERE ngay LIKE %s AND tru_tk_hkd = TRUE", (pattern_thang_iso,))
+    c.execute("SELECT SUM(so_tien) FROM public.chi_phi_khac WHERE ngay LIKE %s AND COALESCE(tru_tk_hkd, FALSE) = TRUE", (pattern_thang_iso,))
     res_cp_hkd = c.fetchone()[0]
     chi_phi_tu_nhap_hkd = float(res_cp_hkd) if res_cp_hkd else 0.0
 except:
@@ -167,7 +167,7 @@ except:
 loi_nhuan_gop = doanh_so - gia_von
 loi_nhuan_thang = loi_nhuan_gop - thanh_toan_ncc - chi_phi_tu_nhap
 
-# TÍNH TK HKD HIỆN CÓ (Trừ thanh toán NCC và các chi phí tự nhập có chọn TK HKD)
+# TÍNH TK HKD HIỆN CÓ (Trừ thanh toán NCC và các khoản chọn chi từ TK HKD)
 tk_hkd_hien_co = doanh_so - thanh_toan_ncc - chi_phi_tu_nhap_hkd
 
 # ==========================================
@@ -204,7 +204,7 @@ with col_form:
         cp_ngay = st.date_input("Ngày phát sinh", date.today(), format="DD/MM/YYYY")
         cp_diengiai = st.text_area("Diễn giải (VD: Tiền điện, nước, rác...)")
         cp_sotien = st.number_input("Số tiền (VNĐ)", min_value=0.0, step=10000.0)
-        cp_tru_hkd = st.checkbox("💳 Chi từ TK HKD (Trừ trực tiếp vào TK HKD)", value=False)
+        cp_tru_hkd = st.checkbox("💳 Chi từ TK HKD (Trừ trực tiếp vào TK HKD, không tính vào CP phát sinh)", value=False)
         
         if st.form_submit_button("💾 Lưu Chi Phí", type="primary", use_container_width=True):
             if cp_sotien > 0 and cp_diengiai:
